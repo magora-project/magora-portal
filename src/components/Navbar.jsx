@@ -1,58 +1,72 @@
 import { Link, useLocation } from 'react-router-dom'
 
+const pulse = `
+  @keyframes brand-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+`
+
 export default function Navbar() {
   const location = useLocation()
 
   return (
-    <nav style={{
-      background: '#2c2c2a',
-      padding: '0 24px',
-      height: '52px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between'
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div style={{
-          width: '28px', height: '28px', borderRadius: '50%',
-          background: '#3b6d11', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', fontSize: '14px'
-        }}>🌿</div>
-        <span style={{ color: '#f7f5f0', fontSize: '15px', fontWeight: '500' }}>
-          Magora Network
-        </span>
-        <span style={{ color: '#888780', fontSize: '11px', marginLeft: '4px' }}>
-          by the Magora Project
-        </span>
-      </div>
-
-      <div style={{ display: 'flex', gap: '4px' }}>
-        {[
-          { path: '/', label: 'Network map' },
-          { path: '/dashboard', label: 'My dashboard' },
-          { path: '/register', label: 'Add a node' },
-        ].map(({ path, label }) => (
-          <Link key={path} to={path} style={{
-            color: location.pathname === path ? '#f7f5f0' : '#b4b2a9',
-            background: location.pathname === path ? '#444441' : 'none',
-            textDecoration: 'none',
-            fontSize: '12px',
-            padding: '6px 12px',
-            borderRadius: '6px',
-            transition: 'all .15s'
-          }}>
-            {label}
-          </Link>
-        ))}
-      </div>
-
-      <button style={{
-        background: '#3b6d11', color: '#c0dd97', border: 'none',
-        padding: '6px 14px', borderRadius: '6px', fontSize: '12px',
-        fontWeight: '500'
+    <>
+      <style>{pulse}</style>
+      <nav style={{
+        background: '#0d2818',
+        borderBottom: '1px solid #1f5230',
+        padding: '0 24px',
+        height: '64px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
       }}>
-        Sign in
-      </button>
-    </nav>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '11px', height: '11px', borderRadius: '50%',
+              background: '#5DCAA5', flexShrink: 0,
+              animation: 'brand-pulse 2s infinite',
+            }} />
+            <span style={{
+              fontFamily: "'Playfair Display', serif",
+              fontSize: '20px', fontWeight: '600',
+              color: '#f0ede8', letterSpacing: '-0.3px',
+            }}>
+              Magora Bird Project
+            </span>
+          </div>
+          <div style={{ fontSize: '12px', color: '#7aad8a', paddingLeft: '21px', marginTop: '1px' }}>
+            Acoustic detection · American West
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {[
+            { path: '/', label: '🐦 Live Feed' },
+            { path: '/dashboard', label: '📊 Dashboard' },
+            { path: '/register', label: '+ Add Node' },
+          ].map(({ path, label }) => {
+            const active = location.pathname === path
+            return (
+              <Link key={path} to={path} style={{
+                color: active ? '#fff' : '#7aad8a',
+                background: active ? '#1D9E75' : '#163d22',
+                border: `1px solid ${active ? '#1D9E75' : '#1f5230'}`,
+                textDecoration: 'none',
+                fontSize: '13px',
+                fontWeight: '700',
+                padding: '7px 16px',
+                borderRadius: '20px',
+                transition: 'all .15s',
+              }}>
+                {label}
+              </Link>
+            )
+          })}
+        </div>
+      </nav>
+    </>
   )
 }
