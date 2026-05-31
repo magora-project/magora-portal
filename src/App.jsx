@@ -3,6 +3,7 @@ import Navbar from './components/Navbar'
 import MapPage from './pages/MapPage'
 import Dashboard from './pages/Dashboard'
 import RegisterNode from './pages/RegisterNode'
+import DonatePrompt from './components/DonatePrompt'
 import './App.css'
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
             <Route path="/register" element={<RegisterNode />} />
           </Routes>
         </main>
+        <DonatePrompt />
       </div>
     </BrowserRouter>
   )
