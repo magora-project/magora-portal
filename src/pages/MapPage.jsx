@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../lib/supabase'
 
@@ -35,6 +35,19 @@ function parseNodeLocation(loc) {
       return { lon: view.getFloat64(offset, le), lat: view.getFloat64(offset + 8, le) }
     } catch { return null }
   }
+  return null
+}
+
+function MapController({ nodes }) {
+  const map = useMap()
+  useEffect(() => {
+    if (nodes.length === 0) return
+    if (nodes.length === 1) {
+      map.setView([nodes[0].coords.lat, nodes[0].coords.lon], 11)
+    } else {
+      map.fitBounds(nodes.map(n => [n.coords.lat, n.coords.lon]), { padding: [30, 30] })
+    }
+  }, [nodes, map])
   return null
 }
 
@@ -250,11 +263,6 @@ export default function MapPage() {
     .map(n => ({ ...n, coords: parseNodeLocation(n.location) }))
     .filter(n => n.coords)
 
-  const mapCenter = mappableNodes.length > 0
-    ? [mappableNodes[0].coords.lat, mappableNodes[0].coords.lon]
-    : [39.5, -105.5]
-  const mapZoom = mappableNodes.length > 0 ? 10 : 6
-
   return (
     <div>
       {/* Stat cards */}
@@ -271,7 +279,8 @@ export default function MapPage() {
           Detection locations
         </div>
         <div style={{ borderRadius: '16px', overflow: 'hidden', border: `1px solid ${C.border}`, height: '260px' }}>
-          <MapContainer center={mapCenter} zoom={mapZoom} style={{ height: '100%', width: '100%' }} zoomControl={true}>
+          <MapContainer center={[39.5, -105.5]} zoom={5} style={{ height: '100%', width: '100%' }} zoomControl={true}>
+            <MapController nodes={mappableNodes} />
             <TileLayer
               url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
               attribution="© OpenStreetMap © CARTO"
