@@ -153,6 +153,14 @@ select option { background: #163d22; color: #f0ede8; }
     margin-left: -12px;
     margin-right: -12px;
     border-radius: 0 !important;
+    height: 200px !important;
+  }
+  .bird-photo {
+    height: 180px !important;
+    object-fit: cover !important;
+  }
+  .bird-photo-placeholder {
+    height: 120px !important;
   }
   .navbar {
     padding: 14px 16px 0;

@@ -72,10 +72,10 @@ function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
       borderRadius: '20px', overflow: 'hidden',
     }}>
       {wiki.img ? (
-        <img src={wiki.img} alt={d.species_name}
+        <img src={wiki.img} alt={d.species_name} className="bird-photo"
           style={{ width: '100%', height: '220px', objectFit: 'contain', background: C.bg, display: 'block' }} />
       ) : (
-        <div style={{
+        <div className="bird-photo-placeholder" style={{
           width: '100%', height: '160px', background: '#1a4a28',
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '64px',
         }}>🐦</div>
