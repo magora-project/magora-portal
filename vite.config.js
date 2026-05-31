@@ -1,19 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  plugins: [
-    react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      manifest: false, // we supply our own public/manifest.json
-      version: '2',
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webp}'],
-        navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/^\/api\//], // don't cache API routes
-      },
-    }),
-  ],
+  plugins: [react()],
 })

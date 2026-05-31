@@ -65,103 +65,60 @@ const C = {
 function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
   const wiki = wikiData[d.species_name] || {}
+  const sci = d.raw_label?.split('_')[1] || ''
 
-  const badge = {
-    borderRadius: '20px', padding: '4px 10px',
-    fontSize: '12px', fontWeight: '600',
-  }
+  const badge = { borderRadius: '20px', padding: '3px 9px', fontSize: '12px', fontWeight: '600' }
 
   return (
-    <div className="feed-card" style={{
-      background: C.card, border: `1px solid ${C.border}`,
-      borderRadius: '20px', overflow: 'hidden',
-    }}>
-      {/* Photo — cover fills full width, crops portrait images to landscape */}
-      {wiki.img ? (
-        <img src={wiki.img} alt={d.species_name}
-          style={{ width: '100%', height: '160px', objectFit: 'cover', objectPosition: 'center top', display: 'block' }} />
-      ) : (
-        <div style={{
-          width: '100%', height: '100px', background: '#1a4a28',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '40px',
-        }}>🐦</div>
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+
+      {/* Top row: thumbnail left, info right */}
+      <div style={{ display: 'flex', gap: '0' }}>
+        {wiki.img
+          ? <img src={wiki.img} alt={d.species_name} style={{ width: '110px', minHeight: '110px', objectFit: 'cover', objectPosition: 'center', flexShrink: 0, display: 'block' }} />
+          : <div style={{ width: '110px', height: '110px', background: '#1a4a28', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '36px', flexShrink: 0 }}>🐦</div>
+        }
+        <div style={{ flex: 1, padding: '12px 14px', minWidth: 0 }}>
+          <div style={{ fontSize: '17px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: sci ? '2px' : '8px' }}>
+            {d.species_name || d.raw_label || 'Unknown'}
+          </div>
+          {sci && <div style={{ fontSize: '12px', color: C.textMuted, fontStyle: 'italic', marginBottom: '8px' }}>{sci}</div>}
+          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+            {conf !== null && <span style={{ ...badge, background: C.bg, border: `1px solid ${C.accent}`, color: C.accentLight }}>{conf}%</span>}
+            <span style={{ ...badge, background: C.bg, border: `1px solid ${C.border}`, color: C.textSub }}>{toMountainTime(d.detected_at, false)}</span>
+            {count > 1 && <span style={{ ...badge, background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>×{count}</span>}
+            {d.is_dawn_chorus && <span style={{ ...badge, background: '#1a3a4a', border: '1px solid #0ea5e9', color: '#7dd3fc' }}>🌅</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Wikipedia fact */}
+      {wiki.fact && (
+        <div style={{ padding: '10px 14px', fontSize: '13px', color: C.textSub, lineHeight: 1.5, fontStyle: 'italic', borderTop: `1px solid ${C.border}`, borderLeft: `3px solid ${C.accent}` }}>
+          {wiki.fact}
+        </div>
       )}
 
-      <div style={{ padding: '14px 18px 18px' }}>
-        {/* Species name */}
-        <div style={{ fontSize: '20px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: '2px' }}>
-          {d.species_name || d.raw_label || 'Unknown'}
-        </div>
-        {d.raw_label && d.species_name && (
-          <div style={{ fontSize: '13px', color: C.textMuted, fontStyle: 'italic', marginBottom: '10px' }}>
-            {d.raw_label.split('_')[1] || ''}
+      {/* Insight */}
+      <div style={{ padding: '10px 14px 14px' }}>
+        {!insight?.text && (
+          <button onClick={onRequestInsight} disabled={insight?.loading} style={{
+            width: '100%', padding: '10px',
+            background: insight?.loading ? C.border : C.accent,
+            border: 'none', borderRadius: '10px',
+            color: insight?.loading ? '#4a7a58' : '#fff',
+            fontSize: '14px', fontWeight: '700',
+            cursor: insight?.loading ? 'default' : 'pointer',
+            fontFamily: "'DM Sans', sans-serif",
+          }}>
+            {insight?.loading ? '🔍 Generating...' : '🌿 Get Ecological Insight'}
+          </button>
+        )}
+        {insight?.text && (
+          <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.5, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '10px' }}>
+            {insight.text}
           </div>
         )}
-        {!d.raw_label && <div style={{ marginBottom: '10px' }} />}
-
-        {/* Badges */}
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-          {conf !== null && (
-            <span style={{ ...badge, background: C.bg, border: `1px solid ${C.accent}`, color: C.accentLight }}>
-              {conf}% confidence
-            </span>
-          )}
-          <span style={{ ...badge, background: C.bg, border: `1px solid ${C.border}`, color: C.textSub }}>
-            {toMountainTime(d.detected_at, false)}
-          </span>
-          {d.is_dawn_chorus && (
-            <span style={{ ...badge, background: '#1a3a4a', border: '1px solid #0ea5e9', color: '#7dd3fc' }}>
-              🌅 Dawn chorus
-            </span>
-          )}
-          {count > 1 && (
-            <span style={{ ...badge, background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>
-              ×{count} detections
-            </span>
-          )}
-        </div>
-
-        {/* Wikipedia fact */}
-        {wiki.fact && (
-          <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.6, borderLeft: `3px solid ${C.accent}`, paddingLeft: '12px', fontStyle: 'italic', marginBottom: '12px' }}>
-            {wiki.fact}
-          </div>
-        )}
-        {wiki.loaded && !wiki.fact && (
-          <div style={{ fontSize: '13px', color: '#4a7a58', borderLeft: `3px solid ${C.border}`, paddingLeft: '12px', marginBottom: '12px' }}>
-            No additional info available.
-          </div>
-        )}
-        {!wiki.loaded && (
-          <div style={{ fontSize: '13px', color: '#4a7a58', borderLeft: `3px solid ${C.border}`, paddingLeft: '12px', marginBottom: '12px' }}>
-            Loading Wikipedia fact...
-          </div>
-        )}
-
-        {/* Insight */}
-        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: '12px' }}>
-          {!insight?.text && (
-            <button onClick={onRequestInsight} disabled={insight?.loading} style={{
-              width: '100%', padding: '11px',
-              background: insight?.loading ? C.border : C.accent,
-              border: 'none', borderRadius: '12px',
-              color: insight?.loading ? '#4a7a58' : '#fff',
-              fontSize: '14px', fontWeight: '700',
-              cursor: insight?.loading ? 'default' : 'pointer',
-              fontFamily: "'DM Sans', sans-serif",
-            }}>
-              {insight?.loading ? '🔍 Generating insight...' : '🌿 Get Ecological Insight'}
-            </button>
-          )}
-          {insight?.text && (
-            <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.6, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '12px' }}>
-              {insight.text}
-            </div>
-          )}
-          {insight?.error && (
-            <div style={{ fontSize: '12px', color: '#f87171', marginTop: '6px' }}>Could not load insight. Try again.</div>
-          )}
-        </div>
       </div>
     </div>
   )
@@ -264,7 +221,7 @@ export default function MapPage() {
         <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>
           Detection locations
         </div>
-        <div className="map-container" style={{ borderRadius: '16px', overflow: 'hidden', border: `1px solid ${C.border}`, height: '320px' }}>
+        <div className="map-container" style={{ borderRadius: '16px', overflow: 'hidden', border: `1px solid ${C.border}`, height: '180px' }}>
           <MapContainer center={[39.5, -105.5]} zoom={5} style={{ height: '100%', width: '100%' }} zoomControl={true}>
             <MapController nodes={mappableNodes} />
             <TileLayer
