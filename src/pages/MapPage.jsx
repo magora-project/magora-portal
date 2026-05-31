@@ -56,7 +56,7 @@ function StatCard({ label, value, sub }) {
   )
 }
 
-function DetectionCard({ d, wikiData, insight, onRequestInsight }) {
+function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
   const wiki = wikiData[d.species_name] || {}
 
@@ -98,6 +98,11 @@ function DetectionCard({ d, wikiData, insight, onRequestInsight }) {
           {d.is_dawn_chorus && (
             <span style={{ background: '#1a3a4a', border: '1px solid #0ea5e9', borderRadius: '20px', padding: '5px 12px', fontSize: '13px', fontWeight: '600', color: '#7dd3fc' }}>
               🌅 Dawn chorus
+            </span>
+          )}
+          {count > 1 && (
+            <span style={{ background: '#1a3a28', border: '1px solid #22c55e', borderRadius: '20px', padding: '5px 12px', fontSize: '13px', fontWeight: '700', color: '#86efac' }}>
+              ×{count} detections
             </span>
           )}
         </div>
@@ -223,6 +228,17 @@ export default function MapPage() {
   const latestAci = aciLogs[0]?.aci_score ?? null
   const aciLabel = latestAci === null ? '—' : latestAci > 0.65 ? 'High' : latestAci > 0.50 ? 'Moderate' : 'Low'
 
+  // Deduplicate feed: one card per species (most recent), with a total count badge
+  const speciesCount = detections.reduce((acc, d) => {
+    const name = d.species_name || d.raw_label
+    if (name) acc[name] = (acc[name] || 0) + 1
+    return acc
+  }, {})
+  const dedupedDetections = detections.filter((d, idx) => {
+    const name = d.species_name || d.raw_label
+    return detections.findIndex(x => (x.species_name || x.raw_label) === name) === idx
+  })
+
   // Parse coordinates from PostGIS WKB
   const mappableNodes = nodes
     .map(n => ({ ...n, coords: parseWKBPoint(n.location) }))
@@ -286,8 +302,12 @@ export default function MapPage() {
           <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>No detections yet</div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
-            {detections.map(d => (
-              <DetectionCard key={d.id} d={d} wikiData={wikiData} insight={insights[d.id]} onRequestInsight={() => requestInsight(d)} />
+            {dedupedDetections.map(d => (
+              <DetectionCard
+                key={d.id} d={d} wikiData={wikiData}
+                count={speciesCount[d.species_name || d.raw_label] || 1}
+                insight={insights[d.id]} onRequestInsight={() => requestInsight(d)}
+              />
             ))}
           </div>
         )}
