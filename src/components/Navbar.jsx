@@ -12,7 +12,9 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-brand">
-        <span className="brand-dot" />
+        <img src="/icons/icon-512.png.webp" alt="Magora" style={{
+          width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
+        }} />
         <div>
           <div className="brand-title">Magora Bird Project</div>
           <div className="brand-sub">Acoustic detection · American West</div>
