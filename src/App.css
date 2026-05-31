@@ -68,11 +68,12 @@ select option { background: #163d22; color: #f0ede8; }
 }
 
 .brand-title {
-  font-family: 'Playfair Display', serif;
-  font-size: 22px;
-  font-weight: 600;
+  font-family: 'Jost', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
   color: #f0ede8;
-  letter-spacing: -0.3px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -98,7 +99,7 @@ select option { background: #163d22; color: #f0ede8; }
   padding: 10px 8px;
   background: #163d22;
   border: 1px solid #1f5230;
-  border-radius: 12px;
+  border-radius: 8px;
   text-decoration: none;
   transition: background 0.15s;
   cursor: pointer;
@@ -108,6 +109,7 @@ select option { background: #163d22; color: #f0ede8; }
 .navbar-links a.active {
   background: #1D9E75;
   border-color: #1D9E75;
+  border-radius: 8px;
 }
 
 .tab-icon {

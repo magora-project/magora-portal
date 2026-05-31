@@ -70,7 +70,7 @@ function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
   const badge = { borderRadius: '20px', padding: '3px 9px', fontSize: '12px', fontWeight: '600' }
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+    <div style={{ background: C.card, borderTop: `1px solid ${C.border}`, overflow: 'hidden' }}>
 
       {/* Top row: thumbnail left, info right */}
       <div style={{ display: 'flex', gap: '0' }}>
@@ -217,12 +217,12 @@ export default function MapPage() {
   return (
     <div>
       {/* Map */}
-      <div style={{ marginBottom: '12px' }}>
-        <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>
+      <div style={{ marginBottom: '16px', marginLeft: '-16px', marginRight: '-16px' }}>
+        <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px', paddingLeft: '16px' }}>
           Detection locations
         </div>
-        <div style={{ borderRadius: '16px', overflow: 'hidden', border: `1px solid ${C.border}` }}>
-          <MapContainer center={[39.5, -105.5]} zoom={5} style={{ height: '180px', width: '100%' }} zoomControl={true}>
+        <div style={{ overflow: 'hidden', borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}` }}>
+          <MapContainer center={[39.5, -105.5]} zoom={5} style={{ height: '230px', width: '100%' }} zoomControl={true}>
             <MapController nodes={mappableNodes} />
             <TileLayer
               url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
