@@ -76,14 +76,14 @@ function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
       background: C.card, border: `1px solid ${C.border}`,
       borderRadius: '20px', overflow: 'hidden',
     }}>
-      {/* Photo — fixed 180px, contain so full bird is visible */}
+      {/* Photo — cover fills full width, crops portrait images to landscape */}
       {wiki.img ? (
         <img src={wiki.img} alt={d.species_name}
-          style={{ width: '100%', height: '180px', objectFit: 'contain', background: C.bg, display: 'block' }} />
+          style={{ width: '100%', height: '160px', objectFit: 'cover', objectPosition: 'center top', display: 'block' }} />
       ) : (
         <div style={{
-          width: '100%', height: '120px', background: '#1a4a28',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px',
+          width: '100%', height: '100px', background: '#1a4a28',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '40px',
         }}>🐦</div>
       )}
 
