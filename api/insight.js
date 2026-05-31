@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   const confPct = Math.round((confidence || 0) * 100)
   const prompt = `A bird acoustic monitoring sensor detected a ${species_name}${scientific_name ? ` (${scientific_name})` : ''} in ${location || 'an unknown location'} with ${confPct}% confidence${is_dawn_chorus ? ' during the dawn chorus' : ''}${aci_score ? `. The Acoustic Complexity Index at time of detection was ${aci_score}` : ''}.
 
-Write 2–3 sentences of ecological insight about this detection — what it tells us about the habitat, season, or this species' behavior. Be specific and scientifically grounded but accessible. Don't open with the species name or "This detection".`
+Write 2–3 sentences of ecological insight about this detection. Be fun, witty, and a little comical — like a nature documentary narrated by someone with a great sense of humor — but keep every fact accurate and grounded. You can anthropomorphize the bird a little, make an unexpected observation, or note something delightfully weird about the species. Don't open with the species name or "This detection".`
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
