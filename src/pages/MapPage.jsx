@@ -275,7 +275,7 @@ export default function MapPage() {
         <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>
           Detection locations
         </div>
-        <div style={{ borderRadius: '16px', overflow: 'hidden', border: `1px solid ${C.border}`, height: '260px' }}>
+        <div className="map-container" style={{ borderRadius: '16px', overflow: 'hidden', border: `1px solid ${C.border}`, height: '320px' }}>
           <MapContainer center={[39.5, -105.5]} zoom={5} style={{ height: '100%', width: '100%' }} zoomControl={true}>
             <MapController nodes={mappableNodes} />
             <TileLayer

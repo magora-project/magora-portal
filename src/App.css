@@ -141,6 +141,18 @@ select option { background: #163d22; color: #f0ede8; }
   }
   .detection-grid {
     grid-template-columns: 1fr;
+    gap: 12px;
+    /* bleed past .main-content padding so cards go edge-to-edge */
+    margin-left: -12px;
+    margin-right: -12px;
+  }
+  .detection-grid > div {
+    border-radius: 0 !important;
+  }
+  .map-container {
+    margin-left: -12px;
+    margin-right: -12px;
+    border-radius: 0 !important;
   }
   .navbar {
     padding: 14px 16px 0;
