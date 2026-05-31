@@ -266,7 +266,7 @@ export default function MapPage() {
   return (
     <div>
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '20px' }}>
+      <div className="stat-grid">
         <StatCard label="Active Nodes" value={nodes.length} sub="Online now" />
         <StatCard label="Detections" value={detections.length} sub="Last 50 shown" />
         <StatCard label="Latest ACI" value={latestAci ? latestAci.toFixed(3) : '—'} sub={`${aciLabel} activity`} />
@@ -316,7 +316,7 @@ export default function MapPage() {
         ) : detections.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>No detections yet</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
+          <div className="detection-grid">
             {dedupedDetections.map(d => (
               <DetectionCard
                 key={d.id} d={d} wikiData={wikiData}
