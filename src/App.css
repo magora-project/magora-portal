@@ -41,6 +41,38 @@ select option { background: #163d22; color: #f0ede8; }
 
 /* --- Responsive layout classes --- */
 
+/* Stat cards */
+.stat-card {
+  background: #163d22;
+  border: 1px solid #1f5230;
+  border-radius: 14px;
+  padding: 12px 10px;
+  text-align: center;
+}
+.stat-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #7aad8a;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.stat-card-value {
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 600;
+  color: #5DCAA5;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+.stat-card-sub {
+  font-size: 10px;
+  color: #7aad8a;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -98,12 +130,21 @@ select option { background: #163d22; color: #f0ede8; }
   }
   .stat-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .stat-card {
+    padding: 10px 6px;
+    border-radius: 12px;
+  }
+  .stat-card-value {
+    font-size: 20px;
   }
   .detection-grid {
     grid-template-columns: 1fr;
   }
   .navbar {
     padding: 14px 16px 0;
+    overflow: hidden;
   }
   .navbar-inner {
     flex-direction: column;
@@ -116,11 +157,14 @@ select option { background: #163d22; color: #f0ede8; }
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     padding-bottom: 14px;
+    box-sizing: border-box;
   }
   .navbar-links a {
     text-align: center;
-    padding: 10px 8px;
-    font-size: 14px;
+    padding: 10px 4px;
+    font-size: 13px;
     border-radius: 14px;
+    white-space: normal;
+    line-height: 1.2;
   }
 }

@@ -64,13 +64,10 @@ const C = {
 
 function StatCard({ label, value, sub }) {
   return (
-    <div style={{
-      background: C.card, border: `1px solid ${C.border}`,
-      borderRadius: '16px', padding: '18px 16px', textAlign: 'center',
-    }}>
-      <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>{label}</div>
-      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '36px', fontWeight: '600', color: C.accentLight, lineHeight: 1, marginBottom: '6px' }}>{value}</div>
-      <div style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{sub}</div>
+    <div className="stat-card">
+      <div className="stat-card-label">{label}</div>
+      <div className="stat-card-value">{value}</div>
+      <div className="stat-card-sub">{sub}</div>
     </div>
   )
 }
