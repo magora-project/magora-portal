@@ -1,30 +1,59 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
+function toMountainTime(utcString, showSeconds = true) {
+  const d = new Date(new Date(utcString).getTime() - 6 * 60 * 60 * 1000)
+  const h = d.getUTCHours()
+  const m = String(d.getUTCMinutes()).padStart(2, '0')
+  const period = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 || 12
+  if (showSeconds) {
+    const s = String(d.getUTCSeconds()).padStart(2, '0')
+    return `${hour}:${m}:${s} ${period}`
+  }
+  return `${hour}:${m} ${period}`
+}
+
 export default function MapPage() {
+  const [aciLogs, setAciLogs] = useState([])
   const [detections, setDetections] = useState([])
   const [nodes, setNodes] = useState([])
   const [loading, setLoading] = useState(true)
 
+  async function fetchData() {
+    const { data: nodeData } = await supabase
+      .from('nodes')
+      .select('*')
+      .eq('is_active', true)
+
+    const { data: detectionData } = await supabase
+      .from('detections')
+      .select('*')
+      .order('detected_at', { ascending: false })
+      .limit(50)
+
+    const { data: aciData } = await supabase
+      .from('aci_logs')
+      .select('*')
+      .order('recorded_at', { ascending: false })
+      .limit(10)
+
+    setNodes(nodeData || [])
+    setDetections(detectionData || [])
+    setAciLogs(aciData || [])
+    setLoading(false)
+  }
+
   useEffect(() => {
-    async function fetchData() {
-      const { data: nodeData } = await supabase
-        .from('nodes')
-        .select('*')
-        .eq('is_active', true)
-
-      const { data: detectionData } = await supabase
-        .from('detections')
-        .select('*')
-        .order('detected_at', { ascending: false })
-        .limit(20)
-
-      setNodes(nodeData || [])
-      setDetections(detectionData || [])
-      setLoading(false)
-    }
     fetchData()
+    const interval = setInterval(fetchData, 30000)
+    return () => clearInterval(interval)
   }, [])
+
+  const latestAci = aciLogs[0]?.aci_score ?? null
+  const aciLabel = latestAci === null ? '—' :
+    latestAci > 0.65 ? 'High' :
+    latestAci > 0.50 ? 'Moderate' : 'Low'
 
   return (
     <div>
@@ -36,9 +65,9 @@ export default function MapPage() {
       }}>
         {[
           { label: 'Active nodes', value: nodes.length, sub: 'online now' },
-          { label: 'Detections today', value: detections.length, sub: 'last 20 shown' },
-          { label: 'Avg ACI', value: detections.length ? (detections.reduce((a,b) => a, 0)).toFixed(2) : '—', sub: 'acoustic complexity' },
-          { label: 'Network', value: '1', sub: 'location monitored' },
+          { label: 'Detections', value: detections.length, sub: 'last 50 shown' },
+          { label: 'Latest ACI', value: latestAci ? latestAci.toFixed(3) : '—', sub: `${aciLabel} activity` },
+          { label: 'Last updated', value: aciLogs[0] ? toMountainTime(aciLogs[0].recorded_at, false) : '—', sub: 'auto-refreshes 30s' },
         ].map(({ label, value, sub }) => (
           <div key={label} style={{
             background: '#fff', border: '0.5px solid #d3d1c7',
@@ -63,21 +92,45 @@ export default function MapPage() {
             {nodes.length} node{nodes.length !== 1 ? 's' : ''} registered
           </div>
         </div>
-        {nodes.map(node => (
-          <div key={node.id} style={{
-            position: 'absolute', top: '50%', left: '50%',
-            transform: 'translate(-50%, -50%)'
-          }}>
-            <div style={{
-              width: '14px', height: '14px', borderRadius: '50%',
-              background: '#3b6d11', border: '2.5px solid #fff'
-            }} title={node.name} />
-          </div>
-        ))}
+      </div>
+
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '13px', fontWeight: '500' }}>Live acoustic activity</span>
+          <span style={{ fontSize: '11px', color: '#888780' }}>Refreshes every 30s</span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+          {aciLogs.map(log => (
+            <div key={log.id} style={{
+              background: '#fff', border: '0.5px solid #d3d1c7',
+              borderRadius: '8px', padding: '10px 14px',
+              display: 'flex', alignItems: 'center', gap: '12px'
+            }}>
+              <div style={{
+                width: '32px', height: '32px', borderRadius: '50%',
+                background: '#f5f0e8', display: 'flex', alignItems: 'center',
+                justifyContent: 'center', fontSize: '16px', flexShrink: 0
+              }}>🦟</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '13px', fontWeight: '500' }}>
+                  {log.aci_score > 0.65 ? 'High' : log.aci_score > 0.50 ? 'Moderate' : 'Low'} insect activity
+                </div>
+                <div style={{ fontSize: '11px', color: '#888780', marginTop: '1px' }}>
+                  {toMountainTime(log.recorded_at)} · {log.time_category} · ACI {log.aci_score}
+                </div>
+              </div>
+              <div style={{ flex: 0, width: '80px' }}>
+                <div style={{ height: '6px', background: '#f1efe8', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${log.aci_score * 100}%`, height: '100%', background: '#854f0b', borderRadius: '3px' }} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '13px', fontWeight: '500' }}>Recent detections</span>
+        <span style={{ fontSize: '13px', fontWeight: '500' }}>Recent bird detections</span>
         <span style={{ fontSize: '11px', color: '#888780' }}>Live from Supabase</span>
       </div>
 
@@ -101,7 +154,7 @@ export default function MapPage() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '13px', fontWeight: '500' }}>{d.species_name || d.raw_label || 'Unknown'}</div>
                 <div style={{ fontSize: '11px', color: '#888780', marginTop: '1px' }}>
-                  {new Date(d.detected_at).toLocaleTimeString()} · {d.is_dawn_chorus ? 'Dawn chorus' : 'Standard detection'}
+                  {toMountainTime(d.detected_at)} · {d.is_dawn_chorus ? 'Dawn chorus' : 'Standard detection'}
                 </div>
               </div>
               <div style={{
