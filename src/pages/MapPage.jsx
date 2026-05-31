@@ -66,90 +66,100 @@ function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
   const wiki = wikiData[d.species_name] || {}
 
+  const badge = {
+    borderRadius: '20px', padding: '4px 10px',
+    fontSize: '12px', fontWeight: '600',
+  }
+
   return (
     <div className="feed-card" style={{
       background: C.card, border: `1px solid ${C.border}`,
       borderRadius: '20px', overflow: 'hidden',
     }}>
+      {/* Photo — fixed 180px, contain so full bird is visible */}
       {wiki.img ? (
         <img src={wiki.img} alt={d.species_name}
-          style={{ width: '100%', height: '240px', objectFit: 'contain', background: C.bg, display: 'block' }} />
+          style={{ width: '100%', height: '180px', objectFit: 'contain', background: C.bg, display: 'block' }} />
       ) : (
         <div style={{
-          width: '100%', height: '160px', background: '#1a4a28',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '64px',
+          width: '100%', height: '120px', background: '#1a4a28',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px',
         }}>🐦</div>
       )}
 
-      <div className="feed-card-body" style={{ padding: '20px 22px 24px' }}>
-        <div className="feed-card-name" style={{ fontSize: '24px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: '3px' }}>
+      <div style={{ padding: '14px 18px 18px' }}>
+        {/* Species name */}
+        <div style={{ fontSize: '20px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: '2px' }}>
           {d.species_name || d.raw_label || 'Unknown'}
         </div>
         {d.raw_label && d.species_name && (
-          <div className="feed-card-sci" style={{ fontSize: '14px', color: C.textMuted, fontStyle: 'italic', marginBottom: '14px' }}>
+          <div style={{ fontSize: '13px', color: C.textMuted, fontStyle: 'italic', marginBottom: '10px' }}>
             {d.raw_label.split('_')[1] || ''}
           </div>
         )}
-        {!d.raw_label && <div style={{ marginBottom: '14px' }} />}
+        {!d.raw_label && <div style={{ marginBottom: '10px' }} />}
 
-        <div className="feed-card-badges" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        {/* Badges */}
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
           {conf !== null && (
-            <span style={{ background: C.bg, border: `1px solid ${C.accent}`, borderRadius: '20px', padding: '5px 12px', fontSize: '13px', fontWeight: '700', color: C.accentLight }}>
+            <span style={{ ...badge, background: C.bg, border: `1px solid ${C.accent}`, color: C.accentLight }}>
               {conf}% confidence
             </span>
           )}
-          <span style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '20px', padding: '5px 12px', fontSize: '13px', fontWeight: '600', color: C.textSub }}>
+          <span style={{ ...badge, background: C.bg, border: `1px solid ${C.border}`, color: C.textSub }}>
             {toMountainTime(d.detected_at, false)}
           </span>
           {d.is_dawn_chorus && (
-            <span style={{ background: '#1a3a4a', border: '1px solid #0ea5e9', borderRadius: '20px', padding: '5px 12px', fontSize: '13px', fontWeight: '600', color: '#7dd3fc' }}>
+            <span style={{ ...badge, background: '#1a3a4a', border: '1px solid #0ea5e9', color: '#7dd3fc' }}>
               🌅 Dawn chorus
             </span>
           )}
           {count > 1 && (
-            <span style={{ background: '#1a3a28', border: '1px solid #22c55e', borderRadius: '20px', padding: '5px 12px', fontSize: '13px', fontWeight: '700', color: '#86efac' }}>
+            <span style={{ ...badge, background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>
               ×{count} detections
             </span>
           )}
         </div>
 
+        {/* Wikipedia fact */}
         {wiki.fact && (
-          <div className="feed-card-fact" style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.7, borderLeft: `3px solid ${C.accent}`, paddingLeft: '14px', fontStyle: 'italic', marginBottom: '16px' }}>
+          <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.6, borderLeft: `3px solid ${C.accent}`, paddingLeft: '12px', fontStyle: 'italic', marginBottom: '12px' }}>
             {wiki.fact}
           </div>
         )}
         {wiki.loaded && !wiki.fact && (
-          <div style={{ fontSize: '14px', color: '#4a7a58', borderLeft: `3px solid ${C.border}`, paddingLeft: '14px', marginBottom: '16px' }}>
+          <div style={{ fontSize: '13px', color: '#4a7a58', borderLeft: `3px solid ${C.border}`, paddingLeft: '12px', marginBottom: '12px' }}>
             No additional info available.
           </div>
         )}
         {!wiki.loaded && (
-          <div style={{ fontSize: '14px', color: '#4a7a58', borderLeft: `3px solid ${C.border}`, paddingLeft: '14px', marginBottom: '16px' }}>
+          <div style={{ fontSize: '13px', color: '#4a7a58', borderLeft: `3px solid ${C.border}`, paddingLeft: '12px', marginBottom: '12px' }}>
             Loading Wikipedia fact...
           </div>
         )}
 
-        <div className="feed-card-insight" style={{ borderTop: `1px solid ${C.border}`, paddingTop: '16px', marginTop: '4px' }}>
+        {/* Insight */}
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: '12px' }}>
           {!insight?.text && (
             <button onClick={onRequestInsight} disabled={insight?.loading} style={{
-              width: '100%', padding: '13px',
+              width: '100%', padding: '11px',
               background: insight?.loading ? C.border : C.accent,
               border: 'none', borderRadius: '12px',
               color: insight?.loading ? '#4a7a58' : '#fff',
-              fontSize: '15px', fontWeight: '700',
+              fontSize: '14px', fontWeight: '700',
               cursor: insight?.loading ? 'default' : 'pointer',
-              fontFamily: "'DM Sans', sans-serif", transition: 'background 0.15s',
+              fontFamily: "'DM Sans', sans-serif",
             }}>
               {insight?.loading ? '🔍 Generating insight...' : '🌿 Get Ecological Insight'}
             </button>
           )}
           {insight?.text && (
-            <div style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.7, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '14px' }}>
+            <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.6, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '12px' }}>
               {insight.text}
             </div>
           )}
           {insight?.error && (
-            <div style={{ fontSize: '13px', color: '#f87171', marginTop: '8px' }}>Could not load insight. Try again.</div>
+            <div style={{ fontSize: '12px', color: '#f87171', marginTop: '6px' }}>Could not load insight. Try again.</div>
           )}
         </div>
       </div>
