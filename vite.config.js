@@ -8,6 +8,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: false, // we supply our own public/manifest.json
+      version: '2',
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webp}'],
         navigateFallback: 'index.html',

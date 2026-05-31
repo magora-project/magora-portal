@@ -62,16 +62,6 @@ const C = {
   textMuted: '#7aad8a',
 }
 
-function StatCard({ label, value, sub }) {
-  return (
-    <div className="stat-card">
-      <div className="stat-card-label">{label}</div>
-      <div className="stat-card-value">{value}</div>
-      <div className="stat-card-sub">{sub}</div>
-    </div>
-  )
-}
-
 function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
   const wiki = wikiData[d.species_name] || {}
@@ -241,9 +231,6 @@ export default function MapPage() {
     }
   }
 
-  const latestAci = aciLogs[0]?.aci_score ?? null
-  const aciLabel = latestAci === null ? '—' : latestAci > 0.65 ? 'High' : latestAci > 0.50 ? 'Moderate' : 'Low'
-
   // Deduplicate feed: one card per species (most recent), with a total count badge
   const speciesCount = detections.reduce((acc, d) => {
     const name = d.species_name || d.raw_label
@@ -262,14 +249,6 @@ export default function MapPage() {
 
   return (
     <div>
-      {/* Stat cards */}
-      <div className="stat-grid">
-        <StatCard label="Active Nodes" value={nodes.length} sub="Online now" />
-        <StatCard label="Detections" value={detections.length} sub="Last 50 shown" />
-        <StatCard label="Latest ACI" value={latestAci ? latestAci.toFixed(3) : '—'} sub={`${aciLabel} activity`} />
-        <StatCard label="Last Updated" value={aciLogs[0] ? toMountainTime(aciLogs[0].recorded_at, false) : '—'} sub="Auto-refreshes 30s" />
-      </div>
-
       {/* Map */}
       <div style={{ marginBottom: '12px' }}>
         <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>
