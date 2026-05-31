@@ -13,7 +13,7 @@ body {
 
 .main-content {
   flex: 1;
-  padding: 24px;
+  padding: 20px;
   max-width: 1100px;
   margin: 0 auto;
   width: 100%;
@@ -39,9 +39,91 @@ input::placeholder { color: #4a7a58; }
 input:focus, select:focus { outline: none; border-color: #1D9E75; }
 select option { background: #163d22; color: #f0ede8; }
 
-/* --- Responsive layout classes --- */
+/* ---- Navbar ---- */
+.navbar {
+  background: #0d2818;
+  border-bottom: 1px solid #1f5230;
+  padding: 20px 20px 0;
+}
 
-/* Stat cards */
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.brand-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #5DCAA5;
+  flex-shrink: 0;
+  animation: brand-pulse 2s infinite;
+}
+
+@keyframes brand-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.navbar-links {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding-bottom: 16px;
+}
+
+.navbar-links a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 10px;
+  background: #163d22;
+  border: 1px solid #1f5230;
+  border-radius: 16px;
+  text-decoration: none;
+  transition: background 0.15s;
+  cursor: pointer;
+}
+
+.navbar-links a.active {
+  background: #1D9E75;
+  border-color: #1D9E75;
+}
+
+.tab-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.tab-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #c8e6d0;
+  letter-spacing: -0.2px;
+}
+
+.navbar-links a.active .tab-label {
+  color: #fff;
+}
+
+/* ---- Layout grids ---- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.detection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+/* ---- Stat cards ---- */
 .stat-card {
   background: #163d22;
   border: 1px solid #1f5230;
@@ -73,118 +155,39 @@ select option { background: #163d22; color: #f0ede8; }
   letter-spacing: 0.05em;
 }
 
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.detection-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 16px;
-}
-
-/* Navbar */
-.navbar {
-  background: #0d2818;
-  border-bottom: 1px solid #1f5230;
-  padding: 12px 24px;
-}
-.navbar-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.navbar-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.navbar-links {
-  display: flex;
-  gap: 6px;
-}
-.navbar-links a {
-  color: #7aad8a;
-  background: #163d22;
-  border: 1px solid #1f5230;
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 7px 16px;
-  border-radius: 20px;
-  transition: all .15s;
-  white-space: nowrap;
-}
-.navbar-links a.active {
-  color: #fff;
-  background: #1D9E75;
-  border-color: #1D9E75;
-}
-
+/* ---- Mobile ---- */
 @media (max-width: 640px) {
   .main-content {
-    padding: 12px;
+    padding: 16px;
   }
+
   .stat-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
   }
-  .stat-card {
-    padding: 10px 6px;
-    border-radius: 12px;
-  }
-  .stat-card-value {
-    font-size: 20px;
-  }
+
+  .stat-card { padding: 10px 6px; border-radius: 12px; }
+  .stat-card-value { font-size: 20px; }
+
   .detection-grid {
     grid-template-columns: 1fr;
-    gap: 12px;
-    /* bleed past .main-content padding so cards go edge-to-edge */
-    margin-left: -12px;
-    margin-right: -12px;
+    gap: 0;
+    margin-left: -16px;
+    margin-right: -16px;
   }
+
+  /* Cards flush, separated by a thin gap */
   .detection-grid > div {
     border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    margin-bottom: 12px;
   }
+
   .map-container {
-    margin-left: -12px;
-    margin-right: -12px;
+    margin-left: -16px;
+    margin-right: -16px;
     border-radius: 0 !important;
-    height: 200px !important;
-  }
-  .bird-photo {
-    height: 180px !important;
-    object-fit: cover !important;
-  }
-  .bird-photo-placeholder {
-    height: 120px !important;
-  }
-  .navbar {
-    padding: 14px 16px 0;
-    overflow: hidden;
-  }
-  .navbar-inner {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-  .navbar-links {
-    width: 100%;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    padding-bottom: 14px;
-    box-sizing: border-box;
-  }
-  .navbar-links a {
-    text-align: center;
-    padding: 10px 4px;
-    font-size: 13px;
-    border-radius: 14px;
-    white-space: normal;
-    line-height: 1.2;
+    height: 220px !important;
   }
 }
