@@ -161,22 +161,30 @@ select option { background: #163d22; color: #f0ede8; }
     padding: 16px;
   }
 
+  /* Bigger brand text */
+  .navbar-brand div:first-child {
+    font-size: 26px !important;
+  }
+
   .stat-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
   }
-
   .stat-card { padding: 10px 6px; border-radius: 12px; }
   .stat-card-value { font-size: 20px; }
 
+  /* Hide section headers — let content speak for itself */
+  .section-header {
+    display: none !important;
+  }
+
+  /* Detection cards edge-to-edge */
   .detection-grid {
     grid-template-columns: 1fr;
     gap: 0;
     margin-left: -16px;
     margin-right: -16px;
   }
-
-  /* Cards flush, separated by a thin gap */
   .detection-grid > div {
     border-radius: 0 !important;
     border-left: none !important;
@@ -184,10 +192,16 @@ select option { background: #163d22; color: #f0ede8; }
     margin-bottom: 12px;
   }
 
+  /* Bird photo taller on mobile */
+  .detection-grid img {
+    height: 280px !important;
+  }
+
+  /* Map edge-to-edge and taller */
   .map-container {
     margin-left: -16px;
     margin-right: -16px;
     border-radius: 0 !important;
-    height: 220px !important;
+    height: 260px !important;
   }
 }

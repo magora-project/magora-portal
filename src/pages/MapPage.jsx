@@ -280,9 +280,9 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* Bird detections — now above ACI */}
+      {/* Bird detections */}
       <div style={{ marginBottom: '28px' }}>
-        <div style={{ marginBottom: '14px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="section-header" style={{ marginBottom: '14px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Recent bird detections</span>
           <span style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Live from Supabase</span>
         </div>
