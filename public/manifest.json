@@ -12,7 +12,7 @@
       "src": "/icons/icon-512.png.webp",
       "sizes": "512x512",
       "type": "image/webp",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon.svg",
