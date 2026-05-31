@@ -3,6 +3,7 @@ body {
   background: #0d2818;
   color: #f0ede8;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 .app {
