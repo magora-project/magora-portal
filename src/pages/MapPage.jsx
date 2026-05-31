@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 function toMountainTime(utcString, showSeconds = true) {
@@ -23,18 +23,139 @@ const C = {
   text: '#f0ede8',
   textSub: '#c8e6d0',
   textMuted: '#7aad8a',
-  radius: '16px',
 }
 
 function StatCard({ label, value, sub }) {
   return (
     <div style={{
       background: C.card, border: `1px solid ${C.border}`,
-      borderRadius: C.radius, padding: '18px 16px', textAlign: 'center',
+      borderRadius: '16px', padding: '18px 16px', textAlign: 'center',
     }}>
       <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>{label}</div>
       <div style={{ fontFamily: "'Playfair Display', serif", fontSize: '36px', fontWeight: '600', color: C.accentLight, lineHeight: 1, marginBottom: '6px' }}>{value}</div>
       <div style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{sub}</div>
+    </div>
+  )
+}
+
+function DetectionCard({ d, wikiData, insight, onRequestInsight }) {
+  const conf = d.confidence ? Math.round(d.confidence * 100) : null
+  const wiki = wikiData[d.species_name] || {}
+
+  return (
+    <div style={{
+      background: C.card, border: `1px solid ${C.border}`,
+      borderRadius: '20px', overflow: 'hidden',
+    }}>
+      {/* Bird photo */}
+      {wiki.img ? (
+        <img
+          src={wiki.img}
+          alt={d.species_name}
+          style={{ width: '100%', height: '220px', objectFit: 'contain', background: C.bg, display: 'block' }}
+        />
+      ) : (
+        <div style={{
+          width: '100%', height: '160px', background: '#1a4a28',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '64px',
+        }}>🐦</div>
+      )}
+
+      <div style={{ padding: '20px 22px 24px' }}>
+        {/* Species name */}
+        <div style={{ fontSize: '24px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: '3px' }}>
+          {d.species_name || d.raw_label || 'Unknown'}
+        </div>
+        {d.raw_label && d.species_name && (
+          <div style={{ fontSize: '14px', color: C.textMuted, fontStyle: 'italic', marginBottom: '14px' }}>
+            {d.raw_label.split('_')[1] || ''}
+          </div>
+        )}
+        {!d.raw_label && <div style={{ marginBottom: '14px' }} />}
+
+        {/* Badges */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          {conf !== null && (
+            <span style={{
+              background: C.bg, border: `1px solid ${C.accent}`,
+              borderRadius: '20px', padding: '5px 12px',
+              fontSize: '13px', fontWeight: '700', color: C.accentLight,
+            }}>{conf}% confidence</span>
+          )}
+          <span style={{
+            background: C.bg, border: `1px solid ${C.border}`,
+            borderRadius: '20px', padding: '5px 12px',
+            fontSize: '13px', fontWeight: '600', color: C.textSub,
+          }}>{toMountainTime(d.detected_at, false)}</span>
+          {d.is_dawn_chorus && (
+            <span style={{
+              background: '#1a3a4a', border: '1px solid #0ea5e9',
+              borderRadius: '20px', padding: '5px 12px',
+              fontSize: '13px', fontWeight: '600', color: '#7dd3fc',
+            }}>🌅 Dawn chorus</span>
+          )}
+        </div>
+
+        {/* Wikipedia fact */}
+        {wiki.fact && (
+          <div style={{
+            fontSize: '15px', color: C.textSub, lineHeight: 1.7,
+            borderLeft: `3px solid ${C.accent}`, paddingLeft: '14px',
+            fontStyle: 'italic', marginBottom: '16px',
+          }}>
+            {wiki.fact}
+          </div>
+        )}
+        {wiki.loaded && !wiki.fact && (
+          <div style={{
+            fontSize: '14px', color: '#4a7a58',
+            borderLeft: `3px solid ${C.border}`, paddingLeft: '14px',
+            marginBottom: '16px',
+          }}>No additional info available.</div>
+        )}
+        {!wiki.loaded && (
+          <div style={{
+            fontSize: '14px', color: '#4a7a58',
+            borderLeft: `3px solid ${C.border}`, paddingLeft: '14px',
+            marginBottom: '16px',
+          }}>Loading Wikipedia fact...</div>
+        )}
+
+        {/* Ecological insight */}
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: '16px', marginTop: '4px' }}>
+          {!insight?.text && (
+            <button
+              onClick={onRequestInsight}
+              disabled={insight?.loading}
+              style={{
+                width: '100%', padding: '13px',
+                background: insight?.loading ? C.border : C.accent,
+                border: 'none', borderRadius: '12px',
+                color: insight?.loading ? '#4a7a58' : '#fff',
+                fontSize: '15px', fontWeight: '700',
+                cursor: insight?.loading ? 'default' : 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+                transition: 'background 0.15s',
+              }}
+            >
+              {insight?.loading ? '🔍 Generating insight...' : '🌿 Get Ecological Insight'}
+            </button>
+          )}
+          {insight?.text && (
+            <div style={{
+              fontSize: '15px', color: C.textSub, lineHeight: 1.7,
+              borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '14px',
+            }}>
+              {insight.text}
+            </div>
+          )}
+          {insight?.error && (
+            <div style={{ fontSize: '13px', color: '#f87171', marginTop: '8px' }}>
+              Could not load insight. Try again.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -44,6 +165,9 @@ export default function MapPage() {
   const [detections, setDetections] = useState([])
   const [nodes, setNodes] = useState([])
   const [loading, setLoading] = useState(true)
+  const [wikiData, setWikiData] = useState({})   // keyed by species_name
+  const [insights, setInsights] = useState({})   // keyed by detection id
+  const fetchedWiki = useRef(new Set())
 
   async function fetchData() {
     const { data: nodeData } = await supabase
@@ -65,6 +189,54 @@ export default function MapPage() {
     return () => clearInterval(interval)
   }, [])
 
+  // Fetch Wikipedia data for any new species
+  useEffect(() => {
+    const uniqueSpecies = [...new Set(detections.map(d => d.species_name).filter(Boolean))]
+    uniqueSpecies.forEach(name => {
+      if (fetchedWiki.current.has(name)) return
+      fetchedWiki.current.add(name)
+
+      fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`)
+        .then(r => r.json())
+        .then(data => {
+          setWikiData(prev => ({
+            ...prev,
+            [name]: {
+              img: data.thumbnail?.source || null,
+              fact: data.extract ? data.extract.split('.')[0] + '.' : null,
+              loaded: true,
+            }
+          }))
+        })
+        .catch(() => {
+          setWikiData(prev => ({ ...prev, [name]: { img: null, fact: null, loaded: true } }))
+        })
+    })
+  }, [detections])
+
+  async function requestInsight(d) {
+    setInsights(prev => ({ ...prev, [d.id]: { loading: true } }))
+    try {
+      const res = await fetch('/api/insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          species_name: d.species_name || d.raw_label,
+          scientific_name: d.raw_label?.split('_')[1] || '',
+          confidence: d.confidence,
+          location: nodes[0]?.habitat_type || 'montane scrub, Colorado',
+          is_dawn_chorus: d.is_dawn_chorus,
+          aci_score: d.aci_score || null,
+        }),
+      })
+      if (!res.ok) throw new Error('API error')
+      const data = await res.json()
+      setInsights(prev => ({ ...prev, [d.id]: { text: data.insight } }))
+    } catch {
+      setInsights(prev => ({ ...prev, [d.id]: { error: true } }))
+    }
+  }
+
   const latestAci = aciLogs[0]?.aci_score ?? null
   const aciLabel = latestAci === null ? '—' :
     latestAci > 0.65 ? 'High' :
@@ -76,11 +248,7 @@ export default function MapPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '20px' }}>
         <StatCard label="Active Nodes" value={nodes.length} sub="Online now" />
         <StatCard label="Detections" value={detections.length} sub="Last 50 shown" />
-        <StatCard
-          label="Latest ACI"
-          value={latestAci ? latestAci.toFixed(3) : '—'}
-          sub={`${aciLabel} activity`}
-        />
+        <StatCard label="Latest ACI" value={latestAci ? latestAci.toFixed(3) : '—'} sub={`${aciLabel} activity`} />
         <StatCard
           label="Last Updated"
           value={aciLogs[0] ? toMountainTime(aciLogs[0].recorded_at, false) : '—'}
@@ -92,7 +260,7 @@ export default function MapPage() {
       <div style={{
         background: C.card, borderRadius: '16px', height: '260px',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        border: `1px solid ${C.border}`, marginBottom: '20px',
+        border: `1px solid ${C.border}`, marginBottom: '24px',
       }}>
         <div style={{ textAlign: 'center', color: C.textMuted }}>
           <div style={{ fontSize: '32px', marginBottom: '8px' }}>🗺️</div>
@@ -104,18 +272,18 @@ export default function MapPage() {
       </div>
 
       {/* ACI feed */}
-      <div style={{ marginBottom: '24px' }}>
-        <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ marginBottom: '28px' }}>
+        <div style={{ marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Live acoustic activity</span>
           <span style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Refreshes every 30s</span>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {aciLogs.map(log => {
             const level = log.aci_score > 0.65 ? 'High' : log.aci_score > 0.50 ? 'Moderate' : 'Low'
             return (
               <div key={log.id} style={{
                 background: C.card, border: `1px solid ${C.border}`,
-                borderRadius: '20px', padding: '14px 18px',
+                borderRadius: '16px', padding: '14px 18px',
                 display: 'flex', alignItems: 'center', gap: '14px',
               }}>
                 <div style={{
@@ -124,10 +292,8 @@ export default function MapPage() {
                   justifyContent: 'center', fontSize: '20px', flexShrink: 0,
                   border: `1px solid ${C.border}`,
                 }}>🦟</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>
-                    {level} insect activity
-                  </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>{level} insect activity</div>
                   <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '2px' }}>
                     {toMountainTime(log.recorded_at)} · {log.time_category} · ACI {log.aci_score}
                   </div>
@@ -143,8 +309,8 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* Detections */}
-      <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Bird detections */}
+      <div style={{ marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Recent bird detections</span>
         <span style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Live from Supabase</span>
       </div>
@@ -154,40 +320,15 @@ export default function MapPage() {
       ) : detections.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>No detections yet</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
           {detections.map(d => (
-            <div key={d.id} style={{
-              background: C.card, border: `1px solid ${C.border}`,
-              borderRadius: '20px', padding: '14px 18px',
-              display: 'flex', alignItems: 'center', gap: '14px',
-            }}>
-              <div style={{
-                width: '40px', height: '40px', borderRadius: '50%',
-                background: C.bg, display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: '20px', flexShrink: 0,
-                border: `1px solid ${C.border}`,
-              }}>🐦</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '15px', fontWeight: '700', color: C.text }}>
-                  {d.species_name || d.raw_label || 'Unknown'}
-                </div>
-                <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '2px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <span>{toMountainTime(d.detected_at)}</span>
-                  {d.is_dawn_chorus && (
-                    <span style={{ color: '#7dd3fc' }}>🌅 Dawn chorus</span>
-                  )}
-                </div>
-              </div>
-              <div style={{
-                fontSize: '13px', fontWeight: '700', padding: '4px 12px',
-                borderRadius: '20px',
-                background: d.confidence > 0.5 ? '#0d2818' : '#1a2810',
-                color: d.confidence > 0.5 ? C.accentLight : '#86efac',
-                border: `1px solid ${d.confidence > 0.5 ? C.accent : '#22c55e'}`,
-              }}>
-                {d.confidence ? (d.confidence * 100).toFixed(0) + '%' : '—'}
-              </div>
-            </div>
+            <DetectionCard
+              key={d.id}
+              d={d}
+              wikiData={wikiData}
+              insight={insights[d.id]}
+              onRequestInsight={() => requestInsight(d)}
+            />
           ))}
         </div>
       )}
