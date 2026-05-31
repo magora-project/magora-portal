@@ -1,19 +1,10 @@
 import { Link, useLocation } from 'react-router-dom'
 
-const pulse = `
-  @keyframes brand-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-`
-
 export default function Navbar() {
   const location = useLocation()
 
   return (
-    <>
-      <style>{pulse}</style>
-      <nav style={{
+    <nav style={{
         background: '#0d2818',
         borderBottom: '1px solid #1f5230',
         padding: '0 24px',
@@ -24,10 +15,8 @@ export default function Navbar() {
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              width: '11px', height: '11px', borderRadius: '50%',
-              background: '#5DCAA5', flexShrink: 0,
-              animation: 'brand-pulse 2s infinite',
+            <img src="/icons/icon-512.png.webp" alt="Magora" style={{
+              width: '36px', height: '36px', borderRadius: '8px', flexShrink: 0,
             }} />
             <span style={{
               fontFamily: "'Playfair Display', serif",
@@ -66,7 +55,6 @@ export default function Navbar() {
             )
           })}
         </div>
-      </nav>
-    </>
+    </nav>
   )
 }
