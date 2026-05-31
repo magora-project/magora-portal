@@ -70,10 +70,10 @@ select option { background: #163d22; color: #f0ede8; }
 
 .brand-title {
   font-family: 'Jost', sans-serif;
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 700;
   color: #f0ede8;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   line-height: 1.2;
   white-space: nowrap;
