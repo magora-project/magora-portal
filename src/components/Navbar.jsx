@@ -11,24 +11,14 @@ export default function Navbar() {
 
   return (
     <nav className="navbar">
-      {/* Brand row */}
       <div className="navbar-brand">
         <span className="brand-dot" />
         <div>
-          <div style={{
-            fontFamily: "'Playfair Display', serif",
-            fontSize: '22px', fontWeight: '600',
-            color: '#f0ede8', letterSpacing: '-0.3px', lineHeight: 1.2,
-          }}>
-            Magora Bird Project
-          </div>
-          <div style={{ fontSize: '13px', color: '#7aad8a' }}>
-            Acoustic detection · American West
-          </div>
+          <div className="brand-title">Magora Bird Project</div>
+          <div className="brand-sub">Acoustic detection · American West</div>
         </div>
       </div>
 
-      {/* Tab row */}
       <div className="navbar-links">
         {TABS.map(({ path, icon, label }) => (
           <Link
