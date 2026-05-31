@@ -67,7 +67,7 @@ function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
   const wiki = wikiData[d.species_name] || {}
 
   return (
-    <div style={{
+    <div className="feed-card" style={{
       background: C.card, border: `1px solid ${C.border}`,
       borderRadius: '20px', overflow: 'hidden',
     }}>
@@ -81,18 +81,18 @@ function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
         }}>🐦</div>
       )}
 
-      <div style={{ padding: '20px 22px 24px' }}>
-        <div style={{ fontSize: '24px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: '3px' }}>
+      <div className="feed-card-body" style={{ padding: '20px 22px 24px' }}>
+        <div className="feed-card-name" style={{ fontSize: '24px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: '3px' }}>
           {d.species_name || d.raw_label || 'Unknown'}
         </div>
         {d.raw_label && d.species_name && (
-          <div style={{ fontSize: '14px', color: C.textMuted, fontStyle: 'italic', marginBottom: '14px' }}>
+          <div className="feed-card-sci" style={{ fontSize: '14px', color: C.textMuted, fontStyle: 'italic', marginBottom: '14px' }}>
             {d.raw_label.split('_')[1] || ''}
           </div>
         )}
         {!d.raw_label && <div style={{ marginBottom: '14px' }} />}
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        <div className="feed-card-badges" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
           {conf !== null && (
             <span style={{ background: C.bg, border: `1px solid ${C.accent}`, borderRadius: '20px', padding: '5px 12px', fontSize: '13px', fontWeight: '700', color: C.accentLight }}>
               {conf}% confidence
@@ -114,7 +114,7 @@ function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
         </div>
 
         {wiki.fact && (
-          <div style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.7, borderLeft: `3px solid ${C.accent}`, paddingLeft: '14px', fontStyle: 'italic', marginBottom: '16px' }}>
+          <div className="feed-card-fact" style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.7, borderLeft: `3px solid ${C.accent}`, paddingLeft: '14px', fontStyle: 'italic', marginBottom: '16px' }}>
             {wiki.fact}
           </div>
         )}
@@ -129,7 +129,7 @@ function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
           </div>
         )}
 
-        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: '16px', marginTop: '4px' }}>
+        <div className="feed-card-insight" style={{ borderTop: `1px solid ${C.border}`, paddingTop: '16px', marginTop: '4px' }}>
           {!insight?.text && (
             <button onClick={onRequestInsight} disabled={insight?.loading} style={{
               width: '100%', padding: '13px',

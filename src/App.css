@@ -205,9 +205,32 @@ select option { background: #163d22; color: #f0ede8; }
     margin-bottom: 12px;
   }
 
-  /* Bird photo taller on mobile */
-  .detection-grid img {
-    height: 280px !important;
+  /* Compact feed cards on mobile */
+  .feed-card img {
+    height: 180px !important;
+    object-fit: cover !important;
+  }
+  .feed-card .feed-card-body {
+    padding: 12px 16px 16px !important;
+  }
+  .feed-card .feed-card-name {
+    font-size: 20px !important;
+    margin-bottom: 2px !important;
+  }
+  .feed-card .feed-card-sci {
+    font-size: 12px !important;
+    margin-bottom: 10px !important;
+  }
+  .feed-card .feed-card-badges {
+    margin-bottom: 10px !important;
+  }
+  .feed-card .feed-card-fact {
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+    margin-bottom: 10px !important;
+  }
+  .feed-card .feed-card-insight {
+    padding-top: 10px !important;
   }
 
   /* Map edge-to-edge and taller */
