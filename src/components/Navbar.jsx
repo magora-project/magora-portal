@@ -74,7 +74,7 @@ export default function Navbar() {
         }} />
         <div>
           <div className="brand-title">Magora Bird Project</div>
-          <div className="brand-sub">Acoustic detection · American West</div>
+          <div className="brand-sub">Citizen Science BioAcoustics</div>
         </div>
       </div>
 
