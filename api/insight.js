@@ -1,3 +1,34 @@
+// Derive time-of-day description from UTC timestamp + Mountain Time offset.
+// Never relies on the Pi's stored time_category which can be wrong due to
+// UTC/local mismatch in the astral calculation.
+function localTimeContext(utcString, minutesFromSunrise) {
+  // If we have precise solar timing from the Pi, use it
+  if (minutesFromSunrise != null) {
+    if (minutesFromSunrise < -60)  return 'well before sunrise'
+    if (minutesFromSunrise < -30)  return 'pre-dawn'
+    if (minutesFromSunrise < 0)    return 'just before sunrise'
+    if (minutesFromSunrise < 30)   return 'at sunrise'
+    if (minutesFromSunrise < 120)  return 'early morning, within the dawn chorus window'
+    if (minutesFromSunrise < 240)  return 'mid-morning'
+    if (minutesFromSunrise < 360)  return 'late morning'
+    if (minutesFromSunrise < 480)  return 'midday'
+    if (minutesFromSunrise < 600)  return 'afternoon'
+    if (minutesFromSunrise < 720)  return 'early evening'
+    return 'dusk or night'
+  }
+  // Fallback: use Mountain Time (UTC-6) hour
+  const localHour = new Date(new Date(utcString).getTime() - 6 * 60 * 60 * 1000).getUTCHours()
+  if (localHour >= 21 || localHour < 4) return 'night'
+  if (localHour < 6)  return 'pre-dawn'
+  if (localHour < 8)  return 'early morning'
+  if (localHour < 10) return 'mid-morning'
+  if (localHour < 12) return 'late morning'
+  if (localHour < 14) return 'midday'
+  if (localHour < 17) return 'afternoon'
+  if (localHour < 19) return 'early evening'
+  return 'dusk'
+}
+
 async function dbFetch(supabaseUrl, apiKey, path, asArray = false) {
   try {
     const res = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
@@ -132,7 +163,6 @@ export default async function handler(req, res) {
   const confPct        = Math.round((detection?.confidence ?? fallbackConf ?? 0) * 100)
   const isDawn         = detection?.dawn_chorus_window ?? detection?.is_dawn_chorus ?? fallbackDawn
   const aciScore       = recentWindow?.aci_score ?? detection?.aci_score ?? null
-  const timeCategory   = recentWindow?.time_category ?? null
   const minutesFromSun = detection?.minutes_from_sunrise ?? null
   const season         = detection?.season ?? null
   const phenoWeek      = detection?.phenological_week ?? null
@@ -140,16 +170,8 @@ export default async function handler(req, res) {
   const locationLabel  = habitat?.notes?.split('.')[0] || node?.name || fallbackLocation || 'the American West'
 
   // --- Build prompt ---
-  const timingDesc = (() => {
-    if (minutesFromSun != null) {
-      const rel = minutesFromSun < 0
-        ? `${Math.abs(minutesFromSun)} minutes before sunrise`
-        : `${minutesFromSun} minutes after sunrise`
-      return `${rel}${isDawn ? ', within the dawn chorus window' : ''}`
-    }
-    if (isDawn) return 'during the dawn chorus window'
-    return timeCategory ? `during the ${timeCategory.toLowerCase()} period` : null
-  })()
+  const timingDesc = localTimeContext(detection?.detected_at || new Date().toISOString(), minutesFromSun)
+    + (isDawn ? ' (dawn chorus active)' : '')
 
   const seasonDesc = season && phenoWeek
     ? `${season.replace(/_/g, ' ')} (phenological week ${phenoWeek})`
