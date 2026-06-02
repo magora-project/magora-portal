@@ -4,7 +4,7 @@ const TABS = [
   { path: '/',          src: '/icons/live_feed.svg',  label: 'Live Feed'  },
   { path: '/dashboard', src: '/icons/dashboard.svg',  label: 'Dashboard'  },
   { path: '/register',  src: '/icons/add_node.svg',   label: 'Add Node'   },
-  { path: '/about',     src: '/icons/about.svg',      label: 'About', cover: true, bg: '#e8dfc8' },
+  { path: '/about',     src: '/icons/about.svg',      label: 'About', zoom: 1.5 },
 ]
 
 export default function Navbar() {
@@ -23,20 +23,21 @@ export default function Navbar() {
       </div>
 
       <div className="navbar-links">
-        {TABS.map(({ path, src, label, cover, bg }) => (
+        {TABS.map(({ path, src, label, zoom }) => (
           <Link
             key={path}
             to={path}
             className={location.pathname === path ? 'active' : ''}
-            style={{ padding: 0, background: bg || undefined }}
+            style={{ padding: 0 }}
           >
             <img
               src={src}
               alt={label}
               style={{
                 width: '100%', height: '100%', display: 'block',
-                objectFit: cover ? 'cover' : 'contain',
+                objectFit: 'contain',
                 objectPosition: 'center',
+                ...(zoom ? { transform: `scale(${zoom})` } : {}),
               }}
             />
           </Link>
