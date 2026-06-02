@@ -182,12 +182,13 @@ export default function MapPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          species_name: d.species_name || d.raw_label,
+          detection_id:    d.id,
+          // fallbacks in case Supabase enrichment fails
+          species_name:    d.species_name || d.raw_label,
           scientific_name: d.raw_label?.split('_')[1] || '',
-          confidence: d.confidence,
-          location: nodes[0]?.habitat_type || 'montane scrub, Colorado',
-          is_dawn_chorus: d.is_dawn_chorus,
-          aci_score: d.aci_score || null,
+          confidence:      d.confidence,
+          location:        nodes[0]?.habitat_type || 'montane scrub, Wyoming',
+          is_dawn_chorus:  d.is_dawn_chorus,
         }),
       })
       if (!res.ok) throw new Error()
