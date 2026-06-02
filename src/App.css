@@ -93,36 +93,27 @@ select option { background: #163d22; color: #f0ede8; }
 }
 
 .donate-tab {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 8px;
+  display: block;
   background: #1D9E75;
   border: 1px solid #1D9E75;
   border-radius: 8px;
   text-decoration: none;
   cursor: pointer;
-}
-
-.donate-tab .tab-label {
-  color: #fff;
+  overflow: hidden;
+  height: 72px;
 }
 
 .navbar-links a {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 8px;
+  display: block;
   background: #163d22;
   border: 1px solid #1f5230;
   border-radius: 8px;
   text-decoration: none;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
   cursor: pointer;
   overflow: hidden;
   color: #c8e6d0;
+  height: 72px;
 }
 
 .navbar-links a.active {
