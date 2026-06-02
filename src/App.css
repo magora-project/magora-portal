@@ -100,7 +100,7 @@ select option { background: #163d22; color: #f0ede8; }
   text-decoration: none;
   cursor: pointer;
   overflow: hidden;
-  height: 72px;
+  height: 60px;
 }
 
 .navbar-links a {
@@ -113,7 +113,7 @@ select option { background: #163d22; color: #f0ede8; }
   cursor: pointer;
   overflow: hidden;
   color: #c8e6d0;
-  height: 72px;
+  height: 60px;
 }
 
 .navbar-links a.active {

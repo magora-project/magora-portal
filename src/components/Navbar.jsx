@@ -29,7 +29,7 @@ export default function Navbar() {
             className={location.pathname === path ? 'active' : ''}
             style={{ padding: 0 }}
           >
-            <img src={src} alt={label} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} />
+            <img src={src} alt={label} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
           </Link>
         ))}
         <a
@@ -39,7 +39,7 @@ export default function Navbar() {
           className="donate-tab"
           style={{ padding: 0 }}
         >
-          <img src="/icons/donate.svg" alt="Donate" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} />
+          <img src="/icons/donate.svg" alt="Donate" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
         </a>
       </div>
     </nav>
