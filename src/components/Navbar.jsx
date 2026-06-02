@@ -4,7 +4,7 @@ const TABS = [
   { path: '/',          src: '/icons/live_feed.svg',  label: 'Live Feed'  },
   { path: '/dashboard', src: '/icons/dashboard.svg',  label: 'Dashboard'  },
   { path: '/register',  src: '/icons/add_node.svg',   label: 'Add Node'   },
-  { path: '/about',     src: '/icons/about.svg',      label: 'About'      },
+  { path: '/about',     src: '/icons/about.svg',      label: 'About', blend: true },
 ]
 
 export default function Navbar() {
@@ -23,14 +23,21 @@ export default function Navbar() {
       </div>
 
       <div className="navbar-links">
-        {TABS.map(({ path, src, label }) => (
+        {TABS.map(({ path, src, label, blend }) => (
           <Link
             key={path}
             to={path}
             className={location.pathname === path ? 'active' : ''}
             style={{ padding: 0 }}
           >
-            <img src={src} alt={label} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
+            <img
+              src={src}
+              alt={label}
+              style={{
+                width: '100%', height: '100%', display: 'block', objectFit: 'contain',
+                ...(blend ? { mixBlendMode: 'multiply' } : {}),
+              }}
+            />
           </Link>
         ))}
         <a
