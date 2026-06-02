@@ -3,8 +3,9 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL
-  const apiKey      = process.env.VITE_SUPABASE_ANON_KEY
+  const supabaseUrl  = process.env.VITE_SUPABASE_URL
+  const apiKey       = process.env.VITE_SUPABASE_ANON_KEY
+  const serviceKey   = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   // Fetch all species with missing guild data
   const spRes = await fetch(
@@ -86,8 +87,8 @@ Return only the JSON array, no other text.`
         {
           method: 'PATCH',
           headers: {
-            apikey: apiKey,
-            Authorization: `Bearer ${apiKey}`,
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`,
             'Content-Type': 'application/json',
             Prefer: 'return=minimal',
           },
