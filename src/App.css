@@ -122,6 +122,7 @@ select option { background: #163d22; color: #f0ede8; }
   transition: background 0.15s;
   cursor: pointer;
   overflow: hidden;
+  color: #c8e6d0;
 }
 
 .navbar-links a.active {
