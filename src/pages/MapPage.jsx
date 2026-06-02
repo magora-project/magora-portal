@@ -62,6 +62,35 @@ const C = {
   textMuted: '#7aad8a',
 }
 
+const GUILD = {
+  aerial_insectivore: { label: 'Aerial insectivore', emoji: '🪁' },
+  foliage_gleaner:    { label: 'Foliage gleaner',    emoji: '🌿' },
+  bark_prober:        { label: 'Bark prober',         emoji: '🪵' },
+  ground_forager:     { label: 'Ground forager',      emoji: '🌾' },
+  granivore:          { label: 'Seed eater',          emoji: '🌱' },
+  omnivore:           { label: 'Omnivore',            emoji: '🔄' },
+  raptor:             { label: 'Raptor',              emoji: '🦅' },
+  nectarivore:        { label: 'Nectarivore',         emoji: '🌸' },
+  frugivore:          { label: 'Fruit eater',         emoji: '🍇' },
+  aquatic:            { label: 'Aquatic',             emoji: '💧' },
+}
+
+const SEASON_EMOJI = {
+  winter: '❄️', early_spring: '🌱', breeding: '🐣',
+  post_breeding: '🌿', fall_migration: '🍂', late_fall: '🍁',
+}
+
+function clientSeason() {
+  const doy = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000)
+  const week = Math.min(52, Math.ceil(doy / 7))
+  if (week <= 10) return 'winter'
+  if (week <= 18) return 'early_spring'
+  if (week <= 26) return 'breeding'
+  if (week <= 34) return 'post_breeding'
+  if (week <= 44) return 'fall_migration'
+  return 'late_fall'
+}
+
 function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
   const wiki = wikiData[d.species_name] || {}
@@ -88,7 +117,24 @@ function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
             <span style={{ ...badge, background: C.bg, border: `1px solid ${C.border}`, color: C.textSub }}>{toMountainTime(d.detected_at, false)}</span>
             {count > 1 && <span style={{ ...badge, background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>×{count}</span>}
             {d.is_dawn_chorus && <span style={{ ...badge, background: '#1a3a4a', border: '1px solid #0ea5e9', color: '#7dd3fc' }}>🌅</span>}
+            {d.season && <span style={{ ...badge, background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>{SEASON_EMOJI[d.season]} {d.season.replace(/_/g, ' ')}</span>}
+            {d.minutes_from_sunrise != null && <span style={{ ...badge, background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>☀️ {d.minutes_from_sunrise < 0 ? `${Math.abs(d.minutes_from_sunrise)}m pre-dawn` : `+${d.minutes_from_sunrise}m`}</span>}
           </div>
+          {d.species?.guild && (
+            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginTop: '6px' }}>
+              <span style={{ ...badge, background: '#1a3a28', border: `1px solid ${C.accent}`, color: C.accentLight }}>
+                {GUILD[d.species.guild]?.emoji} {GUILD[d.species.guild]?.label || d.species.guild.replace(/_/g, ' ')}
+              </span>
+              {d.species.migratory_status && (
+                <span style={{ ...badge, background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>
+                  {d.species.migratory_status === 'long_distance' ? '🌍' : d.species.migratory_status === 'resident' ? '🏠' : '↕️'} {d.species.migratory_status.replace(/_/g, ' ')}
+                </span>
+              )}
+              {d.species.sensitivity_flag && (
+                <span style={{ ...badge, background: '#2a1a0a', border: '1px solid #f97316', color: '#fb923c' }}>⚠️ sensitive</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -136,7 +182,9 @@ export default function MapPage() {
   async function fetchData() {
     const { data: nodeData } = await supabase.from('nodes').select('*').eq('is_active', true)
     const { data: detectionData } = await supabase
-      .from('detections').select('*').order('detected_at', { ascending: false }).limit(50)
+      .from('detections')
+      .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
+      .order('detected_at', { ascending: false }).limit(50)
     const { data: aciData } = await supabase
       .from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10)
 
