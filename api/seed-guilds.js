@@ -52,7 +52,7 @@ Return only the JSON array, no other text.`
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     }),
   })
@@ -67,10 +67,12 @@ Return only the JSON array, no other text.`
 
   let classifications
   try {
-    const jsonStr = raw.startsWith('[') ? raw : raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1)
+    // Strip markdown code fences if present
+    const stripped = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim()
+    const jsonStr = stripped.startsWith('[') ? stripped : stripped.slice(stripped.indexOf('['), stripped.lastIndexOf(']') + 1)
     classifications = JSON.parse(jsonStr)
   } catch (e) {
-    return res.status(500).json({ error: 'Failed to parse Claude response', raw })
+    return res.status(500).json({ error: 'Failed to parse Claude response', raw: raw.slice(0, 500) })
   }
 
   // Update each species in Supabase
