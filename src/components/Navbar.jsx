@@ -4,6 +4,7 @@ const TABS = [
   { path: '/',          src: '/icons/live_feed.svg',  label: 'Live Feed'  },
   { path: '/dashboard', src: '/icons/dashboard.svg',  label: 'Dashboard'  },
   { path: '/register',  src: '/icons/add_node.svg',   label: 'Add Node'   },
+  { path: '/about',     src: '/icons/about.svg',      label: 'About'      },
 ]
 
 export default function Navbar() {

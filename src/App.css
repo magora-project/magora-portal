@@ -87,7 +87,7 @@ select option { background: #163d22; color: #f0ede8; }
 
 .navbar-links {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
   padding-bottom: 14px;
 }
