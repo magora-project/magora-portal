@@ -108,12 +108,26 @@ EOF
 
 chmod 600 /home/magora/secrets.env
 
+# Enable I2S microphone
+sudo sh -c 'echo "\\ndtparam=i2s=on\\ndtoverlay=adau7002-simple" >> /boot/firmware/config.txt'
+
+# Create magora user and directories
+sudo useradd -r -s /bin/false magora 2>/dev/null || true
+sudo mkdir -p /home/magora
+sudo usermod -aG audio magora
+sudo chown -R magora:magora /home/magora
+
 # Download firmware
-wget -q -O /home/magora/detect.py https://raw.githubusercontent.com/magora-project/magora-acoustic-biodiversity/main/firmware/detect.py
+sudo wget -q -O /home/magora/detect.py https://raw.githubusercontent.com/magora-project/magora-acoustic-biodiversity/main/firmware/detect.py
 sudo wget -q -O /etc/systemd/system/birdnet.service https://raw.githubusercontent.com/magora-project/magora-acoustic-biodiversity/main/firmware/birdnet.service
 sudo systemctl daemon-reload
 
-pip install birdnetlib astral numpy requests --break-system-packages
+# Install Python environment
+sudo python3 -m venv /home/magora/birdnet-env
+sudo /home/magora/birdnet-env/bin/pip install -q birdnetlib astral numpy requests librosa ai-edge-litert
+sudo sh -c 'mkdir -p /home/magora/birdnet-env/lib/python3.13/site-packages/tflite_runtime && echo "" > /home/magora/birdnet-env/lib/python3.13/site-packages/tflite_runtime/__init__.py && echo "from ai_edge_litert.interpreter import Interpreter, load_delegate" > /home/magora/birdnet-env/lib/python3.13/site-packages/tflite_runtime/interpreter.py'
+sudo chown -R magora:magora /home/magora/birdnet-env
+sudo chown magora:magora /home/magora/detect.py
 
 sudo systemctl enable birdnet.service
 sudo systemctl start birdnet.service
