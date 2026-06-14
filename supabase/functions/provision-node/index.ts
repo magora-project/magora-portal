@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
     location: `POINT(${lon} ${lat})`,
     elevation_m: elevation_m ?? null,
     habitat_type,
-    is_active: false,
+    is_active: true,
   })
 
   if (nodeError) {
