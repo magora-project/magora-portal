@@ -87,18 +87,22 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
     setCallState('loading')
     const name = d.species_name || d.raw_label
     try {
-      const res = await fetch(
-        `https://api.inaturalist.org/v1/observations?taxon_name=${encodeURIComponent(name)}&sounds=true&per_page=10&order=votes&order_by=votes`
-      )
+      const qs = `taxon_name=${encodeURIComponent(name)}&has[]=sounds&quality_grade=research&per_page=15&order_by=votes&order=desc`
+      const res = await fetch(`https://api.inaturalist.org/v1/observations?${qs}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       let url = null
       for (const obs of (data.results || [])) {
-        const s = obs.sounds?.[0]
-        url = s?.file_url || s?.url
+        for (const s of (obs.sounds || [])) {
+          const type = s.file_content_type || ''
+          if (type.startsWith('audio/') && (s.file_url || s.url)) {
+            url = s.file_url || s.url
+            break
+          }
+        }
         if (url) break
       }
-      if (!url) throw new Error('no sound found')
+      if (!url) throw new Error('no audio sound found')
       setSoundUrl(url)
       setCallState('ready')
     } catch (e) {
