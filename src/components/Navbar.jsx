@@ -1,10 +1,10 @@
 import { Link, useLocation } from 'react-router-dom'
 
 const TABS = [
-  { path: '/',          src: '/icons/live_feed.svg',  label: 'Live Feed'  },
-  { path: '/dashboard', src: '/icons/dashboard.svg',  label: 'Dashboard'  },
-  { path: '/register',  src: '/icons/add_node.svg',   label: 'Add Node'   },
-  { path: '/about',     src: '/icons/about.svg',      label: 'About', zoom: 1.5 },
+  { path: '/',          src: '/icons/live_feed.svg',  label: 'Network'             },
+  { path: '/dashboard', src: '/icons/dashboard.svg',  label: 'Ecological Patterns' },
+  { path: '/register',  src: '/icons/add_node.svg',   label: 'Add a Node'          },
+  { path: '/about',     src: '/icons/about.svg',      label: 'About the Project', zoom: 1.5 },
 ]
 
 export default function Navbar() {

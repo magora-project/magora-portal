@@ -39,10 +39,10 @@ const SEASON_EMOJI = {
 
 const BADGE_EXPLAIN = {
   confidence: v => v >= 75
-    ? `${v}% confidence — BirdNET is highly confident this identification is correct.`
+    ? `${v}% detection confidence — BirdNET is highly confident this identification is correct.`
     : v >= 50
-    ? `${v}% confidence — likely correct, but there's some uncertainty in the identification.`
-    : `${v}% confidence — possible detection, but treat with caution. Lower confidence can mean background noise or a similar-sounding species.`,
+    ? `${v}% detection confidence — likely correct, but there's some uncertainty in the identification.`
+    : `${v}% detection confidence — possible detection, but treat with caution. Lower confidence can mean background noise or a similar-sounding species.`,
   count:     v => `Detected ${v} times in the most recent 50 recordings at this node. High repeat count suggests this species is actively using this habitat.`,
   dawn:      () => 'Detected during the acoustic dawn chorus — the peak singing window just before and after sunrise. This is when birds are most vocally active, often defending territory or attracting mates.',
   season:    v => ({
@@ -100,13 +100,20 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
     }
     setCallState('loading')
     const sci = d.raw_label?.includes('_') ? d.raw_label.split('_')[1] : d.species_name
+    const name = d.species_name || sci
     try {
-      const res = await fetch(
-        `https://xeno-canto.org/api/2/recordings?query=${encodeURIComponent(sci)}+type:song+q:A`
-      )
-      const json = await res.json()
-      // Fall back to any quality if no A-rated recording found
-      const rec = json.recordings?.[0] || null
+      const base = 'https://xeno-canto.org/api/2/recordings?query='
+      let rec = null
+      for (const q of [
+        `${encodeURIComponent(sci)}+type:song+q:A`,
+        `${encodeURIComponent(sci)}+type:song`,
+        `${encodeURIComponent(sci)}`,
+        `${encodeURIComponent(name)}`,
+      ]) {
+        const json = await fetch(base + q).then(r => r.json())
+        rec = json.recordings?.[0] || null
+        if (rec?.file) break
+      }
       if (!rec?.file) throw new Error('no recording')
       const url = rec.file.startsWith('//') ? `https:${rec.file}` : rec.file
       const audio = new Audio(url)
@@ -242,7 +249,7 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
             cursor: insight?.loading ? 'default' : 'pointer',
             fontFamily: "'DM Sans', sans-serif",
           }}>
-            {insight?.loading ? '🔍 Generating...' : '🌿 Get Ecological Insight'}
+            {insight?.loading ? '🔍 Generating...' : 'What does this mean?'}
           </button>
         ) : (
           <div style={{ flex: 1, fontSize: '13px', color: C.textSub, lineHeight: 1.5, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '10px', alignSelf: 'center' }}>

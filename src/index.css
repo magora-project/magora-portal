@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&display=swap');
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -7,4 +9,43 @@
 
 body {
   margin: 0;
+}
+
+/* Full-bleed utility — breaks out of main-content padding */
+.section-full-bleed {
+  margin-left: -20px;
+  margin-right: -20px;
+}
+
+@media (max-width: 640px) {
+  .section-full-bleed {
+    margin-left: -16px;
+    margin-right: -16px;
+  }
+}
+
+/* Heartbeat pulsing dot */
+@keyframes heartbeat-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.7); }
+}
+
+.heartbeat-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #22c55e;
+  border-radius: 50%;
+  animation: heartbeat-pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* Node pulse ring (SVG CircleMarker) */
+@keyframes node-ring {
+  0%, 100% { stroke-width: 2; stroke-opacity: 1; }
+  50%       { stroke-width: 9; stroke-opacity: 0.25; }
+}
+
+.node-pulse {
+  animation: node-ring 2s ease-in-out infinite;
 }

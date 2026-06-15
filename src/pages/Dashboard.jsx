@@ -113,7 +113,7 @@ export default function Dashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', textAlign: 'center' }}>
           {[
             { label: 'Season', value: SEASON_LABEL[season.key], sub: `Week ${season.week}` },
-            { label: 'Species detected', value: totalSpecies, sub: 'total unique' },
+            { label: 'Species recordings', value: totalSpecies, sub: 'total unique' },
             { label: 'Sensitive species', value: sensitiveCount, sub: 'conservation concern' },
             { label: 'Climate sensitive', value: climateCount, sub: 'unique species' },
           ].map(({ label, value, sub }) => (
@@ -130,7 +130,7 @@ export default function Dashboard() {
 
         {/* My nodes */}
         <div style={card}>
-          <div style={cardTitle}>My nodes</div>
+          <div style={cardTitle}>Active listening posts</div>
           {nodes.length === 0 ? (
             <div style={{ fontSize: '13px', color: C.textMuted }}>No nodes registered yet</div>
           ) : nodes.map(node => (
@@ -211,7 +211,7 @@ export default function Dashboard() {
 
         {/* Top species */}
         <div style={card}>
-          <div style={cardTitle}>Top species</div>
+          <div style={cardTitle}>Most recorded species</div>
           {topSpecies.length === 0 ? (
             <div style={{ fontSize: '13px', color: C.textMuted }}>No detections yet</div>
           ) : topSpecies.map(([name, count]) => (

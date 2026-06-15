@@ -133,7 +133,7 @@ export default function NodePage() {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: '60px', color: C.textMuted }}>
-        Loading node...
+        Loading listening post...
       </div>
     )
   }
@@ -141,9 +141,9 @@ export default function NodePage() {
   if (!node) {
     return (
       <div style={{ textAlign: 'center', padding: '60px', color: C.textMuted }}>
-        Node not found.{' '}
+        Listening post not found.{' '}
         <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', color: C.accentLight, cursor: 'pointer', fontSize: '14px' }}>
-          Back to map
+          Back to network
         </button>
       </div>
     )
@@ -164,7 +164,7 @@ export default function NodePage() {
           padding: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '6px',
         }}
       >
-        ← Back to map
+        ← Back to network
       </button>
 
       {/* Header */}
@@ -177,7 +177,7 @@ export default function NodePage() {
             border: `1px solid ${node.is_active ? C.accent : C.border}`,
             color: node.is_active ? C.accentLight : C.textMuted,
           }}>
-            {node.is_active ? '🟢 Active' : '⚫ Inactive'}
+            {node.is_active ? '🟢 Recording' : '⚫ Offline'}
           </div>
         </div>
         <div style={{ fontSize: '13px', color: C.textMuted }}>
@@ -191,7 +191,7 @@ export default function NodePage() {
           { label: 'Habitat', value: `${HABITAT_EMOJI[node.habitat_type] || '📍'} ${node.habitat_type?.replace(/-/g, ' ')}` },
           { label: 'Elevation', value: node.elevation_m ? `⛰️ ${node.elevation_m} m` : '—' },
           { label: 'Coordinates', value: coords ? `${coords.lat.toFixed(4)}°, ${coords.lon.toFixed(4)}°` : '—' },
-          { label: 'Live ACI', value: latestAci != null ? `${aciLevel} · ${latestAci}` : '—' },
+          { label: 'Soundscape health', value: latestAci != null ? `${aciLevel} · ${latestAci}` : '—' },
         ].map(({ label, value }) => (
           <div key={label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px' }}>
             <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{label}</div>
@@ -204,7 +204,7 @@ export default function NodePage() {
       {aciLogs.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>Acoustic complexity — last {aciLogs.length} readings</span>
+            <span style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>Soundscape health — last {aciLogs.length} readings</span>
             <span style={{ fontSize: '11px', color: C.textMuted }}>Hover bars for detail</span>
           </div>
           <AciSparkline logs={aciLogs} />
@@ -219,12 +219,12 @@ export default function NodePage() {
       {/* Recent detections */}
       <div style={{ marginBottom: '28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Birds detected here</span>
+          <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Ecological record</span>
           <span style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Last 30 · refreshes 30s</span>
         </div>
         {dedupedDetections.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted, background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px' }}>
-            No detections yet for this node
+            Nothing recorded at this listening post
           </div>
         ) : (
           <div style={{ borderRadius: '16px', overflow: 'hidden', border: `1px solid ${C.border}` }}>
@@ -242,7 +242,7 @@ export default function NodePage() {
       {/* Acoustic log */}
       <div style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Acoustic log</span>
+          <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Soundscape log</span>
           <span style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This node only</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
