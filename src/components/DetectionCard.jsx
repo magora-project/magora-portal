@@ -81,31 +81,30 @@ const BADGE_EXPLAIN = {
 export default function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
   const [activeBadge, setActiveBadge] = useState(null)
   const [callState, setCallState] = useState(null) // null | 'loading' | 'ready' | 'error'
-  const [xcId, setXcId] = useState(null)
+  const [soundUrl, setSoundUrl] = useState(null)
 
   async function loadCall() {
     setCallState('loading')
-    const sci = d.raw_label?.includes('_') ? d.raw_label.split('_')[1] : null
-    const name = d.species_name || sci || d.raw_label
-
-    for (const q of [name, sci].filter(Boolean)) {
-      try {
-        const res = await fetch(`/api/xeno-canto?query=${encodeURIComponent(q)}`)
-        if (!res.ok) { console.warn('XC not ok:', res.status, q); continue }
-        const data = await res.json()
-        const id = data.recordings?.[0]?.id
-        if (id) {
-          setXcId(id)
-          setCallState('ready')
-          return
-        }
-        console.warn('XC: 0 recordings for', q)
-      } catch (e) {
-        console.warn('XC error for', q, e)
+    const name = d.species_name || d.raw_label
+    try {
+      const res = await fetch(
+        `https://api.inaturalist.org/v1/observations?taxon_name=${encodeURIComponent(name)}&sounds=true&per_page=10&order=votes&order_by=votes`
+      )
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      let url = null
+      for (const obs of (data.results || [])) {
+        const s = obs.sounds?.[0]
+        url = s?.file_url || s?.url
+        if (url) break
       }
+      if (!url) throw new Error('no sound found')
+      setSoundUrl(url)
+      setCallState('ready')
+    } catch (e) {
+      console.error('iNat audio error:', e)
+      setCallState('error')
     }
-    console.error('XC: no recording found for', name)
-    setCallState('error')
   }
 
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
@@ -202,18 +201,13 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
         </div>
       )}
 
-      {/* Library recording embed */}
-      {callState === 'ready' && xcId && (
-        <div style={{ borderTop: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 14px 4px' }}>
-            Library recording · Xeno-canto
+      {/* Library recording player */}
+      {callState === 'ready' && soundUrl && (
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: '10px 14px 6px' }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+            Library recording · iNaturalist
           </div>
-          <iframe
-            src={`https://www.xeno-canto.org/${xcId}/embed`}
-            style={{ width: '100%', height: '120px', border: 'none', display: 'block' }}
-            allow="autoplay"
-            title="Bird call recording"
-          />
+          <audio controls src={soundUrl} style={{ width: '100%', height: '36px' }} />
         </div>
       )}
 
