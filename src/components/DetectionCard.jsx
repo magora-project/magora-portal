@@ -86,29 +86,50 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
   async function loadCall() {
     setCallState('loading')
     const name = d.species_name || d.raw_label
+    let url = null
+
+    // 1. Try Macaulay Library (Cornell / Merlin source)
     try {
-      const qs = `taxon_name=${encodeURIComponent(name)}&has[]=sounds&quality_grade=research&per_page=15&order_by=votes&order=desc`
-      const res = await fetch(`https://api.inaturalist.org/v1/observations?${qs}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      let url = null
-      for (const obs of (data.results || [])) {
-        for (const s of (obs.sounds || [])) {
-          const type = s.file_content_type || ''
-          if (type.startsWith('audio/') && (s.file_url || s.url)) {
-            url = s.file_url || s.url
-            break
+      const res = await fetch(`/api/xeno-canto?query=${encodeURIComponent(name)}`)
+      if (res.ok) {
+        const data = await res.json()
+        const asset = data.results?.content?.find(a => a.mediaType === 'audio' || a.previewUrl)
+        if (asset) {
+          const id = asset.assetId || asset.catalogId
+          url = id
+            ? `https://cdn.download.ams.birds.cornell.edu/api/v1/asset/${id}/audio`
+            : asset.previewUrl || asset.downloadUrl
+        }
+      }
+    } catch (e) {
+      console.warn('Macaulay error:', e)
+    }
+
+    // 2. Fall back to iNaturalist research-grade audio
+    if (!url) {
+      try {
+        const qs = `taxon_name=${encodeURIComponent(name)}&has[]=sounds&quality_grade=research&per_page=15&order_by=votes&order=desc`
+        const res = await fetch(`https://api.inaturalist.org/v1/observations?${qs}`)
+        if (res.ok) {
+          const data = await res.json()
+          for (const obs of (data.results || [])) {
+            for (const s of (obs.sounds || [])) {
+              if ((s.file_content_type || '').startsWith('audio/') && (s.file_url || s.url)) {
+                url = s.file_url || s.url
+                break
+              }
+            }
+            if (url) break
           }
         }
-        if (url) break
+      } catch (e) {
+        console.warn('iNat error:', e)
       }
-      if (!url) throw new Error('no audio sound found')
-      setSoundUrl(url)
-      setCallState('ready')
-    } catch (e) {
-      console.error('iNat audio error:', e)
-      setCallState('error')
     }
+
+    if (!url) { setCallState('error'); return }
+    setSoundUrl(url)
+    setCallState('ready')
   }
 
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
@@ -209,7 +230,7 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
       {callState === 'ready' && soundUrl && (
         <div style={{ borderTop: `1px solid ${C.border}`, padding: '10px 14px 6px' }}>
           <div style={{ fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-            Library recording · iNaturalist
+            Library recording · Macaulay Library / Cornell Lab
           </div>
           <audio controls src={soundUrl} style={{ width: '100%', height: '36px' }} />
         </div>
