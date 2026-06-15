@@ -99,29 +99,46 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
       return
     }
     setCallState('loading')
-    const sci = d.raw_label?.includes('_') ? d.raw_label.split('_')[1] : d.species_name
-    const name = d.species_name || sci
-    try {
-      const base = 'https://xeno-canto.org/api/2/recordings?query='
-      let rec = null
-      for (const q of [
-        `${encodeURIComponent(sci)}+type:song+q:A`,
-        `${encodeURIComponent(sci)}+type:song`,
-        `${encodeURIComponent(sci)}`,
-        `${encodeURIComponent(name)}`,
-      ]) {
-        const json = await fetch(base + q).then(r => r.json())
-        rec = json.recordings?.[0] || null
-        if (rec?.file) break
+
+    // Create the Audio element now, while the user gesture is still active.
+    // Setting src later still keeps the gesture context for play().
+    const audio = new Audio()
+    audioRef.current = audio
+    audio.onended = () => setCallState('paused')
+
+    const sci = d.raw_label?.includes('_') ? d.raw_label.split('_')[1] : null
+    const name = d.species_name || sci || d.raw_label
+
+    let fileUrl = null
+    for (const q of [name, sci].filter(Boolean)) {
+      try {
+        const res = await fetch(`/api/xeno-canto?query=${encodeURIComponent(q)}`)
+        if (!res.ok) { console.warn('XC response not ok:', res.status, q); continue }
+        const data = await res.json()
+        const rec = data.recordings?.find(r => r.file)
+        if (rec?.file) {
+          fileUrl = rec.file.startsWith('//') ? `https:${rec.file}` : rec.file
+          break
+        } else {
+          console.warn('XC: no recordings for query', q, data)
+        }
+      } catch (e) {
+        console.warn('XC fetch error for query', q, e)
       }
-      if (!rec?.file) throw new Error('no recording')
-      const url = rec.file.startsWith('//') ? `https:${rec.file}` : rec.file
-      const audio = new Audio(url)
-      audioRef.current = audio
-      audio.onended = () => setCallState('paused')
+    }
+
+    if (!fileUrl) {
+      console.error('XC: no playable file found for', name, sci)
+      setCallState('error')
+      return
+    }
+
+    try {
+      audio.src = fileUrl
       await audio.play()
       setCallState('playing')
-    } catch {
+    } catch (e) {
+      console.error('audio.play() failed:', e)
       setCallState('error')
     }
   }
