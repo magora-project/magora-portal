@@ -224,7 +224,7 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
       {callState === 'ready' && soundUrl && (
         <div style={{ borderTop: `1px solid ${C.border}`, padding: '10px 14px 6px' }}>
           <div style={{ fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-            Library recording · Macaulay Library / Cornell Lab
+            Library recording · Xeno-canto / GBIF
           </div>
           <audio controls src={soundUrl} style={{ width: '100%', height: '36px' }} />
         </div>
