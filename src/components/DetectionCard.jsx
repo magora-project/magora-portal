@@ -86,48 +86,42 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
   async function loadCall() {
     setCallState('loading')
     const name = d.species_name || d.raw_label
+    const sci = d.raw_label?.includes('_') ? d.raw_label.split('_')[1] : null
     let url = null
 
-    // 1. Try Macaulay Library (Cornell / Merlin source)
-    try {
-      const res = await fetch(`/api/xeno-canto?query=${encodeURIComponent(name)}`)
-      if (res.ok) {
-        const data = await res.json()
-        const asset = data.results?.content?.find(a => a.mediaType === 'audio' || a.previewUrl)
-        if (asset) {
-          const id = asset.assetId || asset.catalogId
-          url = id
-            ? `https://cdn.download.ams.birds.cornell.edu/api/v1/asset/${id}/audio`
-            : asset.previewUrl || asset.downloadUrl
-        }
-      }
-    } catch (e) {
-      console.warn('Macaulay error:', e)
-    }
+    // GBIF aggregates audio from Xeno-canto + others, supports CORS, no proxy needed
+    const queries = [
+      sci && `scientificName=${encodeURIComponent(sci)}`,
+      `q=${encodeURIComponent(name)}`,
+    ].filter(Boolean)
 
-    // 2. Fall back to iNaturalist research-grade audio
-    if (!url) {
+    for (const q of queries) {
       try {
-        const qs = `taxon_name=${encodeURIComponent(name)}&has[]=sounds&quality_grade=research&per_page=15&order_by=votes&order=desc`
-        const res = await fetch(`https://api.inaturalist.org/v1/observations?${qs}`)
-        if (res.ok) {
-          const data = await res.json()
-          for (const obs of (data.results || [])) {
-            for (const s of (obs.sounds || [])) {
-              if ((s.file_content_type || '').startsWith('audio/') && (s.file_url || s.url)) {
-                url = s.file_url || s.url
-                break
-              }
+        const res = await fetch(
+          `https://api.gbif.org/v1/occurrence/search?mediaType=Sound&${q}&limit=20`
+        )
+        if (!res.ok) continue
+        const data = await res.json()
+        for (const occ of (data.results || [])) {
+          for (const m of (occ.media || [])) {
+            if (m.type === 'Sound' && m.identifier) {
+              const id = m.identifier.startsWith('//')
+                ? `https:${m.identifier}`
+                : m.identifier
+              url = id
+              break
             }
-            if (url) break
           }
+          if (url) break
         }
+        if (url) break
       } catch (e) {
-        console.warn('iNat error:', e)
+        console.warn('GBIF error:', q, e)
       }
     }
 
     if (!url) { setCallState('error'); return }
+    console.log('Playing audio URL:', url)
     setSoundUrl(url)
     setCallState('ready')
   }
