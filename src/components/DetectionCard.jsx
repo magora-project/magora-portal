@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 
 export function toMountainTime(utcString, showSeconds = true) {
   const d = new Date(new Date(utcString).getTime() - 6 * 60 * 60 * 1000)
@@ -80,67 +80,32 @@ const BADGE_EXPLAIN = {
 
 export default function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
   const [activeBadge, setActiveBadge] = useState(null)
-  const [callState, setCallState] = useState(null) // null | 'loading' | 'playing' | 'paused' | 'error'
-  const audioRef = useRef(null)
+  const [callState, setCallState] = useState(null) // null | 'loading' | 'ready' | 'error'
+  const [xcId, setXcId] = useState(null)
 
-  useEffect(() => {
-    return () => { audioRef.current?.pause() }
-  }, [])
-
-  async function toggleCall() {
-    if (callState === 'playing') {
-      audioRef.current?.pause()
-      setCallState('paused')
-      return
-    }
-    if (callState === 'paused' && audioRef.current) {
-      audioRef.current.play()
-      setCallState('playing')
-      return
-    }
+  async function loadCall() {
     setCallState('loading')
-
-    // Create the Audio element now, while the user gesture is still active.
-    // Setting src later still keeps the gesture context for play().
-    const audio = new Audio()
-    audioRef.current = audio
-    audio.onended = () => setCallState('paused')
-
     const sci = d.raw_label?.includes('_') ? d.raw_label.split('_')[1] : null
     const name = d.species_name || sci || d.raw_label
 
-    let fileUrl = null
     for (const q of [name, sci].filter(Boolean)) {
       try {
         const res = await fetch(`/api/xeno-canto?query=${encodeURIComponent(q)}`)
-        if (!res.ok) { console.warn('XC response not ok:', res.status, q); continue }
+        if (!res.ok) { console.warn('XC not ok:', res.status, q); continue }
         const data = await res.json()
-        const rec = data.recordings?.find(r => r.file)
-        if (rec?.file) {
-          fileUrl = rec.file.startsWith('//') ? `https:${rec.file}` : rec.file
-          break
-        } else {
-          console.warn('XC: no recordings for query', q, data)
+        const id = data.recordings?.[0]?.id
+        if (id) {
+          setXcId(id)
+          setCallState('ready')
+          return
         }
+        console.warn('XC: 0 recordings for', q)
       } catch (e) {
-        console.warn('XC fetch error for query', q, e)
+        console.warn('XC error for', q, e)
       }
     }
-
-    if (!fileUrl) {
-      console.error('XC: no playable file found for', name, sci)
-      setCallState('error')
-      return
-    }
-
-    try {
-      audio.src = fileUrl
-      await audio.play()
-      setCallState('playing')
-    } catch (e) {
-      console.error('audio.play() failed:', e)
-      setCallState('error')
-    }
+    console.error('XC: no recording found for', name)
+    setCallState('error')
   }
 
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
@@ -167,8 +132,6 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
   }
 
   const callLabel = callState === 'loading' ? 'Loading...'
-    : callState === 'playing' ? '⏸ Pause'
-    : callState === 'paused'  ? '▶ Resume'
     : callState === 'error'   ? 'No recording'
     : '🔊 Listen'
 
@@ -239,22 +202,39 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
         </div>
       )}
 
+      {/* Library recording embed */}
+      {callState === 'ready' && xcId && (
+        <div style={{ borderTop: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '8px 14px 4px' }}>
+            Library recording · Xeno-canto
+          </div>
+          <iframe
+            src={`https://www.xeno-canto.org/${xcId}/embed`}
+            style={{ width: '100%', height: '120px', border: 'none', display: 'block' }}
+            allow="autoplay"
+            title="Bird call recording"
+          />
+        </div>
+      )}
+
       {/* Listen + Insight */}
       <div style={{ padding: '10px 14px 14px', display: 'flex', gap: '8px' }}>
-        <button
-          onClick={toggleCall}
-          disabled={callState === 'loading' || callState === 'error'}
-          style={{
-            flex: '0 0 auto', padding: '10px 14px',
-            background: callState === 'playing' ? '#1a3a4a' : callState === 'error' ? '#2a1a0a' : C.border,
-            border: callState === 'playing' ? '1px solid #0ea5e9' : callState === 'error' ? '1px solid #f97316' : `1px solid ${C.border}`,
-            borderRadius: '10px', color: callState === 'playing' ? '#7dd3fc' : callState === 'error' ? '#fb923c' : C.textMuted,
-            fontSize: '13px', fontWeight: '700', cursor: callState === 'loading' || callState === 'error' ? 'default' : 'pointer',
-            fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
-          }}
-        >
-          {callLabel}
-        </button>
+        {callState !== 'ready' && (
+          <button
+            onClick={callState !== 'loading' && callState !== 'error' ? loadCall : undefined}
+            disabled={callState === 'loading' || callState === 'error'}
+            style={{
+              flex: '0 0 auto', padding: '10px 14px',
+              background: callState === 'error' ? '#2a1a0a' : C.border,
+              border: callState === 'error' ? '1px solid #f97316' : `1px solid ${C.border}`,
+              borderRadius: '10px', color: callState === 'error' ? '#fb923c' : C.textMuted,
+              fontSize: '13px', fontWeight: '700', cursor: callState === 'loading' || callState === 'error' ? 'default' : 'pointer',
+              fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+            }}
+          >
+            {callLabel}
+          </button>
+        )}
 
         {!insight?.text ? (
           <button onClick={onRequestInsight} disabled={insight?.loading} style={{
