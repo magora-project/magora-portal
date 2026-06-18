@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import JSZip from 'jszip'
 import { supabase } from '../lib/supabase'
 
 const HARDWARE_OPTIONS = [
@@ -33,8 +32,9 @@ export default function RegisterNode() {
     lat: '', lon: '', elevation: '', habitat: 'montane-scrub',
   })
   const [sshPassword] = useState(() => generatePassword())
-  const [showPassword, setShowPassword] = useState(false)
-  const [downloaded, setDownloaded] = useState(false)
+  const [showWifiPassword, setShowWifiPassword] = useState(false)
+  const [showSshPassword, setShowSshPassword] = useState(false)
+  const [scriptDownloaded, setScriptDownloaded] = useState(false)
   const [nodeId, setNodeId] = useState(null)
   const [nodeEmail, setNodeEmail] = useState(null)
   const [nodePassword, setNodePassword] = useState(null)
@@ -170,56 +170,15 @@ echo "=== Setup complete! ${form.nodeName} is now active. ==="
 `
   }
 
-  function generateUserData() {
-    return `#cloud-config
-hostname: ${form.nodeName}
-manage_etc_hosts: true
-timezone: America/Denver
-users:
-- name: magora
-  groups: users,adm,dialout,audio,netdev,video,plugdev,cdrom,games,input,gpio,spi,i2c,render,sudo
-  shell: /bin/bash
-  lock_passwd: false
-chpasswd:
-  list: |
-    magora:${sshPassword}
-  expire: false
-enable_ssh: true
-ssh_pwauth: true
-runcmd:
-  - systemctl enable ssh
-  - systemctl start ssh
-  - bash /boot/firmware/magora-setup.sh
-`
-  }
-
-  function generateNetworkConfig() {
-    return `network:
-  version: 2
-  wifis:
-    wlan0:
-      dhcp4: true
-      regulatory-domain: "US"
-      access-points:
-        "${form.wifi_ssid}":
-          password: "${form.wifi_password}"
-      optional: true
-`
-  }
-
-  async function downloadBundle() {
-    const zip = new JSZip()
-    zip.file('user-data', generateUserData())
-    zip.file('network-config', generateNetworkConfig())
-    zip.file('magora-setup.sh', generateSetupScript())
-    const blob = await zip.generateAsync({ type: 'blob' })
+  function downloadScript() {
+    const blob = new Blob([generateSetupScript()], { type: 'application/octet-stream' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${form.nodeName}-setup.zip`
+    a.download = 'magora-setup.sh'
     a.click()
     URL.revokeObjectURL(url)
-    setDownloaded(true)
+    setScriptDownloaded(true)
   }
 
   const card = {
@@ -243,7 +202,25 @@ runcmd:
     fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginTop: '4px',
   }
 
-  const steps = ['Hardware', 'Location', 'Flash', 'Files', 'Live!']
+  const steps = ['Hardware', 'Location', 'Flash', 'Setup', 'Live!']
+
+  function CredentialRow({ label: l, value, show, onToggle }) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${C.border}` }}>
+        <span style={{ fontSize: '12px', color: C.textMuted, fontWeight: '600' }}>{l}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '13px', fontWeight: '700', color: C.text, fontFamily: 'monospace' }}>
+            {onToggle ? (show ? value : '••••••••••••') : value}
+          </span>
+          {onToggle && (
+            <button onClick={onToggle} style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: '11px', padding: 0 }}>
+              {show ? 'hide' : 'show'}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{ maxWidth: '480px', margin: '0 auto' }}>
@@ -266,10 +243,7 @@ runcmd:
               }}>
                 {done ? '✓' : i + 1}
               </div>
-              <div style={{
-                fontSize: '11px', fontWeight: '700', textTransform: 'uppercase',
-                letterSpacing: '0.06em', color: active ? C.accentLight : '#4a7a58',
-              }}>{s}</div>
+              <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: active ? C.accentLight : '#4a7a58' }}>{s}</div>
             </div>
           )
         })}
@@ -339,48 +313,38 @@ runcmd:
         </div>
       )}
 
-      {/* Step 3 — Flash guide (simplified) */}
+      {/* Step 3 — Flash with Pi Imager (full customisation) */}
       {step === 3 && (
         <div style={card}>
           <div style={{ fontSize: '18px', fontWeight: '700', color: C.text, marginBottom: '4px' }}>Flash your SD card</div>
-          <div style={{ fontSize: '13px', color: C.textMuted, marginBottom: '20px' }}>
-            Just flash the OS — no customisation needed. Your setup files handle everything in the next step.
+          <div style={{ fontSize: '13px', color: C.textMuted, marginBottom: '16px' }}>
+            Use the exact settings below in Raspberry Pi Imager — these are pre-filled for your node.
+          </div>
+
+          {/* Pre-filled credentials box */}
+          <div style={{ background: '#0f2e18', border: `1px solid ${C.accent}`, borderRadius: '12px', padding: '14px', marginBottom: '20px' }}>
+            <div style={{ fontSize: '11px', fontWeight: '700', color: C.accentLight, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
+              Enter these exact values in Pi Imager
+            </div>
+            <CredentialRow label="Hostname" value={form.nodeName} />
+            <CredentialRow label="Username" value="magora" />
+            <CredentialRow label="Password" value={sshPassword} show={showSshPassword} onToggle={() => setShowSshPassword(s => !s)} />
+            <CredentialRow label="WiFi SSID" value={form.wifi_ssid} />
+            <CredentialRow label="WiFi Password" value={form.wifi_password} show={showWifiPassword} onToggle={() => setShowWifiPassword(s => !s)} />
+            <div style={{ marginTop: '8px', fontSize: '11px', color: C.textMuted }}>Save this password — you'll need it to SSH in after setup.</div>
           </div>
 
           {[
-            {
-              n: '1',
-              title: 'Download Raspberry Pi Imager',
-              body: 'Get it free at raspberrypi.com/software and install it.',
-            },
-            {
-              n: '2',
-              title: 'Choose OS',
-              body: 'Click "Choose OS" → "Raspberry Pi OS (other)" → "Raspberry Pi OS Lite (64-bit)"',
-            },
-            {
-              n: '3',
-              title: 'Choose your SD card',
-              body: 'Insert your SD card and select it from "Choose Storage".',
-            },
-            {
-              n: '4',
-              title: 'Click Next → No to customisation',
-              body: 'When asked "Would you like to apply OS customisation?" click No. Our files handle all setup automatically.',
-              highlight: true,
-            },
-            {
-              n: '5',
-              title: 'Write and wait',
-              body: 'Click Yes to write. Takes 2–5 minutes. Leave the SD card inserted when done.',
-            },
+            { n: '1', title: 'Download Raspberry Pi Imager', body: 'Get it free at raspberrypi.com/software and install it.' },
+            { n: '2', title: 'Choose OS', body: 'Click "Choose OS" → "Raspberry Pi OS (other)" → "Raspberry Pi OS Lite (64-bit)"' },
+            { n: '3', title: 'Choose your SD card', body: 'Insert your SD card and select it from "Choose Storage".' },
+            { n: '4', title: 'Click Next → Edit Settings', body: 'When asked about customisation, click Yes → Edit Settings. Fill in the General tab using the values above.', highlight: true },
+            { n: '5', title: 'Enable SSH on the Services tab', body: 'Click the Services tab → tick "Enable SSH" → Use password authentication → Save.', highlight: true },
+            { n: '6', title: 'Write and wait', body: 'Click Yes to apply and write. Takes 2–5 minutes.' },
           ].map(({ n, title, body, highlight }) => (
             <div key={n} style={{
-              display: 'flex', gap: '12px', marginBottom: '14px',
-              ...(highlight ? {
-                background: '#0f2e18', border: `1px solid ${C.accent}`,
-                borderRadius: '10px', padding: '10px',
-              } : {}),
+              display: 'flex', gap: '12px', marginBottom: '12px',
+              ...(highlight ? { background: '#0f2e18', border: `1px solid ${C.accent}`, borderRadius: '10px', padding: '10px' } : {}),
             }}>
               <div style={{
                 width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0,
@@ -392,7 +356,7 @@ runcmd:
               }}>{n}</div>
               <div>
                 <div style={{ fontSize: '13px', fontWeight: '700', color: C.text, marginBottom: '3px' }}>{title}</div>
-                <div style={{ fontSize: '12px', color: C.textMuted, whiteSpace: 'pre-line', lineHeight: '1.6' }}>{body}</div>
+                <div style={{ fontSize: '12px', color: C.textMuted, lineHeight: '1.6' }}>{body}</div>
               </div>
             </div>
           ))}
@@ -401,79 +365,50 @@ runcmd:
         </div>
       )}
 
-      {/* Step 4 — Download files + copy to SD */}
+      {/* Step 4 — Download script + copy + SSH */}
       {step === 4 && (
         <div style={card}>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: C.text, marginBottom: '4px' }}>Copy setup files to SD card</div>
-          <div style={{ fontSize: '13px', color: C.textMuted, marginBottom: '20px' }}>
-            Download these 3 files and copy them to your SD card. Your Pi will configure itself automatically on first boot.
+          <div style={{ fontSize: '18px', fontWeight: '700', color: C.text, marginBottom: '4px' }}>Set up your node</div>
+          <div style={{ fontSize: '13px', color: C.textMuted, marginBottom: '20px' }}>One file to copy, one command to run.</div>
+
+          {/* Download */}
+          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '16px', marginBottom: '12px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+              Step A — Copy setup file to SD card
+            </div>
+            <div style={{ fontSize: '13px', color: C.textSub, marginBottom: '12px', lineHeight: '1.6' }}>
+              Download the setup file, then copy it to the <strong style={{ color: C.text }}>bootfs</strong> drive in File Explorer.
+            </div>
+            <button style={{ ...btn, marginTop: 0, background: scriptDownloaded ? '#1a4a28' : C.accent }} onClick={downloadScript}>
+              {scriptDownloaded ? '✓ Downloaded' : 'Download magora-setup.sh'}
+            </button>
           </div>
 
-          {/* SSH credentials */}
-          <div style={{ background: '#0f2e18', border: `1px solid ${C.accent}`, borderRadius: '12px', padding: '14px', marginBottom: '20px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: C.accentLight, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
-              Save your Pi login — you may need this later
+          {/* SSH + run */}
+          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+              Step B — Boot Pi, then run one command
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div>
-                <div style={{ fontSize: '10px', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Username</div>
-                <div style={{ fontSize: '15px', fontWeight: '700', color: C.text, fontFamily: 'monospace' }}>magora</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '10px', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Password</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ fontSize: '15px', fontWeight: '700', color: C.text, fontFamily: 'monospace' }}>
-                    {showPassword ? sshPassword : '••••••••••••'}
-                  </div>
-                  <button
-                    onClick={() => setShowPassword(s => !s)}
-                    style={{ background: 'none', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: '12px', padding: 0 }}
-                  >
-                    {showPassword ? 'hide' : 'show'}
-                  </button>
-                </div>
-              </div>
+            <div style={{ fontSize: '13px', color: C.textSub, marginBottom: '12px', lineHeight: '1.6' }}>
+              Eject the SD card, insert into your Pi, and power on. Wait <strong style={{ color: C.text }}>3 minutes</strong> then open PowerShell and SSH in:
             </div>
-          </div>
-
-          {/* Single ZIP download */}
-          <button
-            onClick={downloadBundle}
-            style={{
-              ...btn,
-              marginTop: 0, marginBottom: '20px',
-              background: downloaded ? '#1a4a28' : C.accent,
-              fontSize: '16px', padding: '16px',
-            }}
-          >
-            {downloaded ? '✓ Downloaded — open the ZIP to continue' : `Download ${form.nodeName}-setup.zip`}
-          </button>
-
-          {/* Copy instructions */}
-          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
-            <div style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
-              Copy files to SD card
+            <div style={{ background: '#081810', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '10px', fontFamily: 'monospace', fontSize: '12px', color: C.accentLight, marginBottom: '12px' }}>
+              ssh magora@{form.nodeName}.local
             </div>
-            {[
-              'Open the downloaded ZIP — Windows opens it like a folder',
-              'Select all 3 files inside and copy them',
-              'Open the bootfs drive in File Explorer and paste',
-              'If prompted to overwrite, click Yes',
-              'Safely eject the SD card when done',
-            ].map((instruction, i) => (
-              <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-start' }}>
-                <div style={{
-                  width: '20px', height: '20px', borderRadius: '50%', background: C.border,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '11px', fontWeight: '700', color: C.accentLight, flexShrink: 0,
-                }}>{i + 1}</div>
-                <div style={{ fontSize: '12px', color: C.textSub, lineHeight: '1.5', paddingTop: '2px' }}>{instruction}</div>
-              </div>
-            ))}
+            <div style={{ fontSize: '13px', color: C.textSub, marginBottom: '10px', lineHeight: '1.6' }}>
+              Enter your password when prompted. Then run:
+            </div>
+            <div style={{ background: '#081810', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '10px', fontFamily: 'monospace', fontSize: '12px', color: C.accentLight, marginBottom: '10px' }}>
+              sudo bash /boot/firmware/magora-setup.sh
+            </div>
+            <div style={{ fontSize: '11px', color: C.textMuted, lineHeight: '1.5' }}>
+              Setup takes 15–20 minutes. Keep the terminal open until you see "Setup complete!"<br />
+              If the hostname doesn't resolve, find your Pi's IP from your router and use that instead.
+            </div>
           </div>
 
           <button style={btn} onClick={() => setStep(5)}>
-            Files copied — boot your Pi
+            Setup is running — watch for live data
           </button>
         </div>
       )}
@@ -490,34 +425,26 @@ runcmd:
               <div style={{ fontSize: '14px', color: C.textMuted, marginBottom: '28px', lineHeight: '1.6' }}>
                 First acoustic data received. Your node is on the map and listening.
               </div>
-              <a href="/" style={{
-                display: 'block', background: C.accent, color: '#fff',
-                padding: '13px', borderRadius: '12px', fontSize: '15px',
-                fontWeight: '700', textDecoration: 'none',
-              }}>
+              <a href="/" style={{ display: 'block', background: C.accent, color: '#fff', padding: '13px', borderRadius: '12px', fontSize: '15px', fontWeight: '700', textDecoration: 'none' }}>
                 View on map
               </a>
             </>
           ) : (
             <>
-              <div style={{
-                width: '52px', height: '52px', borderRadius: '50%',
-                border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`,
-                margin: '0 auto 24px', animation: 'spin 1s linear infinite',
-              }} />
+              <div style={{ width: '52px', height: '52px', borderRadius: '50%', border: `3px solid ${C.border}`, borderTop: `3px solid ${C.accent}`, margin: '0 auto 24px', animation: 'spin 1s linear infinite' }} />
               <div style={{ fontSize: '18px', fontWeight: '700', color: C.text, marginBottom: '10px' }}>
                 Waiting for {form.nodeName}...
               </div>
               <div style={{ fontSize: '13px', color: C.textMuted, marginBottom: '16px' }}>
-                Insert the SD card into your Pi and power it on.
+                Checking every 5 seconds. Keep this tab open.
               </div>
               <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px', textAlign: 'left' }}>
-                <div style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, marginBottom: '8px' }}>What's happening on your Pi right now</div>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, marginBottom: '8px' }}>What's happening</div>
                 {[
-                  '0–2 min — Booting and connecting to WiFi',
-                  '2–5 min — Running first-boot setup',
-                  '5–15 min — Installing BirdNET and dependencies',
-                  '15 min+ — Listening and posting data',
+                  '0–3 min — Booting and connecting to WiFi',
+                  '3–5 min — Ready for SSH',
+                  '5–25 min — Installing BirdNET (run setup.sh now)',
+                  '25 min+ — Listening and posting data',
                 ].map((s, i) => (
                   <div key={i} style={{ fontSize: '12px', color: C.textMuted, marginBottom: '4px' }}>· {s}</div>
                 ))}
