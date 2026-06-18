@@ -485,21 +485,21 @@ runcmd:
             <div style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
               Copy files to SD card
             </div>
-            {[
-              'Open File Explorer — your SD card appears as a drive called bootfs',
-              'Copy all 3 downloaded files into the root of the bootfs drive',
-              'If prompted to overwrite user-data or network-config, click Yes',
-              'Safely eject the SD card from File Explorer when done',
-            ].map((instruction, i) => (
-              <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-start' }}>
-                <div style={{
-                  width: '20px', height: '20px', borderRadius: '50%', background: C.border,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '11px', fontWeight: '700', color: C.accentLight, flexShrink: 0,
-                }}>{i + 1}</div>
-                <div style={{ fontSize: '12px', color: C.textSub, lineHeight: '1.5', paddingTop: '2px' }}>{instruction}</div>
-              </div>
-            ))}
+            <div style={{ fontSize: '12px', color: C.textSub, marginBottom: '10px', lineHeight: '1.6' }}>
+              Open <strong style={{ color: C.text }}>PowerShell</strong> and run these commands — this copies files with the exact names the Pi expects:
+            </div>
+            <div style={{
+              background: '#081810', border: `1px solid ${C.border}`, borderRadius: '8px',
+              padding: '12px', fontFamily: 'monospace', fontSize: '11px',
+              color: C.accentLight, lineHeight: '1.8', wordBreak: 'break-all',
+            }}>
+              Copy-Item "$env:USERPROFILE\Downloads\user-data.txt" "H:\user-data" -Force<br />
+              Copy-Item "$env:USERPROFILE\Downloads\network-config.txt" "H:\network-config" -Force<br />
+              Copy-Item "$env:USERPROFILE\Downloads\magora-setup.sh" "H:\magora-setup.sh" -Force
+            </div>
+            <div style={{ fontSize: '11px', color: C.textMuted, marginTop: '8px' }}>
+              Replace <strong>H:</strong> with your SD card drive letter if different. Then safely eject from File Explorer.
+            </div>
           </div>
 
           <button style={btn} onClick={() => setStep(5)}>
