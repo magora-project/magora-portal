@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import JSZip from 'jszip'
 import { supabase } from '../lib/supabase'
 
 const HARDWARE_OPTIONS = [
@@ -33,7 +34,7 @@ export default function RegisterNode() {
   })
   const [sshPassword] = useState(() => generatePassword())
   const [showPassword, setShowPassword] = useState(false)
-  const [downloaded, setDownloaded] = useState({ setup: false, userData: false, networkConfig: false })
+  const [downloaded, setDownloaded] = useState(false)
   const [nodeId, setNodeId] = useState(null)
   const [nodeEmail, setNodeEmail] = useState(null)
   const [nodePassword, setNodePassword] = useState(null)
@@ -206,15 +207,19 @@ runcmd:
 `
   }
 
-  function downloadFile(content, filename, key) {
-    const blob = new Blob([content], { type: 'application/octet-stream' })
+  async function downloadBundle() {
+    const zip = new JSZip()
+    zip.file('user-data', generateUserData())
+    zip.file('network-config', generateNetworkConfig())
+    zip.file('magora-setup.sh', generateSetupScript())
+    const blob = await zip.generateAsync({ type: 'blob' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = filename
+    a.download = `${form.nodeName}-setup.zip`
     a.click()
     URL.revokeObjectURL(url)
-    if (key) setDownloaded(d => ({ ...d, [key]: true }))
+    setDownloaded(true)
   }
 
   const card = {
@@ -431,75 +436,40 @@ runcmd:
             </div>
           </div>
 
-          {/* 3 file downloads */}
-          {[
-            {
-              key: 'userData',
-              filename: 'user-data',
-              label: 'user-data',
-              desc: 'OS config — creates your login, enables SSH, runs setup on first boot',
-              generate: generateUserData,
-            },
-            {
-              key: 'networkConfig',
-              filename: 'network-config',
-              label: 'network-config',
-              desc: `WiFi credentials for ${form.wifi_ssid || 'your network'}`,
-              generate: generateNetworkConfig,
-            },
-            {
-              key: 'setup',
-              filename: 'magora-setup.sh',
-              label: 'magora-setup.sh',
-              desc: 'Installs BirdNET and connects this node to the Magora network',
-              generate: generateSetupScript,
-            },
-          ].map(({ key, filename, label, desc, generate }) => (
-            <div key={key} style={{
-              background: C.bg,
-              border: `1px solid ${downloaded[key] ? C.accent : C.border}`,
-              borderRadius: '12px', padding: '14px', marginBottom: '10px',
-              display: 'flex', alignItems: 'center', gap: '12px',
-            }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '13px', fontWeight: '700', color: C.text, fontFamily: 'monospace', marginBottom: '3px' }}>{label}</div>
-                <div style={{ fontSize: '11px', color: C.textMuted, lineHeight: '1.5' }}>{desc}</div>
-              </div>
-              <button
-                onClick={() => downloadFile(generate(), filename, key)}
-                style={{
-                  flexShrink: 0, padding: '8px 14px',
-                  background: downloaded[key] ? '#1a4a28' : C.accent,
-                  border: `1px solid ${downloaded[key] ? C.accent : 'transparent'}`,
-                  borderRadius: '8px', color: '#fff',
-                  fontSize: '12px', fontWeight: '700', cursor: 'pointer',
-                }}
-              >
-                {downloaded[key] ? '✓ Done' : 'Download'}
-              </button>
-            </div>
-          ))}
+          {/* Single ZIP download */}
+          <button
+            onClick={downloadBundle}
+            style={{
+              ...btn,
+              marginTop: 0, marginBottom: '20px',
+              background: downloaded ? '#1a4a28' : C.accent,
+              fontSize: '16px', padding: '16px',
+            }}
+          >
+            {downloaded ? '✓ Downloaded — open the ZIP to continue' : `Download ${form.nodeName}-setup.zip`}
+          </button>
 
           {/* Copy instructions */}
-          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px', margin: '16px 0' }}>
+          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
             <div style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
               Copy files to SD card
             </div>
-            <div style={{ fontSize: '12px', color: C.textSub, marginBottom: '10px', lineHeight: '1.6' }}>
-              Open <strong style={{ color: C.text }}>PowerShell</strong> and run these commands — this copies files with the exact names the Pi expects:
-            </div>
-            <div style={{
-              background: '#081810', border: `1px solid ${C.border}`, borderRadius: '8px',
-              padding: '12px', fontFamily: 'monospace', fontSize: '11px',
-              color: C.accentLight, lineHeight: '1.8', wordBreak: 'break-all',
-            }}>
-              Copy-Item "$env:USERPROFILE\Downloads\user-data.txt" "H:\user-data" -Force<br />
-              Copy-Item "$env:USERPROFILE\Downloads\network-config.txt" "H:\network-config" -Force<br />
-              Copy-Item "$env:USERPROFILE\Downloads\magora-setup.sh" "H:\magora-setup.sh" -Force
-            </div>
-            <div style={{ fontSize: '11px', color: C.textMuted, marginTop: '8px' }}>
-              Replace <strong>H:</strong> with your SD card drive letter if different. Then safely eject from File Explorer.
-            </div>
+            {[
+              'Open the downloaded ZIP — Windows opens it like a folder',
+              'Select all 3 files inside and copy them',
+              'Open the bootfs drive in File Explorer and paste',
+              'If prompted to overwrite, click Yes',
+              'Safely eject the SD card when done',
+            ].map((instruction, i) => (
+              <div key={i} style={{ display: 'flex', gap: '10px', marginBottom: '8px', alignItems: 'flex-start' }}>
+                <div style={{
+                  width: '20px', height: '20px', borderRadius: '50%', background: C.border,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '11px', fontWeight: '700', color: C.accentLight, flexShrink: 0,
+                }}>{i + 1}</div>
+                <div style={{ fontSize: '12px', color: C.textSub, lineHeight: '1.5', paddingTop: '2px' }}>{instruction}</div>
+              </div>
+            ))}
           </div>
 
           <button style={btn} onClick={() => setStep(5)}>
