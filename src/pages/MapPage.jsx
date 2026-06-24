@@ -47,6 +47,33 @@ function WaveformSVG() {
   )
 }
 
+async function fetchIllustration(commonName) {
+  const queries = [
+    `incategory:"Plates_from_Birds_of_America_(Audubon)" ${commonName}`,
+    `${commonName} Audubon bird`,
+    `${commonName} bird illustration`,
+  ]
+  for (const q of queries) {
+    try {
+      const params = new URLSearchParams({
+        action: 'query', generator: 'search',
+        gsrsearch: q, gsrnamespace: '6',
+        prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: 400,
+        format: 'json', origin: '*',
+      })
+      const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`)
+      if (!res.ok) continue
+      const data = await res.json()
+      const pages = Object.values(data.query?.pages || {})
+      for (const page of pages) {
+        const info = page.imageinfo?.[0]
+        if (info?.mime?.startsWith('image/') && info.thumburl) return info.thumburl
+      }
+    } catch (e) {}
+  }
+  return null
+}
+
 export default function MapPage() {
   const navigate = useNavigate()
   const mapSectionRef = useRef(null)
@@ -92,21 +119,28 @@ export default function MapPage() {
     uniqueSpecies.forEach(name => {
       if (fetchedWiki.current.has(name)) return
       fetchedWiki.current.add(name)
+
+      // Wikipedia: text fact only
       fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`)
         .then(r => r.json())
         .then(data => {
           setWikiData(prev => ({
             ...prev,
             [name]: {
-              img: data.thumbnail?.source || null,
+              ...prev[name],
               fact: data.extract ? data.extract.split('.')[0] + '.' : null,
               loaded: true,
             }
           }))
         })
         .catch(() => {
-          setWikiData(prev => ({ ...prev, [name]: { img: null, fact: null, loaded: true } }))
+          setWikiData(prev => ({ ...prev, [name]: { ...prev[name], fact: null, loaded: true } }))
         })
+
+      // Historical illustration from Wikimedia Commons (Audubon plates + natural history art)
+      fetchIllustration(name).then(imgUrl => {
+        setWikiData(prev => ({ ...prev, [name]: { ...prev[name], img: imgUrl } }))
+      })
     })
   }, [detections])
 
