@@ -48,37 +48,44 @@ function WaveformSVG() {
 }
 
 async function fetchIllustration(commonName) {
-  // Words long enough to be meaningful for filename matching
-  const nameWords = commonName.toLowerCase().split(/\s+/).filter(w => w.length > 3)
-
-  const queries = [
-    `incategory:"Plates_from_Birds_of_America_(Audubon)" ${commonName}`,
-    `incategory:"John_Gould_bird_prints" ${commonName}`,
-    `${commonName} "natural history" illustration bird`,
-  ]
-  for (const q of queries) {
-    try {
-      const params = new URLSearchParams({
-        action: 'query', generator: 'search',
-        gsrsearch: q, gsrnamespace: '6', gsrlimit: '10',
-        prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: 400,
+  try {
+    // Step 1: get all images embedded on the bird's Wikipedia article
+    const listRes = await fetch(
+      'https://en.wikipedia.org/w/api.php?' + new URLSearchParams({
+        action: 'query', titles: commonName,
+        prop: 'images', imlimit: '50',
         format: 'json', origin: '*',
       })
-      const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`)
-      if (!res.ok) continue
-      const data = await res.json()
-      const pages = Object.values(data.query?.pages || {})
-      for (const page of pages) {
-        const info = page.imageinfo?.[0]
-        if (!info?.mime?.startsWith('image/') || !info.thumburl) continue
-        // Require at least one significant word from the species name in the filename
-        const title = (page.title || '').toLowerCase()
-        if (nameWords.length > 0 && !nameWords.some(w => title.includes(w))) continue
-        return info.thumburl
-      }
-    } catch (e) {}
+    )
+    if (!listRes.ok) return null
+    const listData = await listRes.json()
+    const images = Object.values(listData.query?.pages || {})[0]?.images || []
+
+    // Step 2: find first image whose filename looks like a historical illustration
+    const candidate = images.find(img => {
+      const t = img.title.toLowerCase()
+      return t.includes('audubon') || t.includes('gould') ||
+        (t.includes('plate') && !t.includes('icon') && !t.includes('flag')) ||
+        (t.includes('illustration') && !t.includes('icon'))
+    })
+    if (!candidate) return null
+
+    // Step 3: fetch the thumbnail URL for that file
+    const imgRes = await fetch(
+      'https://en.wikipedia.org/w/api.php?' + new URLSearchParams({
+        action: 'query', titles: candidate.title,
+        prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: '400',
+        format: 'json', origin: '*',
+      })
+    )
+    if (!imgRes.ok) return null
+    const imgData = await imgRes.json()
+    const info = Object.values(imgData.query?.pages || {})[0]?.imageinfo?.[0]
+    if (!info?.mime?.startsWith('image/')) return null
+    return info.thumburl || info.url || null
+  } catch (e) {
+    return null
   }
-  return null
 }
 
 export default function MapPage() {
