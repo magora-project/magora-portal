@@ -43,7 +43,7 @@ const BADGE_EXPLAIN = {
     : v >= 50
     ? `${v}% detection confidence — likely correct, but there's some uncertainty in the identification.`
     : `${v}% detection confidence — possible detection, but treat with caution. Lower confidence can mean background noise or a similar-sounding species.`,
-  count:     v => `Detected ${v} times in the most recent 50 recordings at this node. High repeat count suggests this species is actively using this habitat.`,
+  count:     v => `Detected ${v} time${v !== 1 ? 's' : ''} today at this node. High repeat count suggests this species is actively using this habitat right now.`,
   dawn:      () => 'Detected during the acoustic dawn chorus — the peak singing window just before and after sunrise. This is when birds are most vocally active, often defending territory or attracting mates.',
   season:    v => ({
     winter:         'Winter — resident species dominate. Migrants have departed and breeding has ended. Activity is driven by foraging and survival.',
@@ -174,7 +174,7 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
             <span style={{ borderRadius: '20px', padding: '3px 9px', fontSize: '12px', fontWeight: '600', background: C.bg, border: `1px solid ${C.border}`, color: C.textSub }}>
               {toMountainTime(d.detected_at, false)}
             </span>
-            {count > 1 && <Btn id="count" style={{ background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>×{count}</Btn>}
+            <Btn id="count" style={{ background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>×{count} today</Btn>
             {d.is_dawn_chorus && <Btn id="dawn" style={{ background: '#1a3a4a', border: '1px solid #0ea5e9', color: '#7dd3fc' }}>🌅 Dawn chorus</Btn>}
             {d.season && <Btn id="season" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>{SEASON_EMOJI[d.season]} {d.season.replace(/_/g, ' ')}</Btn>}
             {d.minutes_from_sunrise != null && <Btn id="sunrise" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>☀️ {d.minutes_from_sunrise < 0 ? `${Math.abs(d.minutes_from_sunrise)}m pre-dawn` : `+${d.minutes_from_sunrise}m`}</Btn>}

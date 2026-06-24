@@ -57,6 +57,7 @@ export default function MapPage() {
   const [wikiData, setWikiData] = useState({})
   const [insights, setInsights] = useState({})
   const [todaySpeciesCount, setTodaySpeciesCount] = useState(null)
+  const [todayDetections, setTodayDetections] = useState([])
   const fetchedWiki = useRef(new Set())
 
   async function fetchData() {
@@ -75,6 +76,7 @@ export default function MapPage() {
     setNodes(nodeData || [])
     setDetections(detectionData || [])
     setAciLogs(aciData || [])
+    setTodayDetections(todayData || [])
     setTodaySpeciesCount(new Set((todayData || []).map(d => d.species_name).filter(Boolean)).size)
     setLoading(false)
   }
@@ -131,8 +133,8 @@ export default function MapPage() {
     }
   }
 
-  const speciesCount = detections.reduce((acc, d) => {
-    const name = d.species_name || d.raw_label
+  const speciesCountToday = (todayDetections || []).reduce((acc, d) => {
+    const name = d.species_name
     if (name) acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})
@@ -158,27 +160,27 @@ export default function MapPage() {
       {/* Section 1 — Hero */}
       <section
         className="section-full-bleed"
-        style={{ background: '#f0ebe0', padding: '80px 20px 96px', position: 'relative', overflow: 'hidden' }}
+        style={{ background: '#f0ebe0', padding: '48px 20px 56px', position: 'relative', overflow: 'hidden' }}
       >
         <WaveformSVG />
         <div style={{ position: 'relative', zIndex: 1, maxWidth: '680px' }}>
           <h1 style={{
             fontFamily: "'Big Shoulders Display', sans-serif",
             fontWeight: 900,
-            fontSize: 'clamp(2.5rem, 6vw, 5rem)',
+            fontSize: 'clamp(1.8rem, 4vw, 3.2rem)',
             color: '#1a1a1a',
             lineHeight: 1.05,
             letterSpacing: '-0.02em',
             textTransform: 'uppercase',
-            marginBottom: '20px',
+            marginBottom: '14px',
           }}>
             Every place is speaking.
           </h1>
           <p style={{
-            fontSize: 'clamp(0.95rem, 1.8vw, 1.1rem)',
+            fontSize: '0.95rem',
             color: '#3a3530',
-            lineHeight: 1.7,
-            marginBottom: '36px',
+            lineHeight: 1.65,
+            marginBottom: '24px',
             maxWidth: '540px',
           }}>
             Magora is an open-source ecological intelligence platform where low-cost monitoring nodes transform soundscapes into shared biodiversity knowledge.
@@ -187,7 +189,7 @@ export default function MapPage() {
             <button
               onClick={() => mapSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
               style={{
-                padding: '14px 28px',
+                padding: '11px 22px',
                 background: '#1a1a1a',
                 color: '#f0ebe0',
                 border: 'none',
@@ -205,7 +207,7 @@ export default function MapPage() {
             <Link
               to="/register"
               style={{
-                padding: '12px 28px',
+                padding: '9px 22px',
                 background: 'transparent',
                 color: '#1a1a1a',
                 border: '2px solid #1a1a1a',
@@ -325,7 +327,7 @@ export default function MapPage() {
               {dedupedDetections.map(d => (
                 <DetectionCard
                   key={d.id} d={d} wikiData={wikiData}
-                  count={speciesCount[d.species_name || d.raw_label] || 1}
+                  count={speciesCountToday[d.species_name || d.raw_label] || 1}
                   insight={insights[d.id]} onRequestInsight={() => requestInsight(d)}
                 />
               ))}
