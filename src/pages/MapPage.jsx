@@ -48,16 +48,19 @@ function WaveformSVG() {
 }
 
 async function fetchIllustration(commonName) {
+  // Words long enough to be meaningful for filename matching
+  const nameWords = commonName.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+
   const queries = [
     `incategory:"Plates_from_Birds_of_America_(Audubon)" ${commonName}`,
-    `${commonName} Audubon bird`,
-    `${commonName} bird illustration`,
+    `incategory:"John_Gould_bird_prints" ${commonName}`,
+    `${commonName} "natural history" illustration bird`,
   ]
   for (const q of queries) {
     try {
       const params = new URLSearchParams({
         action: 'query', generator: 'search',
-        gsrsearch: q, gsrnamespace: '6',
+        gsrsearch: q, gsrnamespace: '6', gsrlimit: '10',
         prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: 400,
         format: 'json', origin: '*',
       })
@@ -67,7 +70,11 @@ async function fetchIllustration(commonName) {
       const pages = Object.values(data.query?.pages || {})
       for (const page of pages) {
         const info = page.imageinfo?.[0]
-        if (info?.mime?.startsWith('image/') && info.thumburl) return info.thumburl
+        if (!info?.mime?.startsWith('image/') || !info.thumburl) continue
+        // Require at least one significant word from the species name in the filename
+        const title = (page.title || '').toLowerCase()
+        if (nameWords.length > 0 && !nameWords.some(w => title.includes(w))) continue
+        return info.thumburl
       }
     } catch (e) {}
   }
