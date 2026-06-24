@@ -35,6 +35,7 @@ export default function RegisterNode() {
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState(null)
   const [nodeLive, setNodeLive]   = useState(false)
+  const [timedOut, setTimedOut]   = useState(false)
   const [configDownloaded, setConfigDownloaded] = useState(false)
   const pollRef = useRef(null)
 
@@ -79,7 +80,14 @@ export default function RegisterNode() {
 
   useEffect(() => {
     if (step !== 4 || !nodeId || !registeredAt) return
+    let polls = 0
     pollRef.current = setInterval(async () => {
+      polls++
+      if (polls >= 60) {
+        clearInterval(pollRef.current)
+        setTimedOut(true)
+        return
+      }
       const { data } = await supabase
         .from('aci_logs')
         .select('id')
@@ -331,6 +339,28 @@ export default function RegisterNode() {
               <a href="/" style={{ display: 'block', background: C.accent, color: '#fff', padding: '13px', borderRadius: '12px', fontSize: '15px', fontWeight: '700', textDecoration: 'none' }}>
                 View on map
               </a>
+            </>
+          ) : timedOut ? (
+            <>
+              <div style={{ fontSize: '40px', marginBottom: '16px' }}>⏱️</div>
+              <div style={{ fontSize: '18px', fontWeight: '700', color: C.text, marginBottom: '10px' }}>
+                Still waiting for {form.nodeName}
+              </div>
+              <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px', textAlign: 'left', marginBottom: '16px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: '#f97316', marginBottom: '8px' }}>Troubleshooting checklist</div>
+                {[
+                  'SD card is fully seated in the Pi',
+                  'magora-config.json is on the bootfs drive (not inside a folder)',
+                  'Pi has power — green LED should be on',
+                  'WiFi SSID and password in the config are correct',
+                  'Pull the SD card and check magora-status.txt for diagnostic info',
+                ].map((s, i) => (
+                  <div key={i} style={{ fontSize: '12px', color: C.textMuted, marginBottom: '6px' }}>· {s}</div>
+                ))}
+              </div>
+              <button style={btn} onClick={() => { setTimedOut(false); setStep(4) }}>
+                Try again
+              </button>
             </>
           ) : (
             <>
