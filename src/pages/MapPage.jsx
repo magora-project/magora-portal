@@ -80,6 +80,7 @@ async function fetchIllustration(commonName) {
       const candidate = images.find(img => {
         const t = img.title.toLowerCase()
         return t.includes('audubon') || t.includes('gould') ||
+          t.includes('naumann') || t.includes('wilson') ||
           (t.includes('plate') && !t.includes('icon') && !t.includes('flag')) ||
           (t.includes('illustration') && !t.includes('icon'))
       })
@@ -90,28 +91,28 @@ async function fetchIllustration(commonName) {
     }
   } catch (e) {}
 
-  // Strategy 2: search Commons directly for an Audubon plate
-  try {
-    const nameWords = commonName.toLowerCase().split(/\s+/).filter(w => w.length > 3)
-    const searchRes = await fetch(
-      'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
-        action: 'query', list: 'search',
-        srsearch: `${commonName} Audubon`,
-        srnamespace: '6', srlimit: '5',
-        format: 'json', origin: '*',
-      })
-    )
-    if (searchRes.ok) {
+  // Strategy 2: search Commons by author — trust the search engine for species
+  // matching, don't re-filter by filename (many plates are named by number only)
+  for (const author of ['Audubon', 'Gould']) {
+    try {
+      const searchRes = await fetch(
+        'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
+          action: 'query', list: 'search',
+          srsearch: `${commonName} ${author}`,
+          srnamespace: '6', srlimit: '5',
+          format: 'json', origin: '*',
+        })
+      )
+      if (!searchRes.ok) continue
       const searchData = await searchRes.json()
       for (const result of (searchData.query?.search || [])) {
         const t = result.title.toLowerCase()
-        if (!t.includes('audubon') && !t.includes('gould')) continue
-        if (nameWords.length > 0 && !nameWords.some(w => t.includes(w))) continue
+        if (!t.includes(author.toLowerCase())) continue
         const url = await getCommonsThumb(result.title)
         if (url) return url
       }
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
 
   return null
 }
