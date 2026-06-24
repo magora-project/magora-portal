@@ -47,73 +47,32 @@ function WaveformSVG() {
   )
 }
 
-async function getCommonsThumb(fileTitle) {
-  try {
-    const res = await fetch(
-      'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
-        action: 'query', titles: fileTitle,
-        prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: '400',
-        format: 'json', origin: '*',
-      })
-    )
-    if (!res.ok) return null
-    const data = await res.json()
-    const info = Object.values(data.query?.pages || {})[0]?.imageinfo?.[0]
-    if (!info?.mime?.startsWith('image/')) return null
-    return info.thumburl || info.url || null
-  } catch (e) { return null }
-}
-
 async function fetchIllustration(commonName) {
-  // Strategy 1: find a historical illustration in the Wikipedia article's image list
-  try {
-    const listRes = await fetch(
-      'https://en.wikipedia.org/w/api.php?' + new URLSearchParams({
-        action: 'query', titles: commonName,
-        prop: 'images', imlimit: '50',
-        format: 'json', origin: '*',
-      })
-    )
-    if (listRes.ok) {
-      const listData = await listRes.json()
-      const images = Object.values(listData.query?.pages || {})[0]?.images || []
-      const candidate = images.find(img => {
-        const t = img.title.toLowerCase()
-        return t.includes('audubon') || t.includes('gould') ||
-          t.includes('naumann') || t.includes('wilson') ||
-          (t.includes('plate') && !t.includes('icon') && !t.includes('flag')) ||
-          (t.includes('illustration') && !t.includes('icon'))
-      })
-      if (candidate) {
-        const url = await getCommonsThumb(candidate.title)
-        if (url) return url
-      }
-    }
-  } catch (e) {}
-
-  // Strategy 2: search Commons by author — trust the search engine for species
-  // matching, don't re-filter by filename (many plates are named by number only)
+  // Use generator=search on Commons — this reliably returns imageinfo with thumburl.
+  // Two passes: Audubon first, then Gould. Only accept results where the
+  // author name appears in the filename (keeps out modern photos).
   for (const author of ['Audubon', 'Gould']) {
     try {
-      const searchRes = await fetch(
-        'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
-          action: 'query', list: 'search',
-          srsearch: `${commonName} ${author}`,
-          srnamespace: '6', srlimit: '5',
-          format: 'json', origin: '*',
-        })
-      )
-      if (!searchRes.ok) continue
-      const searchData = await searchRes.json()
-      for (const result of (searchData.query?.search || [])) {
-        const t = result.title.toLowerCase()
+      const params = new URLSearchParams({
+        action: 'query', generator: 'search',
+        gsrsearch: `${commonName} ${author}`,
+        gsrnamespace: '6', gsrlimit: '10',
+        prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: 400,
+        format: 'json', origin: '*',
+      })
+      const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`)
+      if (!res.ok) continue
+      const data = await res.json()
+      const pages = Object.values(data.query?.pages || {})
+      for (const page of pages) {
+        const info = page.imageinfo?.[0]
+        if (!info?.mime?.startsWith('image/') || !info.thumburl) continue
+        const t = (page.title || '').toLowerCase()
         if (!t.includes(author.toLowerCase())) continue
-        const url = await getCommonsThumb(result.title)
-        if (url) return url
+        return info.thumburl
       }
     } catch (e) {}
   }
-
   return null
 }
 
