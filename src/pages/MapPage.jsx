@@ -48,15 +48,11 @@ function WaveformSVG() {
 }
 
 async function fetchIllustration(commonName) {
-  // Use generator=search on Commons — this reliably returns imageinfo with thumburl.
-  // Two passes: Audubon first, then Gould. Only accept results where the
-  // author name appears in the filename (keeps out modern photos).
-  for (const author of ['Audubon', 'Gould']) {
+  for (const q of [`${commonName} Audubon`, `${commonName} Gould bird`]) {
     try {
       const params = new URLSearchParams({
         action: 'query', generator: 'search',
-        gsrsearch: `${commonName} ${author}`,
-        gsrnamespace: '6', gsrlimit: '10',
+        gsrsearch: q, gsrnamespace: '6', gsrlimit: '5',
         prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: 400,
         format: 'json', origin: '*',
       })
@@ -64,14 +60,16 @@ async function fetchIllustration(commonName) {
       if (!res.ok) continue
       const data = await res.json()
       const pages = Object.values(data.query?.pages || {})
+      console.log(`[illus] "${q}": ${pages.length} pages`)
       for (const page of pages) {
         const info = page.imageinfo?.[0]
+        console.log(`  ${page.title} mime=${info?.mime} thumb=${!!info?.thumburl}`)
         if (!info?.mime?.startsWith('image/') || !info.thumburl) continue
-        const t = (page.title || '').toLowerCase()
-        if (!t.includes(author.toLowerCase())) continue
         return info.thumburl
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('[illus] error:', q, e)
+    }
   }
   return null
 }
