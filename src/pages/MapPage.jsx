@@ -47,9 +47,26 @@ function WaveformSVG() {
   )
 }
 
-async function fetchIllustration(commonName) {
+async function getCommonsThumb(fileTitle) {
   try {
-    // Step 1: get all images embedded on the bird's Wikipedia article
+    const res = await fetch(
+      'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
+        action: 'query', titles: fileTitle,
+        prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: '400',
+        format: 'json', origin: '*',
+      })
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const info = Object.values(data.query?.pages || {})[0]?.imageinfo?.[0]
+    if (!info?.mime?.startsWith('image/')) return null
+    return info.thumburl || info.url || null
+  } catch (e) { return null }
+}
+
+async function fetchIllustration(commonName) {
+  // Strategy 1: find a historical illustration in the Wikipedia article's image list
+  try {
     const listRes = await fetch(
       'https://en.wikipedia.org/w/api.php?' + new URLSearchParams({
         action: 'query', titles: commonName,
@@ -57,35 +74,46 @@ async function fetchIllustration(commonName) {
         format: 'json', origin: '*',
       })
     )
-    if (!listRes.ok) return null
-    const listData = await listRes.json()
-    const images = Object.values(listData.query?.pages || {})[0]?.images || []
+    if (listRes.ok) {
+      const listData = await listRes.json()
+      const images = Object.values(listData.query?.pages || {})[0]?.images || []
+      const candidate = images.find(img => {
+        const t = img.title.toLowerCase()
+        return t.includes('audubon') || t.includes('gould') ||
+          (t.includes('plate') && !t.includes('icon') && !t.includes('flag')) ||
+          (t.includes('illustration') && !t.includes('icon'))
+      })
+      if (candidate) {
+        const url = await getCommonsThumb(candidate.title)
+        if (url) return url
+      }
+    }
+  } catch (e) {}
 
-    // Step 2: find first image whose filename looks like a historical illustration
-    const candidate = images.find(img => {
-      const t = img.title.toLowerCase()
-      return t.includes('audubon') || t.includes('gould') ||
-        (t.includes('plate') && !t.includes('icon') && !t.includes('flag')) ||
-        (t.includes('illustration') && !t.includes('icon'))
-    })
-    if (!candidate) return null
-
-    // Step 3: fetch the thumbnail URL for that file
-    const imgRes = await fetch(
-      'https://en.wikipedia.org/w/api.php?' + new URLSearchParams({
-        action: 'query', titles: candidate.title,
-        prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: '400',
+  // Strategy 2: search Commons directly for an Audubon plate
+  try {
+    const nameWords = commonName.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+    const searchRes = await fetch(
+      'https://commons.wikimedia.org/w/api.php?' + new URLSearchParams({
+        action: 'query', list: 'search',
+        srsearch: `${commonName} Audubon`,
+        srnamespace: '6', srlimit: '5',
         format: 'json', origin: '*',
       })
     )
-    if (!imgRes.ok) return null
-    const imgData = await imgRes.json()
-    const info = Object.values(imgData.query?.pages || {})[0]?.imageinfo?.[0]
-    if (!info?.mime?.startsWith('image/')) return null
-    return info.thumburl || info.url || null
-  } catch (e) {
-    return null
-  }
+    if (searchRes.ok) {
+      const searchData = await searchRes.json()
+      for (const result of (searchData.query?.search || [])) {
+        const t = result.title.toLowerCase()
+        if (!t.includes('audubon') && !t.includes('gould')) continue
+        if (nameWords.length > 0 && !nameWords.some(w => t.includes(w))) continue
+        const url = await getCommonsThumb(result.title)
+        if (url) return url
+      }
+    }
+  } catch (e) {}
+
+  return null
 }
 
 export default function MapPage() {
