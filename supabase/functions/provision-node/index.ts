@@ -32,13 +32,14 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid JSON body" }, 400)
   }
 
-  const { name, hardware_type, lat, lon, elevation_m, habitat_type } = body as {
+  const { name, hardware_type, lat, lon, elevation_m, habitat_type, species_whitelist } = body as {
     name: string
     hardware_type: string
     lat: number
     lon: number
     elevation_m?: number
     habitat_type: string
+    species_whitelist?: string[]
   }
 
   if (!name || !hardware_type || lat == null || lon == null || !habitat_type) {
@@ -80,6 +81,7 @@ Deno.serve(async (req) => {
     elevation_m: elevation_m ?? null,
     habitat_type,
     is_active: true,
+    species_whitelist: species_whitelist && species_whitelist.length > 0 ? species_whitelist : null,
   })
 
   if (nodeError) {

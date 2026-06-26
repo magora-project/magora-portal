@@ -37,11 +37,36 @@ export default function RegisterNode() {
   const [nodeLive, setNodeLive]   = useState(false)
   const [timedOut, setTimedOut]   = useState(false)
   const [configDownloaded, setConfigDownloaded] = useState(false)
+  const [whitelist, setWhitelist] = useState(null)
+  const [ebirdStatus, setEbirdStatus] = useState('idle') // idle | loading | ready | error
   const pollRef = useRef(null)
+  const ebirdRef = useRef(null)
 
   function update(field, value) {
     setForm(f => ({ ...f, [field]: value }))
   }
+
+  useEffect(() => {
+    const lat = parseFloat(form.lat)
+    const lon = parseFloat(form.lon)
+    if (!form.lat || !form.lon || isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      return
+    }
+    clearTimeout(ebirdRef.current)
+    setEbirdStatus('loading')
+    ebirdRef.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/regional-species?lat=${lat}&lon=${lon}`)
+        const data = await r.json()
+        if (!r.ok || !data.species?.length) { setEbirdStatus('error'); return }
+        setWhitelist(data.species)
+        setEbirdStatus('ready')
+      } catch {
+        setEbirdStatus('error')
+      }
+    }, 800)
+    return () => clearTimeout(ebirdRef.current)
+  }, [form.lat, form.lon])
 
   async function registerNode() {
     setLoading(true)
@@ -62,6 +87,7 @@ export default function RegisterNode() {
             lon: parseFloat(form.lon),
             elevation_m: parseFloat(form.elevation) || null,
             habitat_type: form.habitat,
+            species_whitelist: whitelist || undefined,
           }),
         }
       )
@@ -231,6 +257,20 @@ export default function RegisterNode() {
             <label style={label}>WiFi password</label>
             <input style={inp} type="password" placeholder="••••••••" value={form.wifi_password} onChange={e => update('wifi_password', e.target.value)} />
           </div>
+          {ebirdStatus === 'loading' && (
+            <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '10px' }}>Checking regional species...</div>
+          )}
+          {ebirdStatus === 'ready' && whitelist && (
+            <div style={{ fontSize: '12px', color: C.accentLight, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ background: '#1a4a28', border: `1px solid ${C.accent}`, borderRadius: '20px', padding: '2px 10px', fontWeight: '700' }}>
+                {whitelist.length} species in your area · eBird
+              </span>
+              <span style={{ color: C.textMuted }}>Whitelist will filter impossible detections</span>
+            </div>
+          )}
+          {ebirdStatus === 'error' && (
+            <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '10px' }}>Could not load regional species — node will run without filtering</div>
+          )}
           {error && <div style={{ color: '#f87171', fontSize: '13px', marginBottom: '10px' }}>{error}</div>}
           <button
             style={{ ...btn, opacity: (form.lat && form.lon && form.wifi_ssid && form.wifi_password) ? 1 : 0.5 }}
