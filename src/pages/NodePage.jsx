@@ -125,8 +125,10 @@ export default function NodePage() {
     if (name) acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})
+  const INSECT_KEYWORDS = ['Katydid', 'Cricket', 'Grasshopper', 'Cicada']
   const dedupedDetections = detections.filter((d, idx) => {
-    const name = d.species_name || d.raw_label
+    const name = d.species_name || d.raw_label || ''
+    if (INSECT_KEYWORDS.some(k => name.includes(k))) return false
     return detections.findIndex(x => (x.species_name || x.raw_label) === name) === idx
   })
 
