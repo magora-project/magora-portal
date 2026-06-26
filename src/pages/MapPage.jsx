@@ -47,32 +47,6 @@ function WaveformSVG() {
   )
 }
 
-async function fetchIllustration(commonName) {
-  for (const q of [`${commonName} Audubon`, `${commonName} Gould bird`]) {
-    try {
-      const params = new URLSearchParams({
-        action: 'query', generator: 'search',
-        gsrsearch: q, gsrnamespace: '6', gsrlimit: '5',
-        prop: 'imageinfo', iiprop: 'url|mime', iiurlwidth: 400,
-        format: 'json', origin: '*',
-      })
-      const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`)
-      if (!res.ok) continue
-      const data = await res.json()
-      const pages = Object.values(data.query?.pages || {})
-      console.log(`[illus] "${q}": ${pages.length} pages`)
-      for (const page of pages) {
-        const info = page.imageinfo?.[0]
-        console.log(`  ${page.title} mime=${info?.mime} thumb=${!!info?.thumburl}`)
-        if (!info?.mime?.startsWith('image/') || !info.thumburl) continue
-        return info.thumburl
-      }
-    } catch (e) {
-      console.error('[illus] error:', q, e)
-    }
-  }
-  return null
-}
 
 export default function MapPage() {
   const navigate = useNavigate()
@@ -120,7 +94,6 @@ export default function MapPage() {
       if (fetchedWiki.current.has(name)) return
       fetchedWiki.current.add(name)
 
-      // Wikipedia: text fact only
       fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name)}`)
         .then(r => r.json())
         .then(data => {
@@ -129,6 +102,7 @@ export default function MapPage() {
             [name]: {
               ...prev[name],
               fact: data.extract ? data.extract.split('.')[0] + '.' : null,
+              img: data.thumbnail?.source || null,
               loaded: true,
             }
           }))
@@ -136,11 +110,6 @@ export default function MapPage() {
         .catch(() => {
           setWikiData(prev => ({ ...prev, [name]: { ...prev[name], fact: null, loaded: true } }))
         })
-
-      // Historical illustration from Wikimedia Commons (Audubon plates + natural history art)
-      fetchIllustration(name).then(imgUrl => {
-        setWikiData(prev => ({ ...prev, [name]: { ...prev[name], img: imgUrl } }))
-      })
     })
   }, [detections])
 
