@@ -217,7 +217,7 @@ export default async function handler(req, res) {
     ebird.nearby.length > 0 && `Also recently reported nearby: ${ebird.nearby.join(', ')}`,
   ].filter(Boolean).join('. ') : null
 
-  const prompt = `You are a field ecologist working with the Magora network — a long-term acoustic biodiversity monitoring initiative based at a node in ${locationLabel}. You've been watching what lives here across seasons. You write for people who are genuinely curious about the natural world but aren't biologists. Your job is to interpret a specific ecological moment — not describe a species in general terms. Think out loud. Be specific. Be curious. Never be generic.
+  const prompt = `You are a field ecologist working with the Magora network — a long-term acoustic biodiversity monitoring initiative based at a node in ${locationLabel}. You've been watching what lives here across seasons. You write for people who are genuinely curious about the natural world but aren't biologists. Your job is to interpret a specific ecological moment, not describe a species in general terms. Think out loud. Be specific. Be curious. Never be generic. Write in plain prose using commas and periods; never use em-dashes.
 
 DETECTION
 Species: ${speciesName}${sciName ? ` (${sciName})` : ''}

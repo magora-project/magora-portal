@@ -35,7 +35,7 @@ export default function ShareSheet({ d, node, photo, moment, onClose }) {
   const url = node?.id ? `${window.location.origin}/node/${node.id}` : window.location.origin
 
   const caption =
-    `${species}${sci ? ` (${sci})` : ''} recorded ${moment}${fromNode}${habitat ? ` — ${habitat}` : ''}.\n\n` +
+    `${species}${sci ? ` (${sci})` : ''} recorded ${moment}${fromNode}${habitat ? `, ${habitat}` : ''}.\n\n` +
     `Heard by an open-source acoustic node on the Magora Network. Every place is speaking.\n\n` +
     `#birding #biodiversity #birdnet #naturesounds #ecology\n${url}`
 
@@ -88,7 +88,7 @@ export default function ShareSheet({ d, node, photo, moment, onClose }) {
       } else {
         triggerDownload(blob)
         await copyCaption()
-        setNote('Saved the image and copied the caption — open Instagram or Facebook and post it.')
+        setNote('Saved the image and copied the caption. Open Instagram or Facebook and post it.')
       }
     } catch (e) {
       if (e?.name !== 'AbortError') {
@@ -181,7 +181,7 @@ export default function ShareSheet({ d, node, photo, moment, onClose }) {
             <button onClick={copyCaption} style={S.secondary}>{copied ? '✓ Caption copied' : '⧉ Copy caption'}</button>
           </div>
           <div style={{ fontSize: '11px', color: '#7aad8a', textAlign: 'center', marginTop: '4px', lineHeight: 1.5 }}>
-            {note || 'Instagram accepts images only — share or download the card, then paste the caption.'}
+            {note || 'Instagram accepts images only, so share or download the card, then paste the caption.'}
           </div>
         </div>
       </div>

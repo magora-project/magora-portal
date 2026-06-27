@@ -269,7 +269,7 @@ export default function RegisterNode() {
             </div>
           )}
           {ebirdStatus === 'error' && (
-            <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '10px' }}>Could not load regional species — node will run without filtering</div>
+            <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '10px' }}>Couldn't load regional species, so the node will run without filtering</div>
           )}
           {error && <div style={{ color: '#f87171', fontSize: '13px', marginBottom: '10px' }}>{error}</div>}
           <button
@@ -287,7 +287,7 @@ export default function RegisterNode() {
         <div style={card}>
           <div style={{ fontSize: '18px', fontWeight: '700', color: C.text, marginBottom: '4px' }}>Flash your SD card</div>
           <div style={{ fontSize: '13px', color: C.textMuted, marginBottom: '20px' }}>
-            Three steps — no terminal or SSH needed.
+            Three steps, no terminal or SSH needed.
           </div>
 
           {/* A: Download image */}
@@ -300,7 +300,7 @@ export default function RegisterNode() {
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '13px', fontWeight: '700', color: C.text, marginBottom: '4px' }}>Download the Magora Node image</div>
               <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '10px', lineHeight: '1.6' }}>
-                This is a pre-built SD card image — about 500 MB, takes a minute to download.
+                This is a pre-built SD card image, about 500 MB, and takes a minute to download.
               </div>
               <a
                 href={IMAGE_URL}
@@ -342,7 +342,7 @@ export default function RegisterNode() {
               <div style={{ fontSize: '13px', fontWeight: '700', color: C.text, marginBottom: '4px' }}>Copy your config file to the SD card</div>
               <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '10px', lineHeight: '1.6' }}>
                 After flashing, a small drive called <strong style={{ color: C.text }}>bootfs</strong> appears in File Explorer.
-                Download your config file and copy it there — that's it.
+                Download your config file and copy it there. That's it.
               </div>
               <button
                 style={{ ...btn, marginTop: 0, background: configDownloaded ? '#1a4a28' : C.accent }}
@@ -359,7 +359,7 @@ export default function RegisterNode() {
           </div>
 
           <button style={{ ...btn, opacity: configDownloaded ? 1 : 0.5 }} onClick={() => configDownloaded && setStep(4)}>
-            Config copied — power on my Pi
+            Config copied, power on my Pi
           </button>
         </div>
       )}
@@ -391,7 +391,7 @@ export default function RegisterNode() {
                 {[
                   'SD card is fully seated in the Pi',
                   'magora-config.json is on the bootfs drive (not inside a folder)',
-                  'Pi has power — green LED should be on',
+                  'Pi has power, green LED should be on',
                   'WiFi SSID and password in the config are correct',
                   'Pull the SD card and check magora-status.txt for diagnostic info',
                 ].map((s, i) => (
@@ -414,9 +414,9 @@ export default function RegisterNode() {
               <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px', textAlign: 'left' }}>
                 <div style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, marginBottom: '8px' }}>What's happening on the Pi</div>
                 {[
-                  '0–3 min — Booting and connecting to WiFi',
-                  '3–25 min — Automatically installing BirdNET',
-                  '25 min+ — Listening and posting data here',
+                  '0–3 min, booting and connecting to WiFi',
+                  '3–25 min, automatically installing BirdNET',
+                  '25 min+, listening and posting data here',
                 ].map((s, i) => (
                   <div key={i} style={{ fontSize: '12px', color: C.textMuted, marginBottom: '4px' }}>· {s}</div>
                 ))}

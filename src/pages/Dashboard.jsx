@@ -244,7 +244,7 @@ export default function Dashboard() {
             </div>
           ))}
           <div style={{ marginTop: '8px', fontSize: '12px', color: '#4a7a58', lineHeight: '1.5' }}>
-            Night ACI proxy — higher = more insect chorus activity
+            Night ACI proxy, higher = more insect chorus activity
           </div>
         </div>
 

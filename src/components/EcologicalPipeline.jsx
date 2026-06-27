@@ -21,10 +21,22 @@ export default function EcologicalPipeline() {
           color: '#1a1a1a',
           textTransform: 'uppercase',
           letterSpacing: '-0.01em',
+          marginBottom: '16px',
+        }}>
+          From birdsong to ecological insight
+        </h2>
+
+        <p style={{
+          fontSize: '0.95rem',
+          color: '#5a5248',
+          lineHeight: 1.7,
+          maxWidth: '640px',
           marginBottom: '40px',
         }}>
-          From sound to ecological story
-        </h2>
+          A single birdcall is never just a bird. The ecosystem is speaking, through the insects,
+          the habitat, the season, the health of a place. Here's how one recording becomes an
+          ecological story.
+        </p>
 
         <div style={{
           display: 'grid',

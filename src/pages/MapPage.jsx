@@ -300,7 +300,7 @@ export default function MapPage() {
         {/* Map */}
         <div style={{ marginBottom: '16px', marginLeft: '-20px', marginRight: '-20px', marginTop: '32px' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px', paddingLeft: '20px' }}>
-            Recorded by — tap a listening post to view its profile
+            Tap a listening post to view its profile
           </div>
           <div style={{ overflow: 'hidden', borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}` }}>
             <MapContainer center={[39.5, -105.5]} zoom={5} style={{ height: '230px', width: '100%' }} zoomControl={true}>
@@ -332,10 +332,13 @@ export default function MapPage() {
 
         {/* Detection feed */}
         <div style={{ marginBottom: '28px' }}>
-          <div style={{ marginBottom: '14px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Ecological record — live</span>
+          <div style={{ marginBottom: '8px', marginTop: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>The ecological record, live</span>
             <span style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Live from Supabase</span>
           </div>
+          <p style={{ fontSize: '13px', color: C.textMuted, lineHeight: 1.6, marginBottom: '14px', maxWidth: '640px' }}>
+            Right now, across the network, places are speaking. Each signal below is a moment from a living ecosystem, who's present, and how the soundscape is doing.
+          </p>
 
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Loading...</div>

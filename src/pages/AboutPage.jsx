@@ -70,8 +70,8 @@ export default function AboutPage() {
         </h1>
         <P style={{ fontSize: '17px', color: C.text }}>
           Magora is an open-source ecological intelligence network. Low-cost listening posts
-          record the soundscape of a place — the birds, the insects, the wind, the weather,
-          the quiet — and turn it into a living record of how that ecosystem is doing, and how
+          record the soundscape of a place, its birds, its insects, the wind, the weather,
+          the quiet, and turn it into a living record of how that ecosystem is doing, and how
           it changes over time.
         </P>
         <Pull>It starts with birdsong. But it was never only about the birds.</Pull>
@@ -82,9 +82,9 @@ export default function AboutPage() {
       <Section title="What we're really listening to">
         <P style={{ fontStyle: 'italic', color: C.text }}>A bird is not just a bird. It's a signal.</P>
         <P>
-          Birds sit near the top of the food web, and they respond fast to change — in the
+          Birds sit near the top of the food web, and they respond fast to change in the
           insects they eat, the plants they shelter in, the water that moves through a
-          landscape, the timing of the seasons. When the community of birds at a place shifts,
+          landscape, and the timing of the seasons. When the community of birds at a place shifts,
           it's rarely about the birds themselves. It's the whole ecosystem underneath them,
           moving.
         </P>
@@ -103,10 +103,10 @@ export default function AboutPage() {
         </P>
         <P>
           Every listening post continuously measures the complexity and richness of its entire
-          soundscape — not just the species it can name, but the full acoustic texture of a
-          place. We call this soundscape health. A rich, layered soundscape — overlapping
-          songs, insects, movement, depth — signals a healthy, active ecosystem. A thinning one
-          can signal stress long before any single species disappears.
+          soundscape, not just the species it can name, but the full acoustic texture of a
+          place. We call this soundscape health. A rich, layered soundscape, with overlapping
+          songs, insects, movement, and depth, signals a healthy, active ecosystem. A thinning
+          one can signal stress long before any single species disappears.
         </P>
         <P>
           Together, species detections and soundscape health give a fuller picture than either
@@ -120,26 +120,26 @@ export default function AboutPage() {
         </P>
         <P>
           Magora is built to grow. The same listening posts are designed to take on more senses
-          over time — temperature, humidity, light, and other environmental signals — so that a
-          node becomes a fuller witness to its place. The longer a post listens, the more it can
+          over time, like temperature, humidity, light, and other environmental signals, so that
+          a node becomes a fuller witness to its place. The longer a post listens, the more it can
           reveal: the shifting timing of the dawn chorus across a season, species arriving
           earlier or ranging into new territory, the slow signatures of a changing climate
           written into the soundscape.
         </P>
         <P>
-          This is what turns scattered recordings into ecological memory — a continuous,
+          This is what turns scattered recordings into ecological memory, a continuous,
           place-based account of a living system, kept over years.
         </P>
       </Section>
 
-      <Section title="Why this matters — and why you">
+      <Section title="Why this matters, and why you">
         <P>
           Most people experience nature as something they visit. Magora is built on a different
           idea: that you are not a visitor to your ecosystem. You are part of it.
         </P>
         <P>
-          When you follow a listening post — your backyard, your schoolyard, a wash near where
-          you camp, a restoration site you care about — something quietly changes. You start to
+          When you follow a listening post, whether your backyard, your schoolyard, a wash near
+          where you camp, or a restoration site you care about, something quietly changes. You start to
           notice the rhythm of a place. You hear it wake up at dawn. You watch the species turn
           over with the seasons. You begin to feel the threads that connect you to the living
           system around you, the one you were always part of but rarely stopped to hear.
@@ -158,10 +158,10 @@ export default function AboutPage() {
         }}>
           <Pillar label="Accessible">
             Listening posts are built from low-cost, off-the-shelf parts. Anyone should be able
-            to deploy one — no specialist hardware, no gatekeeping.
+            to deploy one, with no specialist hardware and no gatekeeping.
           </Pillar>
           <Pillar label="Open source">
-            All of it — the code, the hardware designs, the data — is free and open. The
+            All of it, the code, the hardware designs, and the data, is free and open. The
             ecological record of Earth shouldn't be anyone's private property.
           </Pillar>
           <Pillar label="Research-grade">
@@ -170,7 +170,7 @@ export default function AboutPage() {
           </Pillar>
           <Pillar label="Community-owned">
             The network grows through the people who tend it. Schools, families, researchers,
-            land trusts, restoration projects — each listening post is a place with a steward,
+            land trusts, restoration projects. Each listening post is a place with a steward,
             and the network is the sum of those relationships.
           </Pillar>
         </div>
@@ -179,7 +179,7 @@ export default function AboutPage() {
       <Section title="The invitation">
         <P>
           Every place is speaking. Every listening post helps us hear it. Every steward helps
-          build the ecological record of Earth — and, along the way, a deeper bond with the
+          build the ecological record of Earth, and, along the way, a deeper bond with the
           living world they're part of.
         </P>
         <P style={{ color: C.text }}>

@@ -54,43 +54,43 @@ const SEASON_EMOJI = {
 
 const BADGE_EXPLAIN = {
   confidence: v => v >= 75
-    ? `${v}% detection confidence — BirdNET is highly confident this identification is correct.`
+    ? `${v}% detection confidence. BirdNET is highly confident this identification is correct.`
     : v >= 50
-    ? `${v}% detection confidence — likely correct, but there's some uncertainty in the identification.`
-    : `${v}% detection confidence — possible detection, but treat with caution. Lower confidence can mean background noise or a similar-sounding species.`,
+    ? `${v}% detection confidence. Likely correct, but there's some uncertainty in the identification.`
+    : `${v}% detection confidence. A possible detection, but treat with caution. Lower confidence can mean background noise or a similar-sounding species.`,
   count:     v => `Detected ${v} time${v !== 1 ? 's' : ''} today at this node. High repeat count suggests this species is actively using this habitat right now.`,
-  dawn:      () => 'Detected during the acoustic dawn chorus — the peak singing window just before and after sunrise. This is when birds are most vocally active, often defending territory or attracting mates.',
+  dawn:      () => 'Detected during the acoustic dawn chorus, the peak singing window just before and after sunrise. This is when birds are most vocally active, often defending territory or attracting mates.',
   season:    v => ({
-    winter:         'Winter — resident species dominate. Migrants have departed and breeding has ended. Activity is driven by foraging and survival.',
-    early_spring:   'Early spring — the first long-distance migrants are arriving. Territory establishment begins and singing activity picks up.',
-    breeding:       'Breeding season — peak vocal activity. Most detections are territorial males singing to defend space or attract mates.',
-    post_breeding:  'Post-breeding — fledglings are dispersing and adult birds are quieter. A transitional period before fall migration.',
-    fall_migration: 'Fall migration — species passing through on their way south. You may detect birds that don\'t normally live here.',
-    late_fall:      'Late fall — most migrants have departed. Detections are mostly resident species preparing for winter.',
+    winter:         'Winter. Resident species dominate. Migrants have departed and breeding has ended. Activity is driven by foraging and survival.',
+    early_spring:   'Early spring. The first long-distance migrants are arriving. Territory establishment begins and singing activity picks up.',
+    breeding:       'Breeding season. Peak vocal activity. Most detections are territorial males singing to defend space or attract mates.',
+    post_breeding:  'Post-breeding. Fledglings are dispersing and adult birds are quieter. A transitional period before fall migration.',
+    fall_migration: 'Fall migration. Species passing through on their way south. You may detect birds that don\'t normally live here.',
+    late_fall:      'Late fall. Most migrants have departed. Detections are mostly resident species preparing for winter.',
   }[v] || v.replace(/_/g, ' ')),
   sunrise: v => v < 0
-    ? `Detected ${Math.abs(v)} minutes before sunrise — in the pre-dawn period when the earliest singers begin.`
-    : `Detected ${v} minutes after sunrise — ${v < 120 ? 'within the dawn chorus window, peak vocal activity.' : v < 360 ? 'morning singing period.' : 'well into the day.'}`,
+    ? `Detected ${Math.abs(v)} minutes before sunrise, in the pre-dawn period when the earliest singers begin.`
+    : `Detected ${v} minutes after sunrise, ${v < 120 ? 'within the dawn chorus window, peak vocal activity.' : v < 360 ? 'in the morning singing period.' : 'well into the day.'}`,
   guild: g => ({
-    aerial_insectivore: 'Aerial insectivore — catches flying insects in mid-air. Their presence reflects healthy insect populations and open airspace.',
-    foliage_gleaner:    'Foliage gleaner — picks insects and spiders from leaves and branches. Tightly linked to the health and structure of the tree canopy.',
-    bark_prober:        'Bark prober — excavates insects from tree bark and dead wood. Often an indicator of mature forest with standing dead trees.',
-    ground_forager:     'Ground forager — finds food on or near the soil surface. Sensitive to ground cover, litter depth, and low vegetation structure.',
-    granivore:          'Seed eater — primarily eats seeds and grains. Their population tracks the productivity of grasses, shrubs, and wildflowers.',
-    omnivore:           'Omnivore — eats a wide variety of food including insects, fruit, and seeds. Often adaptable to disturbed or changing habitats.',
-    raptor:             'Raptor — a bird of prey. Raptors sit at the top of the food web and their presence reflects a healthy prey base below them.',
-    nectarivore:        'Nectarivore — feeds primarily on flower nectar. A direct link between bird activity and the flowering plant community.',
-    frugivore:          'Fruit eater — depends on fruiting shrubs and trees. Often an important seed disperser, shaping future plant communities.',
-    aquatic:            'Aquatic forager — hunts in or near water. Their presence is a direct indicator of water quality and aquatic food availability.',
+    aerial_insectivore: 'Aerial insectivore. Catches flying insects in mid-air. Their presence reflects healthy insect populations and open airspace.',
+    foliage_gleaner:    'Foliage gleaner. Picks insects and spiders from leaves and branches. Tightly linked to the health and structure of the tree canopy.',
+    bark_prober:        'Bark prober. Excavates insects from tree bark and dead wood. Often an indicator of mature forest with standing dead trees.',
+    ground_forager:     'Ground forager. Finds food on or near the soil surface. Sensitive to ground cover, litter depth, and low vegetation structure.',
+    granivore:          'Seed eater. Primarily eats seeds and grains. Their population tracks the productivity of grasses, shrubs, and wildflowers.',
+    omnivore:           'Omnivore. Eats a wide variety of food including insects, fruit, and seeds. Often adaptable to disturbed or changing habitats.',
+    raptor:             'Raptor. A bird of prey. Raptors sit at the top of the food web and their presence reflects a healthy prey base below them.',
+    nectarivore:        'Nectarivore. Feeds primarily on flower nectar. A direct link between bird activity and the flowering plant community.',
+    frugivore:          'Fruit eater. Depends on fruiting shrubs and trees. Often an important seed disperser, shaping future plant communities.',
+    aquatic:            'Aquatic forager. Hunts in or near water. Their presence is a direct indicator of water quality and aquatic food availability.',
   }[g] || `Foraging guild: ${g.replace(/_/g, ' ')}. Guild describes how and where a bird finds its food.`),
   migratory: m => ({
-    long_distance:  'Long-distance migrant — travels thousands of miles between breeding and wintering grounds, often to Central or South America. Highly sensitive to habitat loss at both ends of the journey.',
-    short_distance: 'Short-distance migrant — moves seasonally within North America, often shifting to lower elevations or southern regions in winter.',
-    resident:       'Year-round resident — lives here in all seasons. Does not migrate. Their presence is a stable signal of local habitat quality.',
-    altitudinal:    'Altitudinal migrant — moves up and down in elevation with the seasons rather than north-south. Winters in valley bottoms, breeds at higher elevation.',
-    irruptive:      'Irruptive migrant — makes unpredictable long-distance movements when food sources like seeds or prey collapse in their normal range.',
+    long_distance:  'Long-distance migrant. Travels thousands of miles between breeding and wintering grounds, often to Central or South America. Highly sensitive to habitat loss at both ends of the journey.',
+    short_distance: 'Short-distance migrant. Moves seasonally within North America, often shifting to lower elevations or southern regions in winter.',
+    resident:       'Year-round resident. Lives here in all seasons. Does not migrate. Their presence is a stable signal of local habitat quality.',
+    altitudinal:    'Altitudinal migrant. Moves up and down in elevation with the seasons rather than north-south. Winters in valley bottoms, breeds at higher elevation.',
+    irruptive:      'Irruptive migrant. Makes unpredictable long-distance movements when food sources like seeds or prey collapse in their normal range.',
   }[m] || m.replace(/_/g, ' ')),
-  sensitive: () => 'Conservation-sensitive species — flagged because this bird is vulnerable to habitat loss, climate change, or declining populations. Its presence or absence at this node is ecologically meaningful.',
+  sensitive: () => 'Conservation-sensitive species, flagged because this bird is vulnerable to habitat loss, climate change, or declining populations. Its presence or absence at this node is ecologically meaningful.',
 }
 
 export default function DetectionCard({ d, node, wikiData, count, insight, onRequestInsight }) {

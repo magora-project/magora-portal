@@ -191,11 +191,11 @@ export default function NodePage() {
     : null
 
   const bio = node.bio || node.description ||
-    `${node.name} listens continuously over ${habitat || 'this landscape'}${node.elevation_m ? ` at ${node.elevation_m} m` : ''}. Every bird and insect that calls here adds to a long-running record of what lives in this place — and what is changing.`
+    `${node.name} listens continuously over ${habitat || 'this landscape'}${node.elevation_m ? ` at ${node.elevation_m} m` : ''}. Every bird and insect that calls here adds to a long-running record of what lives in this place, and what is changing.`
 
   async function handleShareProfile() {
     const url = window.location.href
-    const text = `${node.name} — a ${habitat || 'wild'} soundscape${totalSpecies ? `, ${totalSpecies} species recorded` : ''}.\n\nEvery place is speaking.\n${url}`
+    const text = `${node.name}, a ${habitat || 'wild'} soundscape${totalSpecies ? `, ${totalSpecies} species recorded` : ''}.\n\nEvery place is speaking.\n${url}`
     if (navigator.share) {
       try { await navigator.share({ title: `${node.name} · Magora`, text }) } catch { /* dismissed */ }
       return
@@ -348,7 +348,7 @@ export default function NodePage() {
       {aciLogs.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>Soundscape health — last {aciLogs.length} readings</span>
+            <span style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>Soundscape health, last {aciLogs.length} readings</span>
             <span style={{ fontSize: '11px', color: C.textMuted }}>Hover bars for detail</span>
           </div>
           <AciSparkline logs={aciLogs} />

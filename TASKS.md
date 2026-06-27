@@ -77,6 +77,14 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **Em-dash cleanup, app-wide** (June 2026)
+  - Replaced user-facing em-dashes with commas/periods across AboutPage, DetectionCard badge tooltips, NodePage, ShareSheet, RegisterNode, Dashboard, MapPage, plus index.html title + manifest description
+  - Left untouched: `'—'` no-data placeholders (UI convention), code comments, en-dash number ranges (0–3 min)
+  - insight.js prompt now instructs Claude to avoid em-dashes so generated insights stay clean too
+- [x] **Homepage copy refresh** (June 2026)
+  - Section 3 heading → "The ecological record, live" + new intro ("places are speaking… a moment from a living ecosystem")
+  - Section 4 (EcologicalPipeline) heading → "From birdsong to ecological insight" + new intro ("A single birdcall is never just a bird. The ecosystem is speaking…")
+  - Hero, heartbeat, and commons verified already ecosystem-first (no change); homepage-copy.md placed in repo root
 - [x] **App-wide wording shifts** (June 2026)
   - Browser title → "Magora — listening to the living world" + meta description (index.html)
   - Navbar brand: "Magora Bird Project / Citizen Science BioAcoustics" → "Magora / Ecological intelligence network"

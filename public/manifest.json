@@ -1,7 +1,7 @@
 {
   "name": "Magora",
   "short_name": "Magora",
-  "description": "An open-source ecological intelligence network — listening to the living world.",
+  "description": "An open-source ecological intelligence network, listening to the living world.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d2818",
