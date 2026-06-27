@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ShareSheet from './ShareSheet'
 
 export function toMountainTime(utcString, showSeconds = true) {
   const d = new Date(new Date(utcString).getTime() - 6 * 60 * 60 * 1000)
@@ -11,6 +12,20 @@ export function toMountainTime(utcString, showSeconds = true) {
     return `${hour}:${m}:${s} ${period}`
   }
   return `${hour}:${m} ${period}`
+}
+
+// Human-readable moment for a detection — leads with the place's experience, not a data label
+export function recordingMoment(d) {
+  if (d?.is_dawn_chorus) return 'at dawn'
+  if (!d?.detected_at) return 'recently'
+  const local = new Date(new Date(d.detected_at).getTime() - 6 * 60 * 60 * 1000)
+  const h = local.getUTCHours()
+  if (h < 5)  return 'overnight'
+  if (h < 8)  return 'at dawn'
+  if (h < 12) return 'in the morning'
+  if (h < 17) return 'in the afternoon'
+  if (h < 21) return 'in the evening'
+  return 'after dark'
 }
 
 const C = {
@@ -78,10 +93,11 @@ const BADGE_EXPLAIN = {
   sensitive: () => 'Conservation-sensitive species — flagged because this bird is vulnerable to habitat loss, climate change, or declining populations. Its presence or absence at this node is ecologically meaningful.',
 }
 
-export default function DetectionCard({ d, wikiData, count, insight, onRequestInsight }) {
+export default function DetectionCard({ d, node, wikiData, count, insight, onRequestInsight }) {
   const [activeBadge, setActiveBadge] = useState(null)
   const [callState, setCallState] = useState(null) // null | 'loading' | 'ready' | 'error'
   const [soundUrl, setSoundUrl] = useState(null)
+  const [shareOpen, setShareOpen] = useState(false)
 
   async function loadCall() {
     setCallState('loading')
@@ -130,6 +146,9 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
   const wiki = wikiData[d.species_name] || {}
   const sci  = d.raw_label?.split('_')[1] || ''
 
+  const moment = recordingMoment(d)
+  const fromNode = node?.name ? ` from ${node.name}` : ''
+
   function Btn({ id, explain, style, children }) {
     const active = activeBadge === id
     return (
@@ -163,10 +182,13 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
           : <div style={{ width: '110px', height: '110px', background: '#1a4a28', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '36px', flexShrink: 0 }}>🐦</div>
         }
         <div style={{ flex: 1, padding: '12px 14px', minWidth: 0 }}>
-          <div style={{ fontSize: '17px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: sci ? '2px' : '8px' }}>
+          <div style={{ fontSize: '17px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: '2px' }}>
             {d.species_name || d.raw_label || 'Unknown'}
           </div>
-          {sci && <div style={{ fontSize: '12px', color: C.textMuted, fontStyle: 'italic', marginBottom: '8px' }}>{sci}</div>}
+          {sci && <div style={{ fontSize: '12px', color: C.textMuted, fontStyle: 'italic', marginBottom: '4px' }}>{sci}</div>}
+          <div style={{ fontSize: '12px', color: C.textSub, lineHeight: 1.4, marginBottom: '8px' }}>
+            Recorded {moment}{fromNode}
+          </div>
 
           {/* Row 1: detection metadata */}
           <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '5px' }}>
@@ -230,8 +252,28 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
         </div>
       )}
 
-      {/* Listen + Insight */}
+      {/* Listen + Share + Insight */}
       <div style={{ padding: '10px 14px 14px', display: 'flex', gap: '8px' }}>
+        <button
+          onClick={() => setShareOpen(true)}
+          aria-label="Share this detection"
+          title="Share"
+          style={{
+            flex: '0 0 auto', padding: '10px 12px',
+            background: C.border, border: `1px solid ${C.border}`,
+            borderRadius: '10px', color: C.textMuted, cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+          </svg>
+        </button>
+
         {callState !== 'ready' && (
           <button
             onClick={callState !== 'loading' && callState !== 'error' ? loadCall : undefined}
@@ -267,6 +309,10 @@ export default function DetectionCard({ d, wikiData, count, insight, onRequestIn
           </div>
         )}
       </div>
+
+      {shareOpen && (
+        <ShareSheet d={d} node={node} photo={wiki.img} moment={moment} onClose={() => setShareOpen(false)} />
+      )}
     </div>
   )
 }

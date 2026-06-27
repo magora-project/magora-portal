@@ -55,6 +55,7 @@ export default function MapPage() {
   const [detections, setDetections] = useState([])
   const [nodes, setNodes] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [wikiData, setWikiData] = useState({})
   const [insights, setInsights] = useState({})
   const [todaySpeciesCount, setTodaySpeciesCount] = useState(null)
@@ -65,21 +66,32 @@ export default function MapPage() {
     const todayStart = new Date()
     todayStart.setUTCHours(0, 0, 0, 0)
 
-    const [{ data: nodeData }, { data: detectionData }, { data: aciData }, { data: todayData }] = await Promise.all([
-      supabase.from('nodes').select('*').eq('is_active', true),
-      supabase.from('detections')
-        .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
-        .order('detected_at', { ascending: false }).limit(50),
-      supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
-      supabase.from('detections').select('species_name').gte('detected_at', todayStart.toISOString()),
-    ])
+    try {
+      const [nodesRes, detRes, aciRes, todayRes] = await Promise.all([
+        supabase.from('nodes').select('*').eq('is_active', true),
+        supabase.from('detections')
+          .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
+          .order('detected_at', { ascending: false }).limit(50),
+        supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
+        supabase.from('detections').select('species_name').gte('detected_at', todayStart.toISOString()),
+      ])
 
-    setNodes(nodeData || [])
-    setDetections(detectionData || [])
-    setAciLogs(aciData || [])
-    setTodayDetections(todayData || [])
-    setTodaySpeciesCount(new Set((todayData || []).map(d => d.species_name).filter(Boolean)).size)
-    setLoading(false)
+      // supabase-js resolves with { data, error } even on API failures — surface those too
+      const firstErr = nodesRes.error || detRes.error || aciRes.error || todayRes.error
+      if (firstErr) throw firstErr
+
+      setNodes(nodesRes.data || [])
+      setDetections(detRes.data || [])
+      setAciLogs(aciRes.data || [])
+      setTodayDetections(todayRes.data || [])
+      setTodaySpeciesCount(new Set((todayRes.data || []).map(d => d.species_name).filter(Boolean)).size)
+      setError(false)
+    } catch (e) {
+      console.warn('MapPage fetch failed:', e)
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -151,6 +163,8 @@ export default function MapPage() {
   const mappableNodes = nodes
     .map(n => ({ ...n, coords: parseNodeLocation(n.location) }))
     .filter(n => n.coords)
+
+  const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]))
 
   function isRecentNode(node) {
     if (!node.last_seen) return false
@@ -325,18 +339,35 @@ export default function MapPage() {
 
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Loading...</div>
-          ) : detections.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Nothing recorded in this window</div>
-          ) : (
+          ) : detections.length > 0 ? (
             <div className="detection-grid">
               {dedupedDetections.map(d => (
                 <DetectionCard
-                  key={d.id} d={d} wikiData={wikiData}
+                  key={d.id} d={d} node={nodeById[d.node_id]} wikiData={wikiData}
                   count={speciesCountToday[d.species_name || d.raw_label] || 1}
                   insight={insights[d.id]} onRequestInsight={() => requestInsight(d)}
                 />
               ))}
             </div>
+          ) : error ? (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: C.textMuted }}>
+              <div style={{ fontSize: '15px', fontWeight: '700', color: C.text, marginBottom: '6px' }}>Couldn't reach the network</div>
+              <div style={{ fontSize: '13px', lineHeight: 1.6, marginBottom: '16px' }}>
+                This looks like a connection problem, not a quiet soundscape. Check your signal and try again.
+              </div>
+              <button
+                onClick={() => { setLoading(true); fetchData() }}
+                style={{
+                  padding: '9px 18px', background: C.accent, border: 'none', borderRadius: '10px',
+                  color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                }}
+              >
+                Try again
+              </button>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Nothing recorded in this window</div>
           )}
         </div>
 

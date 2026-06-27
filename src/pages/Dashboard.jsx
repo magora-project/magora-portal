@@ -151,7 +151,7 @@ export default function Dashboard() {
 
         {/* ACI by time of day */}
         <div style={card}>
-          <div style={cardTitle}>ACI by time of day</div>
+          <div style={cardTitle}>Soundscape health through the day</div>
           {aciByCategory.map(({ cat, avg }) => (
             <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
               <span style={{ fontSize: '12px', fontWeight: '600', color: C.textMuted, width: '64px', flexShrink: 0 }}>{cat}</span>
