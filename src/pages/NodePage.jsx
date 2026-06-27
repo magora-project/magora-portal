@@ -372,7 +372,7 @@ export default function NodePage() {
             Nothing recorded at this listening post
           </div>
         ) : (
-          <div style={{ borderRadius: '16px', overflow: 'hidden', border: `1px solid ${C.border}` }}>
+          <div className="detection-grid">
             {dedupedDetections.map(d => (
               <DetectionCard
                 key={d.id} d={d} node={node} wikiData={wikiData}

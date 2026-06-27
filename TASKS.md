@@ -31,13 +31,6 @@ _Empty — promote from Backlog when ready._
   - Feed tabs: Global | Following
   - Keep "Following" tab gated/hidden until there are enough nodes to follow (empty-room problem)
 
-- [ ] **Feed redesign — Instagram-style vertical scroll**
-  - Large visual cards (species image dominant)
-  - Node name as the "account" header on each card
-  - Detection as the "post", ecological insight as the caption
-  - Listen / What does this mean? / Share actions on each card
-  - Vertical scroll, mobile-first
-
 - [ ] **Species page**
   - `/species/:name` route
   - Species photo, scientific name, range map
@@ -77,6 +70,12 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **Feed redesign — Instagram-style + ID confidence meter** (June 2026)
+  - DetectionCard rebuilt as image-dominant card (full-width photo, ~260px) using the .feed-card CSS hooks
+  - "Account" header (node name + place + live dot, links to profile) shown on the global feed only via showNode prop; hidden on a node's own page
+  - Confidence score relabeled "ID confidence" with a meter bar + % (tap for the BirdNET explanation), color-coded by bucket
+  - Insight shows as a caption; Listen / Share / "What's the ecosystem saying?" actions kept
+  - Feed is a single centered column (max 500px), edge-to-edge full-bleed on mobile; applied to MapPage feed + NodePage record (.detection-grid)
 - [x] **Confidence filter — 30% minimum** (June 2026)
   - Added MIN_CONFIDENCE (0.30) in lib/supabase.js; applied as `.gte('confidence', …)` on every detections query
   - Hides sub-30% detections from the live feed, today's species count, node pages + all-time stats, and dashboard analytics (data still stored, just not shown)

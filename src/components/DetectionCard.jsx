@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import ShareSheet from './ShareSheet'
 
 export function toMountainTime(utcString, showSeconds = true) {
@@ -32,6 +33,11 @@ const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
   accent: '#1D9E75', accentLight: '#5DCAA5',
   text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+}
+
+const HABITAT_EMOJI = {
+  'montane-scrub': '🌿', forest: '🌲', grassland: '🌾', wetland: '💧',
+  desert: '🏜️', 'urban-garden': '🏙️', farmland: '🌻', coastal: '🌊', other: '📍',
 }
 
 const GUILD = {
@@ -93,7 +99,7 @@ const BADGE_EXPLAIN = {
   sensitive: () => 'Conservation-sensitive species, flagged because this bird is vulnerable to habitat loss, climate change, or declining populations. Its presence or absence at this node is ecologically meaningful.',
 }
 
-export default function DetectionCard({ d, node, wikiData, count, insight, onRequestInsight }) {
+export default function DetectionCard({ d, node, showNode = false, wikiData, count, insight, onRequestInsight }) {
   const [activeBadge, setActiveBadge] = useState(null)
   const [callState, setCallState] = useState(null) // null | 'loading' | 'ready' | 'error'
   const [soundUrl, setSoundUrl] = useState(null)
@@ -145,11 +151,10 @@ export default function DetectionCard({ d, node, wikiData, count, insight, onReq
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
   const wiki = wikiData[d.species_name] || {}
   const sci  = d.raw_label?.split('_')[1] || ''
-
   const moment = recordingMoment(d)
-  const fromNode = node?.name ? ` from ${node.name}` : ''
+  const confColor = conf == null ? C.border : conf >= 75 ? C.accent : conf >= 55 ? C.accentLight : '#d9a441'
 
-  function Btn({ id, explain, style, children }) {
+  function Btn({ id, style, children }) {
     const active = activeBadge === id
     return (
       <button
@@ -172,147 +177,181 @@ export default function DetectionCard({ d, node, wikiData, count, insight, onReq
     : callState === 'error'   ? 'No recording'
     : '🔊 Listen'
 
+  const shareBtn = (
+    <button
+      onClick={() => setShareOpen(true)}
+      aria-label="Share this detection"
+      title="Share"
+      style={{
+        flex: '0 0 auto', padding: '10px 12px',
+        background: C.border, border: `1px solid ${C.border}`,
+        borderRadius: '10px', color: C.textMuted, cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="18" cy="5" r="3" />
+        <circle cx="6" cy="12" r="3" />
+        <circle cx="18" cy="19" r="3" />
+        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+      </svg>
+    </button>
+  )
+
+  const listenBtn = callState !== 'ready' && (
+    <button
+      onClick={callState !== 'loading' && callState !== 'error' ? loadCall : undefined}
+      disabled={callState === 'loading' || callState === 'error'}
+      style={{
+        flex: '0 0 auto', padding: '10px 14px',
+        background: callState === 'error' ? '#2a1a0a' : C.border,
+        border: callState === 'error' ? '1px solid #f97316' : `1px solid ${C.border}`,
+        borderRadius: '10px', color: callState === 'error' ? '#fb923c' : C.textMuted,
+        fontSize: '13px', fontWeight: '700', cursor: callState === 'loading' || callState === 'error' ? 'default' : 'pointer',
+        fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+      }}
+    >
+      {callLabel}
+    </button>
+  )
+
   return (
-    <div style={{ background: C.card, borderTop: `1px solid ${C.border}`, overflow: 'hidden' }}>
+    <article className="feed-card" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px', overflow: 'hidden' }}>
 
-      {/* Top row: thumbnail left, info right */}
-      <div style={{ display: 'flex', gap: '0' }}>
-        {wiki.img
-          ? <img src={wiki.img} alt={d.species_name} style={{ width: '110px', minHeight: '110px', objectFit: 'cover', objectPosition: 'center', flexShrink: 0, display: 'block' }} />
-          : <div style={{ width: '110px', height: '110px', background: '#1a4a28', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '36px', flexShrink: 0 }}>🐦</div>
-        }
-        <div style={{ flex: 1, padding: '12px 14px', minWidth: 0 }}>
-          <div style={{ fontSize: '17px', fontWeight: '700', color: C.text, lineHeight: 1.2, marginBottom: '2px' }}>
-            {d.species_name || d.raw_label || 'Unknown'}
+      {/* "Account" header — the place this came from (global feed only) */}
+      {showNode && node && (
+        <Link to={`/node/${node.id}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 14px', textDecoration: 'none', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: C.bg, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '17px', flexShrink: 0 }}>
+            {HABITAT_EMOJI[node.habitat_type] || '📍'}
           </div>
-          {sci && <div style={{ fontSize: '12px', color: C.textMuted, fontStyle: 'italic', marginBottom: '4px' }}>{sci}</div>}
-          <div style={{ fontSize: '12px', color: C.textSub, lineHeight: 1.4, marginBottom: '8px' }}>
-            Recorded {moment}{fromNode}
-          </div>
-
-          {/* Row 1: detection metadata */}
-          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '5px' }}>
-            {conf !== null && <Btn id="confidence" style={{ background: C.bg, color: C.accentLight, border: `1px solid ${C.accent}` }}>{conf}%</Btn>}
-            <span style={{ borderRadius: '20px', padding: '3px 9px', fontSize: '12px', fontWeight: '600', background: C.bg, border: `1px solid ${C.border}`, color: C.textSub }}>
-              {toMountainTime(d.detected_at, false)}
-            </span>
-            <Btn id="count" style={{ background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>×{count} today</Btn>
-            {d.is_dawn_chorus && <Btn id="dawn" style={{ background: '#1a3a4a', border: '1px solid #0ea5e9', color: '#7dd3fc' }}>🌅 Dawn chorus</Btn>}
-            {d.season && <Btn id="season" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>{SEASON_EMOJI[d.season]} {d.season.replace(/_/g, ' ')}</Btn>}
-            {d.minutes_from_sunrise != null && <Btn id="sunrise" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>☀️ {d.minutes_from_sunrise < 0 ? `${Math.abs(d.minutes_from_sunrise)}m pre-dawn` : `+${d.minutes_from_sunrise}m`}</Btn>}
-          </div>
-
-          {/* Row 2: species profile */}
-          {d.species?.guild && (
-            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-              <Btn id="guild" style={{ background: '#1a3a28', border: `1px solid ${C.accent}`, color: C.accentLight }}>
-                {GUILD[d.species.guild]?.emoji} {GUILD[d.species.guild]?.label || d.species.guild.replace(/_/g, ' ')}
-              </Btn>
-              {d.species.migratory_status && (
-                <Btn id="migratory" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>
-                  {d.species.migratory_status === 'long_distance' ? '🌍' : d.species.migratory_status === 'resident' ? '🏠' : d.species.migratory_status === 'altitudinal' ? '⛰️' : '💨'} {d.species.migratory_status.replace(/_/g, ' ')}
-                </Btn>
-              )}
-              {d.species.sensitivity_flag && (
-                <Btn id="sensitive" style={{ background: '#2a1a0a', border: '1px solid #f97316', color: '#fb923c' }}>⚠️ sensitive</Btn>
-              )}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {node.is_active && <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />}
+              <span style={{ fontSize: '14px', fontWeight: '700', color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Badge explanation strip */}
-      {activeBadge && (
-        <div style={{ padding: '10px 14px', fontSize: '13px', color: C.textSub, lineHeight: 1.6, background: '#0f3020', borderTop: `1px solid ${C.border}`, borderLeft: `3px solid ${C.accentLight}` }}>
-          {activeBadge === 'confidence' && BADGE_EXPLAIN.confidence(conf)}
-          {activeBadge === 'count'      && BADGE_EXPLAIN.count(count)}
-          {activeBadge === 'dawn'       && BADGE_EXPLAIN.dawn()}
-          {activeBadge === 'season'     && BADGE_EXPLAIN.season(d.season)}
-          {activeBadge === 'sunrise'    && BADGE_EXPLAIN.sunrise(d.minutes_from_sunrise)}
-          {activeBadge === 'guild'      && BADGE_EXPLAIN.guild(d.species?.guild)}
-          {activeBadge === 'migratory'  && BADGE_EXPLAIN.migratory(d.species?.migratory_status)}
-          {activeBadge === 'sensitive'  && BADGE_EXPLAIN.sensitive()}
-        </div>
-      )}
-
-      {/* Wikipedia fact */}
-      {wiki.fact && (
-        <div style={{ padding: '10px 14px', fontSize: '13px', color: C.textSub, lineHeight: 1.5, fontStyle: 'italic', borderTop: `1px solid ${C.border}`, borderLeft: `3px solid ${C.accent}` }}>
-          {wiki.fact}
-        </div>
-      )}
-
-      {/* Library recording player */}
-      {callState === 'ready' && soundUrl && (
-        <div style={{ borderTop: `1px solid ${C.border}`, padding: '10px 14px 6px' }}>
-          <div style={{ fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-            Library recording · Xeno-canto / GBIF
+            {node.habitat_type && (
+              <div style={{ fontSize: '12px', color: C.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {node.habitat_type.replace(/-/g, ' ')}
+              </div>
+            )}
           </div>
-          <audio controls src={soundUrl} style={{ width: '100%', height: '36px' }} />
-        </div>
+          <span style={{ fontSize: '11px', color: C.textMuted, flexShrink: 0 }}>View ›</span>
+        </Link>
       )}
 
-      {/* Listen + Share + Insight */}
-      <div style={{ padding: '10px 14px 14px', display: 'flex', gap: '8px' }}>
-        <button
-          onClick={() => setShareOpen(true)}
-          aria-label="Share this detection"
-          title="Share"
-          style={{
-            flex: '0 0 auto', padding: '10px 12px',
-            background: C.border, border: `1px solid ${C.border}`,
-            borderRadius: '10px', color: C.textMuted, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="18" cy="5" r="3" />
-            <circle cx="6" cy="12" r="3" />
-            <circle cx="18" cy="19" r="3" />
-            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-          </svg>
-        </button>
+      {/* Image */}
+      {wiki.img
+        ? <img src={wiki.img} alt={d.species_name} style={{ width: '100%', height: '260px', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
+        : <div style={{ width: '100%', height: '260px', background: 'linear-gradient(135deg, #1a4a28, #0d2818)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '60px' }}>🐦</div>
+      }
 
-        {callState !== 'ready' && (
+      <div className="feed-card-body" style={{ padding: '14px 16px 16px' }}>
+
+        {/* Name + moment */}
+        <div className="feed-card-name" style={{ fontSize: '22px', fontWeight: '700', color: C.text, lineHeight: 1.15, marginBottom: '3px' }}>
+          {d.species_name || d.raw_label || 'Unknown'}
+        </div>
+        <div className="feed-card-sci" style={{ fontSize: '13px', color: C.textMuted, marginBottom: '14px' }}>
+          {sci && <span style={{ fontStyle: 'italic' }}>{sci} · </span>}Recorded {moment} · {toMountainTime(d.detected_at, false)}
+        </div>
+
+        {/* ID confidence meter */}
+        {conf !== null && (
           <button
-            onClick={callState !== 'loading' && callState !== 'error' ? loadCall : undefined}
-            disabled={callState === 'loading' || callState === 'error'}
-            style={{
-              flex: '0 0 auto', padding: '10px 14px',
-              background: callState === 'error' ? '#2a1a0a' : C.border,
-              border: callState === 'error' ? '1px solid #f97316' : `1px solid ${C.border}`,
-              borderRadius: '10px', color: callState === 'error' ? '#fb923c' : C.textMuted,
-              fontSize: '13px', fontWeight: '700', cursor: callState === 'loading' || callState === 'error' ? 'default' : 'pointer',
-              fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
-            }}
+            onClick={() => setActiveBadge(activeBadge === 'confidence' ? null : 'confidence')}
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', background: 'none', border: 'none', padding: 0, marginBottom: '14px', cursor: 'pointer', textAlign: 'left' }}
           >
-            {callLabel}
+            <span style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>ID confidence</span>
+            <span style={{ flex: 1, height: '6px', background: C.bg, borderRadius: '3px', overflow: 'hidden', border: `1px solid ${C.border}` }}>
+              <span style={{ display: 'block', height: '100%', width: `${conf}%`, background: confColor, borderRadius: '3px' }} />
+            </span>
+            <span style={{ fontSize: '13px', fontWeight: '700', color: confColor, flexShrink: 0, minWidth: '34px', textAlign: 'right' }}>{conf}%</span>
           </button>
         )}
 
-        {!insight?.text ? (
-          <button onClick={onRequestInsight} disabled={insight?.loading} style={{
-            flex: 1, padding: '10px',
-            background: insight?.loading ? C.border : C.accent,
-            border: 'none', borderRadius: '10px',
-            color: insight?.loading ? '#4a7a58' : '#fff',
-            fontSize: '14px', fontWeight: '700',
-            cursor: insight?.loading ? 'default' : 'pointer',
-            fontFamily: "'DM Sans', sans-serif",
-          }}>
-            {insight?.loading ? '🔍 Generating...' : "What's the ecosystem saying?"}
-          </button>
-        ) : (
-          <div style={{ flex: 1, fontSize: '13px', color: C.textSub, lineHeight: 1.5, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '10px', alignSelf: 'center' }}>
+        {/* Context chips */}
+        <div className="feed-card-badges" style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <Btn id="count" style={{ background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>×{count} today</Btn>
+          {d.is_dawn_chorus && <Btn id="dawn" style={{ background: '#1a3a4a', border: '1px solid #0ea5e9', color: '#7dd3fc' }}>🌅 Dawn chorus</Btn>}
+          {d.season && <Btn id="season" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>{SEASON_EMOJI[d.season]} {d.season.replace(/_/g, ' ')}</Btn>}
+          {d.minutes_from_sunrise != null && <Btn id="sunrise" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>☀️ {d.minutes_from_sunrise < 0 ? `${Math.abs(d.minutes_from_sunrise)}m pre-dawn` : `+${d.minutes_from_sunrise}m`}</Btn>}
+          {d.species?.guild && (
+            <Btn id="guild" style={{ background: '#1a3a28', border: `1px solid ${C.accent}`, color: C.accentLight }}>
+              {GUILD[d.species.guild]?.emoji} {GUILD[d.species.guild]?.label || d.species.guild.replace(/_/g, ' ')}
+            </Btn>
+          )}
+          {d.species?.migratory_status && (
+            <Btn id="migratory" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>
+              {d.species.migratory_status === 'long_distance' ? '🌍' : d.species.migratory_status === 'resident' ? '🏠' : d.species.migratory_status === 'altitudinal' ? '⛰️' : '💨'} {d.species.migratory_status.replace(/_/g, ' ')}
+            </Btn>
+          )}
+          {d.species?.sensitivity_flag && (
+            <Btn id="sensitive" style={{ background: '#2a1a0a', border: '1px solid #f97316', color: '#fb923c' }}>⚠️ sensitive</Btn>
+          )}
+        </div>
+
+        {/* Badge explanation strip */}
+        {activeBadge && (
+          <div style={{ padding: '10px 12px', fontSize: '13px', color: C.textSub, lineHeight: 1.6, background: '#0f3020', borderRadius: '10px', borderLeft: `3px solid ${C.accentLight}`, marginBottom: '12px' }}>
+            {activeBadge === 'confidence' && BADGE_EXPLAIN.confidence(conf)}
+            {activeBadge === 'count'      && BADGE_EXPLAIN.count(count)}
+            {activeBadge === 'dawn'       && BADGE_EXPLAIN.dawn()}
+            {activeBadge === 'season'     && BADGE_EXPLAIN.season(d.season)}
+            {activeBadge === 'sunrise'    && BADGE_EXPLAIN.sunrise(d.minutes_from_sunrise)}
+            {activeBadge === 'guild'      && BADGE_EXPLAIN.guild(d.species?.guild)}
+            {activeBadge === 'migratory'  && BADGE_EXPLAIN.migratory(d.species?.migratory_status)}
+            {activeBadge === 'sensitive'  && BADGE_EXPLAIN.sensitive()}
+          </div>
+        )}
+
+        {/* Wikipedia fact */}
+        {wiki.fact && (
+          <div className="feed-card-fact" style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.55, fontStyle: 'italic', borderLeft: `3px solid ${C.accent}`, paddingLeft: '12px', marginBottom: '12px' }}>
+            {wiki.fact}
+          </div>
+        )}
+
+        {/* Library recording player */}
+        {callState === 'ready' && soundUrl && (
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
+              Library recording · Xeno-canto / GBIF
+            </div>
+            <audio controls src={soundUrl} style={{ width: '100%', height: '36px' }} />
+          </div>
+        )}
+
+        {/* Insight caption */}
+        {insight?.text && (
+          <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.6, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '12px', marginBottom: '14px' }}>
             {insight.text}
           </div>
         )}
+
+        {/* Actions */}
+        <div className="feed-card-insight" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {listenBtn}
+          {shareBtn}
+          {!insight?.text && (
+            <button onClick={onRequestInsight} disabled={insight?.loading} style={{
+              flex: 1, padding: '10px',
+              background: insight?.loading ? C.border : C.accent,
+              border: 'none', borderRadius: '10px',
+              color: insight?.loading ? '#4a7a58' : '#fff',
+              fontSize: '14px', fontWeight: '700',
+              cursor: insight?.loading ? 'default' : 'pointer',
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
+              {insight?.loading ? '🔍 Generating...' : "What's the ecosystem saying?"}
+            </button>
+          )}
+        </div>
       </div>
 
       {shareOpen && (
         <ShareSheet d={d} node={node} photo={wiki.img} moment={moment} onClose={() => setShareOpen(false)} />
       )}
-    </div>
+    </article>
   )
 }

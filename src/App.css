@@ -148,9 +148,11 @@ select option { background: #163d22; color: #f0ede8; }
 }
 
 .detection-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 500px;
+  margin: 0 auto;
 }
 
 /* ---- Stat cards ---- */
@@ -205,16 +207,15 @@ select option { background: #163d22; color: #f0ede8; }
 
   /* Detection cards edge-to-edge */
   .detection-grid {
-    grid-template-columns: 1fr;
-    gap: 0;
+    gap: 12px;
+    max-width: none;
     margin-left: -16px;
     margin-right: -16px;
   }
-  .detection-grid > div {
+  .detection-grid > * {
     border-radius: 0 !important;
     border-left: none !important;
     border-right: none !important;
-    margin-bottom: 12px;
   }
 
   /* Compact feed cards on mobile */

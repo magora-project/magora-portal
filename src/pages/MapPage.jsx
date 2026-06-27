@@ -347,7 +347,7 @@ export default function MapPage() {
             <div className="detection-grid">
               {dedupedDetections.map(d => (
                 <DetectionCard
-                  key={d.id} d={d} node={nodeById[d.node_id]} wikiData={wikiData}
+                  key={d.id} d={d} node={nodeById[d.node_id]} showNode wikiData={wikiData}
                   count={speciesCountToday[d.species_name || d.raw_label] || 1}
                   insight={insights[d.id]} onRequestInsight={() => requestInsight(d)}
                 />
