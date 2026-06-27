@@ -194,7 +194,7 @@ export default function MapPage() {
             textTransform: 'uppercase',
             marginBottom: '14px',
           }}>
-            Every place is speaking.
+            The ecosystem is telling a story.
           </h1>
           <p style={{
             fontSize: '0.95rem',
@@ -203,7 +203,7 @@ export default function MapPage() {
             marginBottom: '24px',
             maxWidth: '540px',
           }}>
-            Magora is an open-source ecological intelligence platform where low-cost monitoring nodes transform soundscapes into shared biodiversity knowledge.
+            Magora is an open-source ecological intelligence network. Low-cost listening posts turn the soundscape of a place into a living record of its ecosystem: the birds, the insects, the seasons, and the health of the land.
           </p>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <button

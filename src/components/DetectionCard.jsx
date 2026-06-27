@@ -301,7 +301,7 @@ export default function DetectionCard({ d, node, wikiData, count, insight, onReq
             cursor: insight?.loading ? 'default' : 'pointer',
             fontFamily: "'DM Sans', sans-serif",
           }}>
-            {insight?.loading ? '🔍 Generating...' : 'What does this mean?'}
+            {insight?.loading ? '🔍 Generating...' : "What's the ecosystem saying?"}
           </button>
         ) : (
           <div style={{ flex: 1, fontSize: '13px', color: C.textSub, lineHeight: 1.5, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '10px', alignSelf: 'center' }}>
