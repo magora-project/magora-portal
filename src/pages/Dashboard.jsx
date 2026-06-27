@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 
 const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
@@ -41,6 +41,7 @@ export default function Dashboard() {
       const { data: detectionData } = await supabase
         .from('detections')
         .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
+        .gte('confidence', MIN_CONFIDENCE)
         .order('detected_at', { ascending: false }).limit(200)
       const { data: aciData } = await supabase
         .from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(200)

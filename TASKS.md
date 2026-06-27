@@ -77,6 +77,10 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **Confidence filter — 30% minimum** (June 2026)
+  - Added MIN_CONFIDENCE (0.30) in lib/supabase.js; applied as `.gte('confidence', …)` on every detections query
+  - Hides sub-30% detections from the live feed, today's species count, node pages + all-time stats, and dashboard analytics (data still stored, just not shown)
+  - Change the threshold in one place (lib/supabase.js) to adjust app-wide
 - [x] **Em-dash cleanup, app-wide** (June 2026)
   - Replaced user-facing em-dashes with commas/periods across AboutPage, DetectionCard badge tooltips, NodePage, ShareSheet, RegisterNode, Dashboard, MapPage, plus index.html title + manifest description
   - Left untouched: `'—'` no-data placeholders (UI convention), code comments, en-dash number ranges (0–3 min)

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { parseNodeLocation } from '../lib/geo'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 
@@ -67,6 +67,7 @@ export default function NodePage() {
       supabase.from('detections')
         .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
         .eq('node_id', id)
+        .gte('confidence', MIN_CONFIDENCE)
         .order('detected_at', { ascending: false })
         .limit(30),
       supabase.from('aci_logs')
@@ -89,7 +90,7 @@ export default function NodePage() {
 
   // All-time species names for the place's profile stats (lightweight — one column, fetched once per node)
   useEffect(() => {
-    supabase.from('detections').select('species_name').eq('node_id', id).limit(5000)
+    supabase.from('detections').select('species_name').eq('node_id', id).gte('confidence', MIN_CONFIDENCE).limit(5000)
       .then(({ data }) => setSpeciesNames((data || []).map(d => d.species_name)))
   }, [id])
 

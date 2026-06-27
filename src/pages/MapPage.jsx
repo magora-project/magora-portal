@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { supabase } from '../lib/supabase'
+import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { parseNodeLocation } from '../lib/geo'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 import EcologicalPipeline from '../components/EcologicalPipeline'
@@ -71,9 +71,10 @@ export default function MapPage() {
         supabase.from('nodes').select('*').eq('is_active', true),
         supabase.from('detections')
           .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
+          .gte('confidence', MIN_CONFIDENCE)
           .order('detected_at', { ascending: false }).limit(50),
         supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
-        supabase.from('detections').select('species_name').gte('detected_at', todayStart.toISOString()),
+        supabase.from('detections').select('species_name').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString()),
       ])
 
       // supabase-js resolves with { data, error } even on API failures — surface those too
