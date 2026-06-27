@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
+import { isHiddenSpecies } from '../lib/hiddenSpecies'
 
 const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
@@ -56,6 +57,7 @@ export default function Dashboard() {
   // Species counts
   const speciesCounts = detections.reduce((acc, d) => {
     const name = d.species_name || 'Unknown'
+    if (isHiddenSpecies(name)) return acc
     acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})

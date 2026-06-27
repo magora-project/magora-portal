@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
+import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { parseNodeLocation } from '../lib/geo'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 
@@ -135,10 +136,9 @@ export default function NodePage() {
     if (name) acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})
-  const INSECT_KEYWORDS = ['Katydid', 'Cricket', 'Grasshopper', 'Cicada']
   const dedupedDetections = detections.filter((d, idx) => {
     const name = d.species_name || d.raw_label || ''
-    if (INSECT_KEYWORDS.some(k => name.includes(k))) return false
+    if (isHiddenSpecies(name)) return false
     return detections.findIndex(x => (x.species_name || x.raw_label) === name) === idx
   })
 
@@ -177,9 +177,9 @@ export default function NodePage() {
   const bannerImg = node.profile_image_url || node.image_url || node.banner_url || null
   const recording = !!node.is_active
 
-  // All-time species stats (birds only — insect chorus is hidden elsewhere too)
+  // All-time species stats (hidden sounds, insects/human/dogs, excluded)
   const speciesStats = speciesNames.reduce((acc, name) => {
-    if (!name || INSECT_KEYWORDS.some(k => name.includes(k))) return acc
+    if (isHiddenSpecies(name)) return acc
     acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})

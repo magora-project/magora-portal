@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
+import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { parseNodeLocation } from '../lib/geo'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 import EcologicalPipeline from '../components/EcologicalPipeline'
@@ -85,7 +86,7 @@ export default function MapPage() {
       setDetections(detRes.data || [])
       setAciLogs(aciRes.data || [])
       setTodayDetections(todayRes.data || [])
-      setTodaySpeciesCount(new Set((todayRes.data || []).map(d => d.species_name).filter(Boolean)).size)
+      setTodaySpeciesCount(new Set((todayRes.data || []).map(d => d.species_name).filter(n => n && !isHiddenSpecies(n))).size)
       setError(false)
     } catch (e) {
       console.warn('MapPage fetch failed:', e)
@@ -154,10 +155,9 @@ export default function MapPage() {
     if (name) acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})
-  const INSECT_KEYWORDS = ['Katydid', 'Cricket', 'Grasshopper', 'Cicada']
   const dedupedDetections = detections.filter((d, idx) => {
     const name = d.species_name || d.raw_label || ''
-    if (INSECT_KEYWORDS.some(k => name.includes(k))) return false
+    if (isHiddenSpecies(name)) return false
     return detections.findIndex(x => (x.species_name || x.raw_label) === name) === idx
   })
 

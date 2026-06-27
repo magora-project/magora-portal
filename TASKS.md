@@ -70,6 +70,11 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **Hide non-ecological sounds from the app** (June 2026)
+  - New lib/hiddenSpecies.js (HIDDEN_KEYWORDS + isHiddenSpecies); replaces the duplicated insect lists
+  - Hides human/anthropogenic sounds (Human vocal, Engine, Siren, Fireworks, Power tools, Gunshot) and dogs/wolves/coyotes, plus the existing insects
+  - Applied to MapPage feed + today's species count, NodePage feed + all-time stats, and Dashboard species counts
+  - Still logged in Supabase — display-only filter (avoided "Gun" keyword so it doesn't catch Gunnison Sage-Grouse)
 - [x] **Feed redesign — Instagram-style + ID confidence meter** (June 2026)
   - DetectionCard rebuilt as image-dominant card (full-width photo, ~260px) using the .feed-card CSS hooks
   - "Account" header (node name + place + live dot, links to profile) shown on the global feed only via showNode prop; hidden on a node's own page
