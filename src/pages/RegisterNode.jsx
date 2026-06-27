@@ -265,7 +265,7 @@ export default function RegisterNode() {
               <span style={{ background: '#1a4a28', border: `1px solid ${C.accent}`, borderRadius: '20px', padding: '2px 10px', fontWeight: '700' }}>
                 {whitelist.length} species in your area · eBird
               </span>
-              <span style={{ color: C.textMuted }}>Whitelist will filter impossible detections</span>
+              <span style={{ color: C.textMuted }}>Whitelist filters out species that can't occur here</span>
             </div>
           )}
           {ebirdStatus === 'error' && (

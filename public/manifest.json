@@ -1,7 +1,7 @@
 {
-  "name": "Magora Bird Project",
+  "name": "Magora",
   "short_name": "Magora",
-  "description": "Acoustic biodiversity monitoring — live bird detections and soundscape analysis",
+  "description": "An open-source ecological intelligence network — listening to the living world.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d2818",

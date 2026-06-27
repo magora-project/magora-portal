@@ -48,7 +48,7 @@ export default function DonatePrompt() {
           fontSize: '14px', color: '#c8e6d0',
           lineHeight: 1.6, textAlign: 'center', marginBottom: '24px',
         }}>
-          The Magora Bird Project runs on donated time and hardware.
+          Magora runs on donated time and hardware.
           If you find this data useful, consider supporting the project.
         </div>
 

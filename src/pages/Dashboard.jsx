@@ -165,7 +165,7 @@ export default function Dashboard() {
 
         {/* Guild breakdown */}
         <div style={card}>
-          <div style={cardTitle}>Detections by guild</div>
+          <div style={cardTitle}>Recordings by guild</div>
           {guildEntries.length === 0 ? (
             <div style={{ fontSize: '13px', color: C.textMuted }}>No guild data yet</div>
           ) : guildEntries.map(([guild, count]) => (
@@ -213,7 +213,7 @@ export default function Dashboard() {
         <div style={card}>
           <div style={cardTitle}>Most recorded species</div>
           {topSpecies.length === 0 ? (
-            <div style={{ fontSize: '13px', color: C.textMuted }}>No detections yet</div>
+            <div style={{ fontSize: '13px', color: C.textMuted }}>No recordings yet</div>
           ) : topSpecies.map(([name, count]) => (
             <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
               <div style={{ flex: 1, minWidth: 0 }}>

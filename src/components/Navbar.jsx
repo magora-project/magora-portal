@@ -17,8 +17,8 @@ export default function Navbar() {
           width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
         }} />
         <div>
-          <div className="brand-title">Magora Bird Project</div>
-          <div className="brand-sub">Citizen Science BioAcoustics</div>
+          <div className="brand-title">Magora</div>
+          <div className="brand-sub">Ecological intelligence network</div>
         </div>
       </div>
 

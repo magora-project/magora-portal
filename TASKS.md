@@ -11,7 +11,7 @@
 
 ## 🔴 Now — Currently Building
 
-_Nothing in progress — pull the next task up from "Next" when ready._
+_Nothing in progress — pull the next task up from "Next"/"Backlog" when ready._
 
 ---
 
@@ -73,12 +73,21 @@ _Empty — promote from Backlog when ready._
 
 - [ ] **Donate page** — `/donate` route, participation-first framing (sponsor nodes, open infrastructure)
 
-- [ ] **AboutPage** — project story, four pillars, hardware overview, GitHub links
-
 ---
 
 ## ✅ Done
 
+- [x] **App-wide wording shifts** (June 2026)
+  - Browser title → "Magora — listening to the living world" + meta description (index.html)
+  - Navbar brand: "Magora Bird Project / Citizen Science BioAcoustics" → "Magora / Ecological intelligence network"
+  - PWA manifest name → "Magora", description reframed
+  - DonatePrompt + insight.js prompt: dropped "Bird Project" framing
+  - User-facing "detections" → "recordings" where natural (Dashboard "Recordings by guild" / "No recordings yet", RegisterNode whitelist hint); internal table name "detections" unchanged
+- [x] **About page rewrite** (June 2026)
+  - Reframed AboutPage.jsx from "Magora Bird Project" to "ecological intelligence network" using AboutPage-copy.md
+  - Sections: hero ("Every place is speaking."), what we're listening to, soundscape health, the bigger record (modular sensing as design direction), why this matters & why you, four pillars, the invitation + CTAs
+  - Kept honesty guardrail: sensor expansion phrased as "designed to take on more senses over time," not a shipped feature
+  - Added Explore the network / Add a listening post CTAs (react-router Links)
 - [x] **Share cards — Instagram-shareable image generation** (June 2026)
   - New ShareSheet.jsx modal opened from each detection's ↗ Share button (DetectionCard)
   - html2canvas renders a branded WPA/paper card → PNG at ~1080px; Square 1:1 + Story 9:16 toggle
