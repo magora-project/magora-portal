@@ -70,6 +70,11 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **Home-screen app icon = circular logo** (June 2026)
+  - Root cause: apple-touch-icon + manifest pointed at a WebP (icon-512.png.webp); iOS ignores WebP home-screen icons
+  - Generated PNGs from the logo with Pillow (trim white border, center on square, 5% margin): icon-512.png, icon-192.png, apple-touch-icon.png (180)
+  - index.html apple-touch-icon + favicon → PNG; manifest icons → PNG (added maskable for Android circular crop)
+  - iOS renders a rounded-square (squircle) by OS rule, so it shows the circular badge on white — true circle isn't possible on iOS; Android maskable gets a real circle
 - [x] **Hide non-ecological sounds from the app** (June 2026)
   - New lib/hiddenSpecies.js (HIDDEN_KEYWORDS + isHiddenSpecies); replaces the duplicated insect lists
   - Hides human/anthropogenic sounds (Human vocal, Engine, Siren, Fireworks, Power tools, Gunshot) and dogs/wolves/coyotes, plus the existing insects
