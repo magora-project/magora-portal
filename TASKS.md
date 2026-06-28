@@ -23,11 +23,6 @@ _Empty — promote from Backlog when ready._
 
 ## 🔵 Backlog — Prioritized
 
-- [ ] **PWA setup** ← Required before Listen feature
-  - vite-plugin-pwa already installed
-  - Configure manifest: name, icons, theme color (#0d2818), display: standalone
-  - Service worker for offline support; test on Android
-
 - [ ] **Listen feature — Phase 1: Database + Storage**
   - See: 🎙️ Listen Feature Spec.md in vault for full architecture (Drive-only; not synced locally)
   - Create `mobile_detections` table with RLS + PostGIS index
@@ -80,6 +75,15 @@ _Empty — promote from Backlog when ready._
 ---
 
 ## ✅ Done
+
+- [x] **PWA setup** (June 2026)
+  - Wired vite-plugin-pwa into vite.config.js (it was installed but never configured — there was no service worker at all)
+  - Plugin now owns the manifest (deleted the static public/manifest.json) and generates a Workbox SW; registerType autoUpdate, injectRegister auto
+  - Manifest: name/short_name Magora, 192/512/maskable icons, theme + background #0d2818, display standalone, portrait
+  - Workbox precaches the app shell (navigateFallback → /index.html so SPA routes work offline); runtime caching for Google Fonts, map tiles, Wikipedia/Wikimedia species photos; big decorative SVGs + dead icon-512.png.webp excluded from precache to keep it lean
+  - Removed the old service-worker kill-switch from index.html (it unregistered every SW on load — would have nuked the PWA SW)
+  - Verified with headless Chromium: SW registers/activates, offline reload returns the app shell, offline /about resolves via navigateFallback
+  - STILL TODO (needs a real device): install-prompt + add-to-home-screen test on Android; confirm standalone display + maskable icon crop
 
 - [x] **Donate page** (June 2026)
   - /donate route (DonatePage.jsx): participation-first framing — sponsor a node, keep data open, deploy your own; Zeffy CTA + Add-a-listening-post

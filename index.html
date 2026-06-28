@@ -7,7 +7,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Magora, listening to the living world</title>
     <meta name="description" content="Magora is an open-source ecological intelligence network. Low-cost listening posts turn the soundscape of a place into a living record of how its ecosystem is doing." />
-    <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0d2818">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,14 +16,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      // Unregister any lingering service workers
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(regs => {
-          regs.forEach(r => r.unregister())
-        })
-      }
-    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
