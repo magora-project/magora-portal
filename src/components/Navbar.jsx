@@ -71,15 +71,13 @@ export default function Navbar() {
             />
           </Link>
         ))}
-        <a
-          href="https://www.zeffy.com/en-US/donation-form/magora"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="donate-tab"
+        <Link
+          to="/donate"
+          className={`donate-tab${location.pathname === '/donate' ? ' active' : ''}`}
           style={{ padding: 0 }}
         >
           <img src="/icons/donate.svg" alt="Donate" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
-        </a>
+        </Link>
       </div>
     </nav>
   )

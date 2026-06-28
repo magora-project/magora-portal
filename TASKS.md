@@ -39,12 +39,14 @@ _Empty — promote from Backlog when ready._
   - Called from RegisterNode wizard step 2
   - Creates node record + JWT auth user
 
-- [ ] **Donate page** — `/donate` route, participation-first framing (sponsor nodes, open infrastructure)
 
 ---
 
 ## ✅ Done
 
+- [x] **Donate page** (June 2026)
+  - /donate route (DonatePage.jsx): participation-first framing — sponsor a node, keep data open, deploy your own; Zeffy CTA + Add-a-listening-post
+  - Navbar donate icon + the 60s DonatePrompt now funnel to /donate instead of jumping straight to Zeffy
 - [x] **Dashboard redesign — Ecological Patterns** (June 2026)
   - Dropped KPI tile grid for a single-column editorial layout (Big Shoulders section headers + plain-language summary sentence)
   - Soundscape "river": smooth SVG band (Catmull-Rom) across Dawn→Night, thickness = ACI complexity (replaces bar list)

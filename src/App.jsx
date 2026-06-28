@@ -6,6 +6,7 @@ import RegisterNode from './pages/RegisterNode'
 import AboutPage from './pages/AboutPage'
 import NodePage from './pages/NodePage'
 import SpeciesPage from './pages/SpeciesPage'
+import DonatePage from './pages/DonatePage'
 import DonatePrompt from './components/DonatePrompt'
 import { AuthProvider } from './lib/auth'
 import './App.css'
@@ -24,6 +25,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/register" element={<RegisterNode />} />
             <Route path="/about" element={<AboutPage />} />
+            <Route path="/donate" element={<DonatePage />} />
           </Routes>
         </main>
         <DonatePrompt />

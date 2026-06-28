@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 
 export default function DonatePrompt() {
   const [visible, setVisible] = useState(false)
@@ -52,10 +53,8 @@ export default function DonatePrompt() {
           If you find this data useful, consider supporting the project.
         </div>
 
-        <a
-          href="https://www.zeffy.com/en-US/donation-form/magora"
-          target="_blank"
-          rel="noopener noreferrer"
+        <Link
+          to="/donate"
           style={{
             display: 'block', width: '100%', padding: '14px',
             background: '#1D9E75', border: 'none', borderRadius: '10px',
@@ -65,8 +64,8 @@ export default function DonatePrompt() {
           }}
           onClick={() => setVisible(false)}
         >
-          ♥ Donate to the Magora Project
-        </a>
+          ♥ See how to help
+        </Link>
 
         <button
           onClick={() => setVisible(false)}
