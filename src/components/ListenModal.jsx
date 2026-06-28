@@ -216,8 +216,8 @@ export default function ListenModal({ onClose }) {
     }, RESULT_TIMEOUT_MS)
   }
 
-  // ── Step 4: optional ecological metadata ────────────────────────────────────
-  async function saveDetails() {
+  // ── Step 4: publish (with optional metadata) or discard ─────────────────────
+  async function publishListen() {
     setSavingMeta(true)
     await supabase.from('mobile_detections').update({
       habitat_type: habitat?.toLowerCase() ?? null,
@@ -225,7 +225,15 @@ export default function ListenModal({ onClose }) {
       water_present: water === null ? null : water === 'Yes',
       disturbance_level: disturbance?.toLowerCase() ?? null,
       observer_notes: notes.trim() || null,
+      published: true,
     }).eq('id', detectionIdRef.current)
+    setSavingMeta(false)
+    onClose()
+  }
+
+  async function discardListen() {
+    setSavingMeta(true)
+    await supabase.from('mobile_detections').delete().eq('id', detectionIdRef.current)
     setSavingMeta(false)
     onClose()
   }
@@ -245,7 +253,7 @@ export default function ListenModal({ onClose }) {
           <>
             <h2 style={S.h2}>Every place is speaking.</h2>
             <p style={S.sub}>
-              Record 15 seconds of the world around you. We’ll listen for the birds and add this moment to the map.
+              Record 15 seconds of the world around you. We’ll listen for the birds, then you decide whether to post it to the map.
             </p>
             <div style={S.locBox}>
               {locError
@@ -277,16 +285,20 @@ export default function ListenModal({ onClose }) {
         {step === 'pending' && (
           <div style={{ textAlign: 'center', padding: '10px 0' }}>
             <div style={S.pulse}>〰</div>
-            <h2 style={S.h2}>Recording saved.</h2>
-            <p style={S.sub}>Identifying species… you can close this — the result will appear in your feed.</p>
-            <button onClick={onClose} style={S.ghostBtn}>Close</button>
+            <h2 style={S.h2}>Got your recording</h2>
+            <p style={S.sub}>Identifying species… nothing is posted automatically. Stay here to review it and choose whether to post.</p>
+            <button onClick={onClose} style={S.ghostBtn}>Cancel</button>
           </div>
         )}
 
         {step === 'results' && (
           <>
             <h2 style={S.h2}>{species.length ? 'Here’s what we heard' : 'No birds this time'}</h2>
-            {species.length === 0 && <p style={S.sub}>No confident bird IDs in that clip — still added to the map as a Listen.</p>}
+            <p style={S.sub}>
+              {species.length === 0
+                ? 'No confident bird IDs in that clip. Nothing’s been posted — discard it, or post it as a Listen anyway.'
+                : 'Nothing’s posted yet. Add a little about the place if you like, then post it to the map — or discard it.'}
+            </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '6px 0 16px' }}>
               {species.map((s, i) => (
                 <div key={i} style={S.speciesRow}>
@@ -312,8 +324,11 @@ export default function ListenModal({ onClose }) {
               </div>
             </details>
 
-            <button onClick={saveDetails} disabled={savingMeta} style={S.amberBtn(savingMeta)}>
-              {savingMeta ? 'Saving…' : 'Save to feed'}
+            <button onClick={publishListen} disabled={savingMeta} style={S.amberBtn(savingMeta)}>
+              {savingMeta ? 'Posting…' : 'Post to the map'}
+            </button>
+            <button onClick={discardListen} disabled={savingMeta} style={S.ghostBtn}>
+              Discard
             </button>
           </>
         )}
