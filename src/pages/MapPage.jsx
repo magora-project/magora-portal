@@ -9,6 +9,7 @@ import { parseNodeLocation } from '../lib/geo'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 import EcologicalPipeline from '../components/EcologicalPipeline'
 import EcologicalCommons from '../components/EcologicalCommons'
+import ListenButton from '../components/ListenButton'
 
 function MapController({ nodes }) {
   const map = useMap()
@@ -263,6 +264,7 @@ export default function MapPage() {
             >
               Add a node
             </Link>
+            <ListenButton variant="hero" />
           </div>
         </div>
       </section>

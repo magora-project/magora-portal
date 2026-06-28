@@ -23,16 +23,6 @@ _Empty — promote from Backlog when ready._
 
 ## 🔵 Backlog — Prioritized
 
-- [ ] **Listen feature — Phase 3: Listen flow frontend**
-  - `ListenButton.jsx` — amber/gold color, Navbar + homepage hero placement
-  - `ListenModal.jsx` — 4 states: Ready → Recording → Pending → Results
-  - MediaRecorder API: 15s fixed recording
-  - Waveform visualizer: Web Audio API AnalyserNode
-  - Geolocation capture + reverse geocoding (display location name in modal)
-  - Supabase Storage upload + pending mobile_detections row creation
-  - Realtime subscription: watch detection row until status = complete
-  - Ecological metadata UI: tap-to-select chips (habitat, canopy, water, disturbance) + notes
-
 - [ ] **Listen feature — Phase 4: Feed + map integration**
   - `MobileDetectionCard.jsx` — amber pulse icon, "Listened by @user" header, species + metadata
   - Feed renders both DetectionCard (nodes) and MobileDetectionCard (mobile) in unified stream
@@ -60,6 +50,14 @@ _Empty — promote from Backlog when ready._
 ---
 
 ## ✅ Done
+
+- [x] **Listen feature — Phase 3: Listen flow frontend** (June 2026)
+  - `lib/listen.js`: amber palette, metadata option lists, `pickAudioMime` (webm/mp4/ogg fallback), `reverseGeocode` (OSM Nominatim), `getPosition` (geolocation promise)
+  - `ListenButton.jsx`: amber CTA, sign-in gated (no user → openSignIn), `hero` + `pill` variants; wired into MapPage hero (3rd CTA) and Navbar top bar
+  - `ListenModal.jsx`: 4 states — Ready (shows reverse-geocoded place) → Recording (live Web Audio AnalyserNode waveform on canvas + 15s countdown bar, stop-early) → Pending (realtime subscription, closeable) → Results (species list w/ confidence + optional ecological metadata chips: habitat/canopy/water/disturbance + notes)
+  - Upload contract honored: audio uploaded to `temp-audio/{user_id}/{uuid}.{ext}` FIRST, then pending row inserted (so the Phase 1 trigger enqueues with audio present); realtime watches the row to `complete`/`failed` with a 90s poll fallback
+  - Added generic `pulse` keyframe to index.css. Verified: lint clean, build passes, smoke test (buttons render, signed-out gating opens auth modal, no page errors)
+  - **Needs real-device test:** mic + geolocation permissions + full record→worker→realtime round-trip (also the first true end-to-end test of the Phase 2 worker). Note: existing DetectionCard has its own "Listen" (plays audio) — different from this feature's record action
 
 - [x] **Listen feature — Phase 2: Worker VM** (June 2026) — deployed & running on Fly.io
   - Queue-access RPCs (portal migration `20260629`): `read_audio_jobs` / `delete_audio_job` / `archive_audio_job`, SECURITY DEFINER, service_role only (verified anon denied). Worker talks to the queue over HTTPS — no direct Postgres / DB password

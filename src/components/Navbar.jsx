@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import ListenButton from './ListenButton'
 
 const TABS = [
   { path: '/',          src: '/icons/live_feed.svg',  label: 'Network'             },
@@ -24,6 +25,7 @@ export default function Navbar() {
         </div>
 
         <div style={{ marginLeft: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ListenButton variant="pill" />
           {user ? (
             <>
               <span title={user.email} style={{
