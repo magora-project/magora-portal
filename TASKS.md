@@ -51,6 +51,7 @@ _Empty — promote from Backlog when ready._
   - MapPage: fetches `public_mobile_detections`, merges node + mobile into one time-sorted feed (mobile only on Global tab), amber pulse `CircleMarker`s with tooltips on the map. Verified: feed renders mobile cards, build passes, no page errors
   - ~~Known gap: mobile Listens skip regional filtering~~ → **FIXED** (acoustic `194a855`): worker now passes lat/lon/date to BirdNET's built-in location filter (eBird-derived range model), the mobile equivalent of the nodes' regional whitelist. Restricts results to species plausible at the recording's place + time of year. Deployed & polling. (Existing test rows keep their old species; new Listens are filtered)
   - Pre-existing MapPage lint warnings (set-state-in-effect, lines ~75/116) left as-is — not introduced here
+  - **Consent fix (`20260701`):** recordings were going public as soon as the worker finished (before the user agreed). Added `published` flag (public view requires it); the modal now processes privately, shows results, then posts only on an explicit "Post to the map" — with a "Discard" option (delete-own policy). Existing Listens backfilled as published. Map auto-fit now includes mobile Listens (were off-screen when far from a node)
 
 - [x] **Listen feature — Phase 3: Listen flow frontend** (June 2026)
   - `lib/listen.js`: amber palette, metadata option lists, `pickAudioMime` (webm/mp4/ogg fallback), `reverseGeocode` (OSM Nominatim), `getPosition` (geolocation promise)
