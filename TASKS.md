@@ -23,13 +23,14 @@ _Empty — promote from Backlog when ready._
 
 ## 🔵 Backlog — Prioritized
 
-- [ ] **Listen feature — Phase 2: Worker VM**
-  - Create `/worker` directory in `magora-acoustic-biodiversity`
-  - Write `inference_worker.py` — Python polling loop using existing BirdNET pipeline
-  - Write `Dockerfile` + `fly.toml`
-  - Deploy to Fly.io (single instance, 256MB RAM)
-  - Set Fly secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (never commit)
-  - Test end-to-end: upload WAV → job fires → BirdNET runs → results written → audio deleted
+- [ ] **Listen feature — Phase 2: Worker VM** — _code complete, deploy pending_
+  - [x] Queue-access RPCs (portal migration `20260629_listen_phase2_queue_rpc.sql`, pushed to prod): `read_audio_jobs` / `delete_audio_job` / `archive_audio_job`, SECURITY DEFINER, granted to service_role only (verified: anon is denied). Worker talks to the queue over HTTPS — no direct Postgres connection / DB password
+  - [x] `/worker` dir in `magora-acoustic-biodiversity`: `inference_worker.py` (poll loop + BirdNET, params identical to detect.py: min_conf 0.20 / sensitivity 1.25 / overlap 1.5, same EXCLUDE+insect filter, dedupe best-per-species), `requirements.txt`, `Dockerfile` (python:3.11-slim + ffmpeg), `fly.toml`, `README.md` with deploy steps
+  - [x] Poison-message guard (archive + mark row failed after MAX_ATTEMPTS); audio deleted after inference (ephemeral)
+  - **Deviation from spec:** VM memory set to 1GB, not the spec's 256MB — the BirdNET model won't fit in 256MB. Worker enqueue uses the Phase 1 trigger (no Storage webhook/Edge Function)
+  - [ ] **DEPLOY (needs your Fly.io account + Fly CLI):** `fly auth login` → `fly launch --no-deploy` → `fly secrets set SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY` → `fly deploy`. Fly builds remotely, so no local Docker needed. Steps in `worker/README.md`
+  - [ ] Test end-to-end: upload WAV → trigger enqueues → BirdNET runs → results written → audio deleted
+  - [ ] (optional) pin `birdnetlib` to the Pi's version for exact parity
 
 - [ ] **Listen feature — Phase 3: Listen flow frontend**
   - `ListenButton.jsx` — amber/gold color, Navbar + homepage hero placement
