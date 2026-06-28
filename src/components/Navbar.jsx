@@ -20,7 +20,7 @@ export default function Navbar() {
         }} />
         <div className="brand-text">
           <div className="brand-title">Magora</div>
-          <div className="brand-sub">Ecological intelligence network</div>
+          <div className="brand-sub">Social Ecology</div>
         </div>
 
         <div style={{ marginLeft: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
