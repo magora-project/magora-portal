@@ -49,7 +49,7 @@ _Empty — promote from Backlog when ready._
   - Migration `20260630_listen_phase4_public_view.sql`: sanitized public view `public_mobile_detections` (definer-rights) — completed rows only, exposes species + ecological metadata, **hides** user_id/notes/audio_path/device_info, coarsens lat/lon to 3 decimals (~110m) for privacy. Granted to anon+authenticated (verified: returns rows for anon)
   - `MobileDetectionCard.jsx`: amber 〰 Listen badge (distinct from green node cards), species filtered to ≥30% + hidden-species filter, ecological metadata tags, relative time, species links to /species
   - MapPage: fetches `public_mobile_detections`, merges node + mobile into one time-sorted feed (mobile only on Global tab), amber pulse `CircleMarker`s with tooltips on the map. Verified: feed renders mobile cards, build passes, no page errors
-  - **Known gap (follow-up):** mobile Listens skip the per-node eBird regional whitelist, so implausible low-confidence species can surface (e.g. Black-faced Ibis in Wyoming). Card display filters to ≥30%, but a real fix is to apply eBird regional filtering (by lat/lon) in the worker
+  - ~~Known gap: mobile Listens skip regional filtering~~ → **FIXED** (acoustic `194a855`): worker now passes lat/lon/date to BirdNET's built-in location filter (eBird-derived range model), the mobile equivalent of the nodes' regional whitelist. Restricts results to species plausible at the recording's place + time of year. Deployed & polling. (Existing test rows keep their old species; new Listens are filtered)
   - Pre-existing MapPage lint warnings (set-state-in-effect, lines ~75/116) left as-is — not introduced here
 
 - [x] **Listen feature — Phase 3: Listen flow frontend** (June 2026)
