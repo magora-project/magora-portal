@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import RegisterNode from './pages/RegisterNode'
 import AboutPage from './pages/AboutPage'
 import NodePage from './pages/NodePage'
+import SpeciesPage from './pages/SpeciesPage'
 import DonatePrompt from './components/DonatePrompt'
 import './App.css'
 
@@ -17,6 +18,7 @@ function App() {
           <Routes>
             <Route path="/" element={<MapPage />} />
             <Route path="/node/:id" element={<NodePage />} />
+            <Route path="/species/:name" element={<SpeciesPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/register" element={<RegisterNode />} />
             <Route path="/about" element={<AboutPage />} />

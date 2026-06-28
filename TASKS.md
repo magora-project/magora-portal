@@ -31,12 +31,6 @@ _Empty — promote from Backlog when ready._
   - Feed tabs: Global | Following
   - Keep "Following" tab gated/hidden until there are enough nodes to follow (empty-room problem)
 
-- [ ] **Species page**
-  - `/species/:name` route
-  - Species photo, scientific name, range map
-  - All nodes that have recorded this species (species = a thread across places)
-  - Total recordings across the network + seasonal pattern
-
 - [ ] **PWA setup**
   - vite-plugin-pwa already installed
   - Configure manifest: name, icons, theme color (#0d2818), display: standalone
@@ -70,6 +64,11 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **Species page** (June 2026)
+  - New /species/:name route (SpeciesPage.jsx) — Wikipedia photo + fact, scientific name
+  - Stats: total recordings, # places, peak season; range map = GBIF global occurrence overlay (green hex density) + red Magora node markers on top
+  - "Heard at these places" list (links to node profiles) + seasonal pattern bars
+  - Respects 30% confidence filter; species names now link to it from DetectionCard, Dashboard, NodePage
 - [x] **Home-screen app icon = circular logo** (June 2026)
   - Root cause: apple-touch-icon + manifest pointed at a WebP (icon-512.png.webp); iOS ignores WebP home-screen icons
   - Generated PNGs from the logo with Pillow (trim white border, center on square, 5% margin): icon-512.png, icon-192.png, apple-touch-icon.png (180)

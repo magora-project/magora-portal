@@ -249,8 +249,10 @@ export default function DetectionCard({ d, node, showNode = false, wikiData, cou
       <div className="feed-card-body" style={{ padding: '14px 16px 16px' }}>
 
         {/* Name + moment */}
-        <div className="feed-card-name" style={{ fontSize: '22px', fontWeight: '700', color: C.text, lineHeight: 1.15, marginBottom: '3px' }}>
-          {d.species_name || d.raw_label || 'Unknown'}
+        <div className="feed-card-name" style={{ fontSize: '22px', fontWeight: '700', lineHeight: 1.15, marginBottom: '3px' }}>
+          {d.species_name
+            ? <Link to={`/species/${encodeURIComponent(d.species_name)}`} style={{ color: C.text, textDecoration: 'none' }}>{d.species_name}</Link>
+            : <span style={{ color: C.text }}>{d.raw_label || 'Unknown'}</span>}
         </div>
         <div className="feed-card-sci" style={{ fontSize: '13px', color: C.textMuted, marginBottom: '14px' }}>
           {sci && <span style={{ fontStyle: 'italic' }}>{sci} · </span>}Recorded {moment} · {toMountainTime(d.detected_at, false)}

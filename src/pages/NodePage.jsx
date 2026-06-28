@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { parseNodeLocation } from '../lib/geo'
@@ -323,7 +323,7 @@ export default function NodePage() {
           {topSpecies.map(([name, n], i) => (
             <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 0', borderBottom: i < topSpecies.length - 1 ? `1px solid ${C.border}` : 'none' }}>
               <span style={{ fontSize: '12px', fontWeight: '700', color: C.textMuted, width: '18px', flexShrink: 0 }}>{i + 1}</span>
-              <span style={{ flex: 1, fontSize: '14px', fontWeight: '600', color: C.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+              <Link to={`/species/${encodeURIComponent(name)}`} style={{ flex: 1, fontSize: '14px', fontWeight: '600', color: C.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: 'none' }}>{name}</Link>
               <span style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, flexShrink: 0 }}>×{n}</span>
             </div>
           ))}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
 
@@ -220,7 +221,11 @@ export default function Dashboard() {
           ) : topSpecies.map(([name, count]) => (
             <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '14px', fontWeight: '700', color: C.text, marginBottom: '4px' }}>{name}</div>
+                <div style={{ fontSize: '14px', fontWeight: '700', marginBottom: '4px' }}>
+                  {name !== 'Unknown'
+                    ? <Link to={`/species/${encodeURIComponent(name)}`} style={{ color: C.text, textDecoration: 'none' }}>{name}</Link>
+                    : <span style={{ color: C.text }}>{name}</span>}
+                </div>
                 <div style={{ height: '4px', background: C.bg, borderRadius: '2px', overflow: 'hidden' }}>
                   <div style={{ width: `${Math.round(count / maxCount * 100)}%`, height: '100%', background: C.accent, borderRadius: '2px' }} />
                 </div>
