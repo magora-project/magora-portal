@@ -7,11 +7,13 @@ import AboutPage from './pages/AboutPage'
 import NodePage from './pages/NodePage'
 import SpeciesPage from './pages/SpeciesPage'
 import DonatePrompt from './components/DonatePrompt'
+import { AuthProvider } from './lib/auth'
 import './App.css'
 
 function App() {
   return (
     <BrowserRouter>
+      <AuthProvider>
       <div className="app">
         <Navbar />
         <main className="main-content">
@@ -26,6 +28,7 @@ function App() {
         </main>
         <DonatePrompt />
       </div>
+      </AuthProvider>
     </BrowserRouter>
   )
 }

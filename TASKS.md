@@ -11,7 +11,11 @@
 
 ## 🔴 Now — Currently Building
 
-_Nothing in progress — pull the next task up from "Next"/"Backlog" when ready._
+- [ ] **Follow system — Supabase + portal** (in progress; sign-in required only to follow)
+  - [x] Phase 1 — auth foundation: Email OTP (code) + Google sign-in; AuthProvider/useAuth, AuthModal, navbar account state. NEEDS dashboard config to work end to end (see below)
+  - [ ] Phase 2 — `node_follows` table (user_id, node_id, created_at) + RLS; follow/unfollow button on NodePage; follower count
+  - [ ] Phase 3 — feed tabs Global | Following, gated until there are enough nodes to follow
+  - Config required (Noah, dashboards): Supabase email template add `{{ .Token }}`; Google OAuth client in Google Cloud + enable Google provider in Supabase; Supabase URL config (Site URL + redirect URLs); custom SMTP before launch
 
 ---
 
@@ -22,14 +26,6 @@ _Empty — promote from Backlog when ready._
 ---
 
 ## 🔵 Backlog — Prioritized
-
-- [ ] **Follow system — Supabase + portal**
-  - New `node_follows` table: user_id, node_id, created_at
-  - Portal-side user auth (Supabase Auth — email or magic link)
-  - Follow/unfollow button on NodePage (live)
-  - Follower count on node profile
-  - Feed tabs: Global | Following
-  - Keep "Following" tab gated/hidden until there are enough nodes to follow (empty-room problem)
 
 - [ ] **PWA setup**
   - vite-plugin-pwa already installed
