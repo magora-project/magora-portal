@@ -25,7 +25,7 @@ export default function Navbar() {
         </div>
 
         <div style={{ marginLeft: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <ListenButton variant="pill" />
+          <ListenButton variant="icon" />
           {user ? (
             <>
               <span title={user.email} style={{

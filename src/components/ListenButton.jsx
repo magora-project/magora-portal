@@ -4,7 +4,9 @@ import { AMBER } from '../lib/listen'
 import ListenModal from './ListenModal'
 
 // Amber "Listen" CTA. Opens the recording modal; prompts sign-in first if needed
-// (a Listen needs a user_id). `variant`: 'hero' (homepage) | 'pill' (compact).
+// (a Listen needs a user_id).
+// `variant`: 'hero' (homepage, labelled) | 'pill' (labelled) | 'icon' (compact 〰
+// only — used in the cramped navbar brand row so it doesn't crowd the wordmark).
 export default function ListenButton({ variant = 'pill' }) {
   const { user, openSignIn } = useAuth()
   const [open, setOpen] = useState(false)
@@ -14,13 +16,13 @@ export default function ListenButton({ variant = 'pill' }) {
     setOpen(true)
   }
 
-  const style = variant === 'hero' ? heroStyle : pillStyle
+  const style = variant === 'hero' ? heroStyle : variant === 'icon' ? iconStyle : pillStyle
 
   return (
     <>
-      <button onClick={handleClick} style={style}>
+      <button onClick={handleClick} style={style} title="Listen" aria-label="Listen">
         <span aria-hidden="true" style={{ fontSize: variant === 'hero' ? '1.1em' : '1em' }}>〰</span>
-        Listen
+        {variant !== 'icon' && 'Listen'}
       </button>
       {open && <ListenModal onClose={() => setOpen(false)} />}
     </>
@@ -56,4 +58,21 @@ const pillStyle = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: '6px',
+}
+
+const iconStyle = {
+  width: '32px',
+  height: '32px',
+  flexShrink: 0,
+  background: AMBER.base,
+  color: AMBER.ink,
+  border: 'none',
+  borderRadius: '8px',
+  fontSize: '16px',
+  fontWeight: 800,
+  lineHeight: 1,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 }
