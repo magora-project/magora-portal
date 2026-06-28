@@ -36,12 +36,6 @@ _Empty — promote from Backlog when ready._
   - Configure manifest: name, icons, theme color (#0d2818), display: standalone
   - Service worker for offline support; test on Android
 
-- [ ] **RegisterNode wizard — fixes + polish**
-  - Fix missing timeout in step 4 polling loop (currently infinite)
-  - Pin detect.py version in firstrun.sh
-  - Confirm wizard language matches audit
-  - Test full flow end-to-end with birdnode1 rebuild
-
 - [ ] **birdnode1 rebuild**
   - New SD card, flash latest Pi OS image
   - Run magora-firstrun.sh from bootfs config
@@ -64,6 +58,11 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **RegisterNode step-4 polling fix** (June 2026)
+  - Timeout was 5 min (60×5s) but BirdNET install takes up to 25 min — raised to ~30 min (360 polls)
+  - "Try again" did setStep(4) while already on step 4, so the effect deps never changed and polling never restarted (stuck spinner); now uses a pollNonce that genuinely restarts the interval and resets state
+  - Renamed the button "Keep waiting" to match the longer-wait reality
+  - Out of this repo: pinning detect.py version (firmware repo) + end-to-end birdnode1 rebuild test (hardware)
 - [x] **Species page** (June 2026)
   - New /species/:name route (SpeciesPage.jsx) — Wikipedia photo + fact, scientific name
   - Stats: total recordings, # places, peak season; range map = GBIF global occurrence overlay (green hex density) + red Magora node markers on top

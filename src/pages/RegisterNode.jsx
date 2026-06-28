@@ -36,6 +36,7 @@ export default function RegisterNode() {
   const [error, setError]         = useState(null)
   const [nodeLive, setNodeLive]   = useState(false)
   const [timedOut, setTimedOut]   = useState(false)
+  const [pollNonce, setPollNonce] = useState(0)
   const [configDownloaded, setConfigDownloaded] = useState(false)
   const [whitelist, setWhitelist] = useState(null)
   const [ebirdStatus, setEbirdStatus] = useState('idle') // idle | loading | ready | error
@@ -106,10 +107,15 @@ export default function RegisterNode() {
 
   useEffect(() => {
     if (step !== 4 || !nodeId || !registeredAt) return
+    setTimedOut(false)
+    setNodeLive(false)
     let polls = 0
+    // ~30 min at 5s — covers the up-to-25-min BirdNET install before we surface
+    // the troubleshooting panel (which restarts this via pollNonce on "Try again")
+    const MAX_POLLS = 360
     pollRef.current = setInterval(async () => {
       polls++
-      if (polls >= 60) {
+      if (polls >= MAX_POLLS) {
         clearInterval(pollRef.current)
         setTimedOut(true)
         return
@@ -126,7 +132,7 @@ export default function RegisterNode() {
       }
     }, 5000)
     return () => clearInterval(pollRef.current)
-  }, [step, nodeId, registeredAt])
+  }, [step, nodeId, registeredAt, pollNonce])
 
   function generateConfig() {
     return JSON.stringify({
@@ -398,8 +404,8 @@ export default function RegisterNode() {
                   <div key={i} style={{ fontSize: '12px', color: C.textMuted, marginBottom: '6px' }}>· {s}</div>
                 ))}
               </div>
-              <button style={btn} onClick={() => { setTimedOut(false); setStep(4) }}>
-                Try again
+              <button style={btn} onClick={() => setPollNonce(n => n + 1)}>
+                Keep waiting
               </button>
             </>
           ) : (
