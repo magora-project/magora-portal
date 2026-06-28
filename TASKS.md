@@ -23,13 +23,6 @@ _Empty — promote from Backlog when ready._
 
 ## 🔵 Backlog — Prioritized
 
-- [ ] **Listen feature — Phase 1: Database + Storage**
-  - See: 🎙️ Listen Feature Spec.md in vault for full architecture (Drive-only; not synced locally)
-  - Create `mobile_detections` table with RLS + PostGIS index
-  - Create `temp-audio` Supabase Storage bucket (private)
-  - Enable pgmq extension, create `audio_inference` queue
-  - Write + deploy Edge Function: Storage webhook → insert pgmq job + create pending row
-
 - [ ] **Listen feature — Phase 2: Worker VM**
   - Create `/worker` directory in `magora-acoustic-biodiversity`
   - Write `inference_worker.py` — Python polling loop using existing BirdNET pipeline
@@ -75,6 +68,15 @@ _Empty — promote from Backlog when ready._
 ---
 
 ## ✅ Done
+
+- [x] **Listen feature — Phase 1: Database + Storage** (June 2026)
+  - Migration `20260628_listen_phase1_mobile_detections.sql`, pushed to prod (verified: table live, migration history synced)
+  - `mobile_detections` table: lat/lon + generated PostGIS `location`, status check constraint (pending/processing/complete/failed), species jsonb, ecological metadata cols; GiST + user/time + partial(complete) indexes; added to supabase_realtime publication
+  - RLS owner-only (select/insert/update own). Public map/feed deferred to Phase 4 via a sanitized VIEW (no user_id/notes/precise coords) — privacy-first
+  - `temp-audio` private Storage bucket + policy: authenticated users upload only into their own {user_id}/ folder; worker reads/deletes via service role
+  - pgmq `audio_inference` queue created
+  - **Deviation from spec (intentional):** chose a Postgres AFTER INSERT trigger (`enqueue_mobile_inference`) over the spec's Storage-webhook + Edge Function. Phone uploads WAV then inserts its own pending row → trigger enqueues. Simpler (no Edge Function), and the phone already holds the row id for its Phase 3 realtime subscription. Phase 3 contract: upload audio FIRST, then insert the row with audio_path set
+  - Migration-history note: repaired drift — `20260627` (node_follows) had been applied directly in the dashboard but never recorded, so it was marked applied via `supabase migration repair` before the push
 
 - [x] **PWA setup** (June 2026)
   - Wired vite-plugin-pwa into vite.config.js (it was installed but never configured — there was no service worker at all)
