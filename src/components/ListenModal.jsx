@@ -33,6 +33,9 @@ export default function ListenModal({ onClose }) {
   const [disturbance, setDisturbance] = useState(null)
   const [notes, setNotes] = useState('')
   const [savingMeta, setSavingMeta] = useState(false)
+  const [insightText, setInsightText] = useState(null)
+  const [insightBusy, setInsightBusy] = useState(false)
+  const [insightError, setInsightError] = useState(false)
 
   const streamRef = useRef(null)
   const recorderRef = useRef(null)
@@ -219,7 +222,40 @@ export default function ListenModal({ onClose }) {
     }, RESULT_TIMEOUT_MS)
   }
 
-  // ── Step 4: publish (with optional metadata) or discard ─────────────────────
+  // Ecological insight for the WHOLE capture: all species heard + the place
+  // metadata and notes the listener just entered. Generated here (not on the card)
+  // so it can use the private notes; the synthesized text is what gets stored.
+  async function generateInsight() {
+    setInsightBusy(true)
+    setInsightError(false)
+    try {
+      const res = await fetch('/api/insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mobile: true,
+          species,
+          lat: coords?.lat,
+          lon: coords?.lon,
+          detected_at: new Date().toISOString(),
+          habitat_type: habitat?.toLowerCase() ?? null,
+          canopy_cover: canopy?.toLowerCase() ?? null,
+          water_present: water === null ? null : water === 'Yes',
+          disturbance_level: disturbance?.toLowerCase() ?? null,
+          observer_notes: notes.trim() || null,
+        }),
+      })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setInsightText(data.insight)
+    } catch {
+      setInsightError(true)
+    } finally {
+      setInsightBusy(false)
+    }
+  }
+
+  // ── Step 4: publish (with optional metadata + insight) or discard ───────────
   async function publishListen() {
     setSavingMeta(true)
     await supabase.from('mobile_detections').update({
@@ -228,6 +264,7 @@ export default function ListenModal({ onClose }) {
       water_present: water === null ? null : water === 'Yes',
       disturbance_level: disturbance?.toLowerCase() ?? null,
       observer_notes: notes.trim() || null,
+      insight: insightText,
       published: true,
     }).eq('id', detectionIdRef.current)
     setSavingMeta(false)
@@ -349,18 +386,27 @@ export default function ListenModal({ onClose }) {
               ))}
             </div>
 
-            <details style={S.details}>
-              <summary style={S.summary}>Tell us about this place (optional)</summary>
-              <div style={{ marginTop: '12px' }}>
-                <Chips label="Habitat" options={HABITATS} value={habitat} onPick={setHabitat} />
-                <Chips label="Canopy cover" options={CANOPY} value={canopy} onPick={setCanopy} />
-                <Chips label="Water nearby?" options={['Yes', 'No']} value={water} onPick={setWater} />
-                <Chips label="Disturbance" options={DISTURBANCE} value={disturbance} onPick={setDisturbance} />
-                <label style={S.metaLabel}>Notes</label>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-                  placeholder="Anything you noticed…" style={S.textarea} />
+            <div style={S.details}>
+              <div style={{ ...S.summary, marginBottom: '12px' }}>Tell us about this place (optional)</div>
+              <Chips label="Habitat" options={HABITATS} value={habitat} onPick={setHabitat} />
+              <Chips label="Canopy cover" options={CANOPY} value={canopy} onPick={setCanopy} />
+              <Chips label="Water nearby?" options={['Yes', 'No']} value={water} onPick={setWater} />
+              <Chips label="Disturbance" options={DISTURBANCE} value={disturbance} onPick={setDisturbance} />
+              <label style={S.metaLabel}>Notes</label>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+                placeholder="Anything you noticed about this place…" style={S.textarea} />
+            </div>
+
+            {/* Whole-capture ecological insight */}
+            {insightText ? (
+              <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.65, borderLeft: `3px solid ${AMBER.base}`, paddingLeft: '12px', margin: '4px 0 16px' }}>
+                {insightText}
               </div>
-            </details>
+            ) : species.length > 0 && (
+              <button onClick={generateInsight} disabled={insightBusy} style={{ ...S.ghostBtn, marginTop: 0, marginBottom: '16px', color: AMBER.light, borderColor: AMBER.dark }}>
+                {insightBusy ? '🔍 Reading the soundscape…' : insightError ? 'Try again' : "What's the ecosystem saying?"}
+              </button>
+            )}
 
             <button onClick={publishListen} disabled={savingMeta} style={S.amberBtn(savingMeta)}>
               {savingMeta ? 'Posting…' : 'Post to the map'}

@@ -1,3 +1,5 @@
+/* global process */
+// Vercel serverless function (Node runtime).
 // Derive time-of-day description from UTC timestamp + Mountain Time offset.
 // Never relies on the Pi's stored time_category which can be wrong due to
 // UTC/local mismatch in the astral calculation.
@@ -67,8 +69,104 @@ async function getEbirdContext(lat, lon, ebirdKey, detectedSpecies) {
   } catch { return null }
 }
 
+// Rough local time-of-day for a mobile recording anywhere on Earth, from the UTC
+// timestamp + longitude (solar time ≈ UTC + lon/15 hours). Good enough for
+// "morning vs dusk" without needing the device's timezone.
+function roughLocalTimeOfDay(utcString, lon) {
+  const d = new Date(utcString)
+  const utcHour = d.getUTCHours() + d.getUTCMinutes() / 60
+  const h = (utcHour + lon / 15 + 24) % 24
+  if (h >= 21 || h < 4) return 'night'
+  if (h < 6)  return 'pre-dawn'
+  if (h < 9)  return 'early morning'
+  if (h < 12) return 'late morning'
+  if (h < 14) return 'midday'
+  if (h < 17) return 'afternoon'
+  if (h < 19) return 'early evening'
+  return 'dusk'
+}
+
+async function reverseGeocodeServer(lat, lon) {
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=8&lat=${lat}&lon=${lon}`,
+      { headers: { 'User-Agent': 'Magora/1.0 (ecological monitoring)' } },
+    )
+    if (!r.ok) return null
+    const a = (await r.json()).address || {}
+    const place = a.city || a.town || a.village || a.county
+    return [place, a.state, a.country].filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i).join(', ') || null
+  } catch { return null }
+}
+
+// Insight for a phone "Listen": no node/ACI/longitudinal history, but we have the
+// species heard, the listener's place metadata, and (best of all) the recording's
+// own coordinates for real eBird regional context — anywhere in the world.
+async function mobileInsight(req, res) {
+  const { species = [], lat, lon, detected_at, habitat_type, canopy_cover, water_present, disturbance_level, observer_notes } = req.body
+  if (!species.length) return res.status(400).json({ error: 'species required' })
+
+  const ebirdKey = process.env.EBIRD_API_KEY
+  const top = species[0]
+
+  const [placeLabel, ebird] = await Promise.all([
+    (lat != null && lon != null) ? reverseGeocodeServer(lat, lon) : Promise.resolve(null),
+    (ebirdKey && lat != null && lon != null) ? getEbirdContext(lat, lon, ebirdKey, top.common_name) : Promise.resolve(null),
+  ])
+
+  const locationLabel = placeLabel || 'this location'
+  const timingDesc = (lon != null && detected_at) ? roughLocalTimeOfDay(detected_at, lon) : null
+  const speciesDesc = species.slice(0, 6)
+    .map(s => `${s.common_name}${s.scientific_name ? ` (${s.scientific_name})` : ''} at ${Math.round(s.confidence * 100)}%`)
+    .join(', ')
+  const metaDesc = [
+    habitat_type && `Habitat: ${habitat_type}`,
+    canopy_cover && `Canopy cover: ${canopy_cover}`,
+    water_present != null && `Water nearby: ${water_present ? 'yes' : 'no'}`,
+    disturbance_level && disturbance_level !== 'none' && `Disturbance level: ${disturbance_level}`,
+  ].filter(Boolean).join('; ')
+  const notesDesc = observer_notes && observer_notes.trim() ? observer_notes.trim() : null
+  const ebirdDesc = ebird ? [
+    `${ebird.richness} species reported within 25km in the past 7 days`,
+    ebird.confirmed
+      ? `${top.common_name} is confirmed locally${ebird.daysSince != null ? ` (last eBird report ${ebird.daysSince} day${ebird.daysSince !== 1 ? 's' : ''} ago)` : ''}`
+      : `${top.common_name} is not in recent local eBird reports, so it may be notable here`,
+    ebird.nearby.length > 0 && `Also recently reported nearby: ${ebird.nearby.join(', ')}`,
+  ].filter(Boolean).join('. ') : null
+
+  const prompt = `You are a field ecologist interpreting a single phone "Listen" — an ambient field recording someone made with their phone at ${locationLabel}. BirdNET identified the species below, already filtered to what's plausible at this exact location and time of year. You write for curious non-biologists. Interpret this specific moment and place, never generic species facts. Plain prose, commas and periods, never em-dashes.
+
+THE LISTEN
+Location: ${locationLabel}${timingDesc ? `\nApproximate local time of day: ${timingDesc}` : ''}
+Species heard (all in this one recording): ${speciesDesc}
+${metaDesc ? `The place (from the listener): ${metaDesc}` : ''}
+${notesDesc ? `The listener's own notes: "${notesDesc}"` : ''}
+${ebirdDesc ? `\nREGIONAL PICTURE (eBird, 25km, last 7 days)\n${ebirdDesc}` : ''}
+
+Write 3 to 4 sentences that turn this into a genuine ecological story about this place and moment. Your response must:
+- Read ALL the species heard together as a single community in one place, and say what that combination suggests about the habitat and what is happening right now (do not just describe one bird)
+- Weave in what the listener told you about the place and their notes, where relevant
+- Infer what these birds are likely doing at this time of day and season
+- Use the regional picture to judge whether this is a typical or a notable mix for the area
+- Sound like real field curiosity, never a field guide entry
+- Never open with a species name or "This recording"`
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 450, messages: [{ role: 'user', content: prompt }] }),
+  })
+  if (!response.ok) {
+    console.error('Claude error (mobile):', await response.text())
+    return res.status(502).json({ error: 'Claude API error' })
+  }
+  return res.status(200).json({ insight: (await response.json()).content[0].text })
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
+
+  if (req.body.mobile) return mobileInsight(req, res)
 
   const {
     detection_id,

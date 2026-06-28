@@ -19,7 +19,7 @@ function relativeTime(iso) {
 
 // A mobile "Listen" in the feed — visually distinct from node DetectionCards
 // (amber 〰 instead of a node header, no precise location/identity).
-export default function MobileDetectionCard({ d }) {
+export default function MobileDetectionCard({ d, insight, onRequestInsight }) {
   const species = (d.species || [])
     .filter(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name))
     .sort((a, b) => b.confidence - a.confidence)
@@ -63,6 +63,25 @@ export default function MobileDetectionCard({ d }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '12px' }}>
           {tags.map(t => <span key={t} style={S.tag}>{t}</span>)}
         </div>
+      )}
+
+      {/* Ecological insight — prefer the one stored with the post (covers all
+          species + the listener's notes); fall back to on-demand for older posts. */}
+      {(d.insight || insight?.text) && (
+        <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6, borderLeft: `3px solid ${AMBER.base}`, paddingLeft: '12px', marginTop: '12px' }}>
+          {d.insight || insight.text}
+        </div>
+      )}
+      {onRequestInsight && species.length > 0 && !d.insight && !insight?.text && (
+        <button onClick={onRequestInsight} disabled={insight?.loading} style={{
+          width: '100%', marginTop: '12px', padding: '9px',
+          background: insight?.loading ? C.border : 'transparent',
+          border: `1px solid ${AMBER.dark}`, borderRadius: '8px',
+          color: insight?.loading ? C.textMuted : AMBER.light,
+          fontSize: '13px', fontWeight: 700, cursor: insight?.loading ? 'default' : 'pointer',
+        }}>
+          {insight?.loading ? '🔍 Reading the soundscape…' : insight?.error ? 'Try again' : "What's the ecosystem saying?"}
+        </button>
       )}
     </div>
   )

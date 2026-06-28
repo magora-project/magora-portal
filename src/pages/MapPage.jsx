@@ -166,6 +166,34 @@ export default function MapPage() {
     }
   }
 
+  async function requestMobileInsight(m) {
+    setInsights(prev => ({ ...prev, [m.id]: { loading: true } }))
+    try {
+      const conf = (m.species || []).filter(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name))
+      const res = await fetch('/api/insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mobile: true,
+          detection_id: m.id,
+          species: conf,
+          lat: m.lat,
+          lon: m.lon,
+          detected_at: m.detected_at,
+          habitat_type: m.habitat_type,
+          canopy_cover: m.canopy_cover,
+          water_present: m.water_present,
+          disturbance_level: m.disturbance_level,
+        }),
+      })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setInsights(prev => ({ ...prev, [m.id]: { text: data.insight } }))
+    } catch {
+      setInsights(prev => ({ ...prev, [m.id]: { error: true } }))
+    }
+  }
+
   const speciesCountToday = (todayDetections || []).reduce((acc, d) => {
     const name = d.species_name
     if (name) acc[name] = (acc[name] || 0) + 1
@@ -439,7 +467,10 @@ export default function MapPage() {
             <div className="detection-grid">
               {feedItems.map(item => (
                 item.type === 'mobile' ? (
-                  <MobileDetectionCard key={item.key} d={item.m} />
+                  <MobileDetectionCard
+                    key={item.key} d={item.m}
+                    insight={insights[item.m.id]} onRequestInsight={() => requestMobileInsight(item.m)}
+                  />
                 ) : (
                   <DetectionCard
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
