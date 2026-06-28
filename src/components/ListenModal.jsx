@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import {
-  AMBER, BUCKET, RECORD_SECONDS, HABITATS, CANOPY, DISTURBANCE,
-  pickAudioMime, reverseGeocode, getPosition,
+  AMBER, BUCKET, RECORD_SECONDS, MAX_OPEN_SECONDS, DURATIONS, HABITATS, CANOPY, DISTURBANCE,
+  pickAudioMime, reverseGeocode, getPosition, formatClock,
 } from '../lib/listen'
 
 const C = {
@@ -21,7 +21,8 @@ export default function ListenModal({ onClose }) {
   const [place, setPlace] = useState(null)
   const [coords, setCoords] = useState(null)
   const [locError, setLocError] = useState(null)
-  const [secondsLeft, setSecondsLeft] = useState(RECORD_SECONDS)
+  const [durationSecs, setDurationSecs] = useState(RECORD_SECONDS) // null = open-ended
+  const [elapsed, setElapsed] = useState(0)
   const [species, setSpecies] = useState([])
   const [errorMsg, setErrorMsg] = useState(null)
 
@@ -123,15 +124,17 @@ export default function ListenModal({ onClose }) {
       analyser.fftSize = 1024
       audioCtx.createMediaStreamSource(stream).connect(analyser)
 
+      const cap = durationSecs ?? MAX_OPEN_SECONDS // hard stop (fixed length, or the open-ended safety cap)
       setStep('recording')
-      setSecondsLeft(RECORD_SECONDS)
-      recorder.start()
+      setElapsed(0)
+      recorder.start(1000) // emit chunks every 1s so long recordings don't buffer one huge blob
       requestAnimationFrame(() => drawWaveform(analyser))
 
       countdownRef.current = setInterval(() => {
-        setSecondsLeft((s) => {
-          if (s <= 1) { clearInterval(countdownRef.current); stopRecording() ; return 0 }
-          return s - 1
+        setElapsed((e) => {
+          const next = e + 1
+          if (next >= cap) { clearInterval(countdownRef.current); stopRecording(); return cap }
+          return next
         })
       }, 1000)
     } catch {
@@ -262,25 +265,60 @@ export default function ListenModal({ onClose }) {
                   ? <><span style={{ color: C.textMuted }}>You’re near</span> <strong style={{ color: C.text }}>{place}</strong></>
                   : <span style={{ color: C.textMuted }}>Finding your location…</span>}
             </div>
+
+            <label style={S.metaLabel}>Recording length</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+              {DURATIONS.map(opt => {
+                const active = durationSecs === opt.secs
+                return (
+                  <button key={opt.label} onClick={() => setDurationSecs(opt.secs)}
+                    style={{
+                      padding: '6px 14px', borderRadius: '14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                      border: `1px solid ${active ? AMBER.base : C.border}`,
+                      background: active ? AMBER.base : 'transparent',
+                      color: active ? C.bg : C.textSub,
+                    }}>
+                    {opt.label}
+                  </button>
+                )
+              })}
+            </div>
+            <p style={{ fontSize: '11px', color: C.textMuted, margin: '0 0 16px' }}>
+              {durationSecs === null
+                ? `Records until you tap stop (up to ${MAX_OPEN_SECONDS / 60} min).`
+                : 'Longer clips can pick up more species.'}
+            </p>
+
             <button onClick={beginListening} disabled={!coords} style={S.amberBtn(!coords)}>
               {coords ? 'Begin listening' : 'Waiting for location…'}
             </button>
           </>
         )}
 
-        {step === 'recording' && (
-          <div style={{ textAlign: 'center' }}>
-            <canvas ref={canvasRef} width={320} height={90} style={S.canvas} />
-            <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '2.6rem', fontWeight: 900, color: AMBER.light, lineHeight: 1 }}>
-              {secondsLeft}s
+        {step === 'recording' && (() => {
+          const isOpen = durationSecs === null
+          const remaining = isOpen ? null : Math.max(0, durationSecs - elapsed)
+          const progress = isOpen ? (elapsed / MAX_OPEN_SECONDS) * 100 : (elapsed / durationSecs) * 100
+          return (
+            <div style={{ textAlign: 'center' }}>
+              <canvas ref={canvasRef} width={320} height={90} style={S.canvas} />
+              <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '2.6rem', fontWeight: 900, color: AMBER.light, lineHeight: 1 }}>
+                {isOpen ? formatClock(elapsed) : `${remaining}s`}
+              </div>
+              <div style={{ height: '5px', background: C.border, borderRadius: '3px', margin: '14px 0', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${progress}%`, background: AMBER.base, transition: 'width 1s linear' }} />
+              </div>
+              <p style={S.sub}>
+                {isOpen
+                  ? `Listening to ${place || 'this place'}… tap stop when you’re done`
+                  : `Listening to ${place || 'this place'}…`}
+              </p>
+              <button onClick={stopRecording} style={isOpen ? S.amberBtn(false) : S.ghostBtn}>
+                {isOpen ? 'Stop & identify' : 'Stop early'}
+              </button>
             </div>
-            <div style={{ height: '5px', background: C.border, borderRadius: '3px', margin: '14px 0', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${(secondsLeft / RECORD_SECONDS) * 100}%`, background: AMBER.base, transition: 'width 1s linear' }} />
-            </div>
-            <p style={S.sub}>Listening to {place || 'this place'}…</p>
-            <button onClick={stopRecording} style={S.ghostBtn}>Stop early</button>
-          </div>
-        )}
+          )
+        })()}
 
         {step === 'pending' && (
           <div style={{ textAlign: 'center', padding: '10px 0' }}>

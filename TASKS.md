@@ -60,6 +60,7 @@ _Empty — promote from Backlog when ready._
   - Upload contract honored: audio uploaded to `temp-audio/{user_id}/{uuid}.{ext}` FIRST, then pending row inserted (so the Phase 1 trigger enqueues with audio present); realtime watches the row to `complete`/`failed` with a 90s poll fallback
   - Added generic `pulse` keyframe to index.css. Verified: lint clean, build passes, smoke test (buttons render, signed-out gating opens auth modal, no page errors)
   - **Needs real-device test:** mic + geolocation permissions + full record→worker→realtime round-trip (also the first true end-to-end test of the Phase 2 worker). Note: existing DetectionCard has its own "Listen" (plays audio) — different from this feature's record action
+  - **Recording length picker** (added later): Ready screen offers 15s / 30s / 1 min / Open. Open-ended records until "Stop & identify" with a 5-min safety cap (MAX_OPEN_SECONDS); recording UI shows remaining time for fixed, count-up clock for open. MediaRecorder uses a 1s timeslice so long clips chunk instead of buffering one blob
 
 - [x] **Listen feature — Phase 2: Worker VM** (June 2026) — deployed & running on Fly.io
   - Queue-access RPCs (portal migration `20260629`): `read_audio_jobs` / `delete_audio_job` / `archive_audio_job`, SECURITY DEFINER, service_role only (verified anon denied). Worker talks to the queue over HTTPS — no direct Postgres / DB password

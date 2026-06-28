@@ -9,7 +9,24 @@ export const AMBER = {
 }
 
 export const BUCKET = 'temp-audio'
-export const RECORD_SECONDS = 15
+export const RECORD_SECONDS = 15 // default
+
+// Recording length choices on the Ready screen. `secs: null` = open-ended
+// (record until the user stops), capped at MAX_OPEN_SECONDS for safety.
+export const DURATIONS = [
+  { label: '15s', secs: 15 },
+  { label: '30s', secs: 30 },
+  { label: '1 min', secs: 60 },
+  { label: 'Open', secs: null },
+]
+export const MAX_OPEN_SECONDS = 300 // 5 min hard cap for open-ended
+
+// mm:ss for the elapsed counter in open-ended mode.
+export function formatClock(totalSecs) {
+  const m = Math.floor(totalSecs / 60)
+  const s = totalSecs % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 
 // Ecological metadata options (tap-to-select in the Results step).
 export const HABITATS = ['Forest', 'Grassland', 'Wetland', 'Riparian', 'Shrubland', 'Urban', 'Alpine', 'Desert']
