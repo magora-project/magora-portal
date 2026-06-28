@@ -68,6 +68,12 @@ select option { background: #163d22; color: #f0ede8; }
   50% { opacity: 0.3; }
 }
 
+/* min-width:0 lets this flex child shrink so the nowrap brand text truncates
+   instead of pushing the navbar (and the auth control) past the viewport. */
+.brand-text {
+  min-width: 0;
+}
+
 .brand-title {
   font-family: 'Jost', sans-serif;
   font-size: 17px;
@@ -77,12 +83,16 @@ select option { background: #163d22; color: #f0ede8; }
   text-transform: uppercase;
   line-height: 1.2;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brand-sub {
   font-size: 13px;
   color: #7aad8a;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .navbar-links {

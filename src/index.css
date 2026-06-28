@@ -7,8 +7,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-body {
+html, body, #root {
   margin: 0;
+  max-width: 100%;
+  overflow-x: hidden;   /* never allow horizontal scrolling of the page */
 }
 
 /* Full-bleed utility — breaks out of main-content padding */

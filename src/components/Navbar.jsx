@@ -18,12 +18,12 @@ export default function Navbar() {
         <img src="/icons/icon-512.png.webp" alt="Magora" style={{
           width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
         }} />
-        <div>
+        <div className="brand-text">
           <div className="brand-title">Magora</div>
           <div className="brand-sub">Ecological intelligence network</div>
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ marginLeft: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
           {user ? (
             <>
               <span title={user.email} style={{
