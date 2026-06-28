@@ -23,10 +23,47 @@ _Empty — promote from Backlog when ready._
 
 ## 🔵 Backlog — Prioritized
 
-- [ ] **PWA setup**
+- [ ] **PWA setup** ← Required before Listen feature
   - vite-plugin-pwa already installed
   - Configure manifest: name, icons, theme color (#0d2818), display: standalone
   - Service worker for offline support; test on Android
+
+- [ ] **Listen feature — Phase 1: Database + Storage**
+  - See: 🎙️ Listen Feature Spec.md in vault for full architecture (Drive-only; not synced locally)
+  - Create `mobile_detections` table with RLS + PostGIS index
+  - Create `temp-audio` Supabase Storage bucket (private)
+  - Enable pgmq extension, create `audio_inference` queue
+  - Write + deploy Edge Function: Storage webhook → insert pgmq job + create pending row
+
+- [ ] **Listen feature — Phase 2: Worker VM**
+  - Create `/worker` directory in `magora-acoustic-biodiversity`
+  - Write `inference_worker.py` — Python polling loop using existing BirdNET pipeline
+  - Write `Dockerfile` + `fly.toml`
+  - Deploy to Fly.io (single instance, 256MB RAM)
+  - Set Fly secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (never commit)
+  - Test end-to-end: upload WAV → job fires → BirdNET runs → results written → audio deleted
+
+- [ ] **Listen feature — Phase 3: Listen flow frontend**
+  - `ListenButton.jsx` — amber/gold color, Navbar + homepage hero placement
+  - `ListenModal.jsx` — 4 states: Ready → Recording → Pending → Results
+  - MediaRecorder API: 15s fixed recording
+  - Waveform visualizer: Web Audio API AnalyserNode
+  - Geolocation capture + reverse geocoding (display location name in modal)
+  - Supabase Storage upload + pending mobile_detections row creation
+  - Realtime subscription: watch detection row until status = complete
+  - Ecological metadata UI: tap-to-select chips (habitat, canopy, water, disturbance) + notes
+
+- [ ] **Listen feature — Phase 4: Feed + map integration**
+  - `MobileDetectionCard.jsx` — amber pulse icon, "Listened by @user" header, species + metadata
+  - Feed renders both DetectionCard (nodes) and MobileDetectionCard (mobile) in unified stream
+  - Map: amber animated pulse markers for mobile_detections (distinct from solid green node pins)
+  - Map popup for mobile detections matches feed card content
+
+- [ ] **Listen feature — Phase 5: Offline queue**
+  - Install `idb` library
+  - `listenQueue.js` — IndexedDB store for pending recordings (audio blob + metadata)
+  - Auto-flush on reconnect (`navigator.onLine` / `online` event listener)
+  - Pending card UI state: "Syncing..." indicator on feed cards awaiting upload
 
 - [ ] **birdnode1 rebuild**
   - New SD card, flash latest Pi OS image
