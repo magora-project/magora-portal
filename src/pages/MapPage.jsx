@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -13,16 +13,16 @@ import ListenButton from '../components/ListenButton'
 import MobileDetectionCard from '../components/MobileDetectionCard'
 import { AMBER } from '../lib/listen'
 
-function MapController({ nodes }) {
+function MapController({ points }) {
   const map = useMap()
   useEffect(() => {
-    if (nodes.length === 0) return
-    if (nodes.length === 1) {
-      map.setView([nodes[0].coords.lat, nodes[0].coords.lon], 11)
+    if (points.length === 0) return
+    if (points.length === 1) {
+      map.setView(points[0], 11)
     } else {
-      map.fitBounds(nodes.map(n => [n.coords.lat, n.coords.lon]), { padding: [30, 30] })
+      map.fitBounds(points, { padding: [30, 30] })
     }
-  }, [nodes, map])
+  }, [points, map])
   return null
 }
 
@@ -213,6 +213,19 @@ export default function MapPage() {
 
   const latestAci = aciLogs[0]?.aci_score
 
+  // Fit the map to nodes AND mobile Listens, so Listens far from any node aren't
+  // left off-screen. Memoized so it only re-fits when the underlying data changes.
+  const mapPoints = useMemo(() => {
+    const nodePts = nodes
+      .map(n => parseNodeLocation(n.location))
+      .filter(Boolean)
+      .map(c => [c.lat, c.lon])
+    const mobilePts = mobileDetections
+      .filter(m => (m.species || []).some(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name)))
+      .map(m => [m.lat, m.lon])
+    return [...nodePts, ...mobilePts]
+  }, [nodes, mobileDetections])
+
   return (
     <div>
 
@@ -345,7 +358,7 @@ export default function MapPage() {
           </div>
           <div style={{ overflow: 'hidden', borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}` }}>
             <MapContainer center={[39.5, -105.5]} zoom={5} style={{ height: '230px', width: '100%' }} zoomControl={true}>
-              <MapController nodes={mappableNodes} />
+              <MapController points={mapPoints} />
               <TileLayer
                 url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                 attribution="© OpenStreetMap © CARTO"
