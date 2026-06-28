@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-le
 import 'leaflet/dist/leaflet.css'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
+import { useAuth } from '../lib/auth'
 import { parseNodeLocation } from '../lib/geo'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 import EcologicalPipeline from '../components/EcologicalPipeline'
@@ -62,6 +63,15 @@ export default function MapPage() {
   const [todaySpeciesCount, setTodaySpeciesCount] = useState(null)
   const [todayDetections, setTodayDetections] = useState([])
   const fetchedWiki = useRef(new Set())
+  const { user, openSignIn } = useAuth()
+  const [tab, setTab] = useState('global')
+  const [followedIds, setFollowedIds] = useState([])
+
+  useEffect(() => {
+    if (!user) { setFollowedIds([]); return }
+    supabase.from('node_follows').select('node_id')
+      .then(({ data }) => setFollowedIds((data || []).map(r => r.node_id)))
+  }, [user])
 
   async function fetchData() {
     const todayStart = new Date()
@@ -155,10 +165,19 @@ export default function MapPage() {
     if (name) acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})
-  const dedupedDetections = detections.filter((d, idx) => {
+  // Following tab gates on the "empty room" problem: hidden until the network is
+  // big enough to follow, or the signed-in user already follows something.
+  const MIN_NODES_FOR_TABS = 4
+  const showTabs = nodes.length >= MIN_NODES_FOR_TABS || (!!user && followedIds.length > 0)
+  const activeTab = showTabs ? tab : 'global'
+  const followedSet = new Set(followedIds)
+  const baseDetections = activeTab === 'following'
+    ? detections.filter(d => followedSet.has(d.node_id))
+    : detections
+  const dedupedDetections = baseDetections.filter((d, idx) => {
     const name = d.species_name || d.raw_label || ''
     if (isHiddenSpecies(name)) return false
-    return detections.findIndex(x => (x.species_name || x.raw_label) === name) === idx
+    return baseDetections.findIndex(x => (x.species_name || x.raw_label) === name) === idx
   })
 
   const mappableNodes = nodes
@@ -341,9 +360,32 @@ export default function MapPage() {
             Right now, across the network, places are speaking. Each signal below is a moment from a living ecosystem, who's present, and how the soundscape is doing.
           </p>
 
+          {showTabs && (
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+              {[['global', 'Global'], ['following', 'Following']].map(([key, label]) => {
+                const active = activeTab === key
+                return (
+                  <button
+                    key={key}
+                    onClick={() => { if (key === 'following' && !user) { openSignIn(); return } setTab(key) }}
+                    style={{
+                      padding: '7px 16px', borderRadius: '20px', cursor: 'pointer',
+                      fontSize: '13px', fontWeight: '700', fontFamily: "'DM Sans', sans-serif",
+                      background: active ? C.accent : C.card,
+                      border: `1px solid ${active ? C.accent : C.border}`,
+                      color: active ? '#fff' : C.textSub,
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Loading...</div>
-          ) : detections.length > 0 ? (
+          ) : dedupedDetections.length > 0 ? (
             <div className="detection-grid">
               {dedupedDetections.map(d => (
                 <DetectionCard
@@ -369,6 +411,10 @@ export default function MapPage() {
               >
                 Try again
               </button>
+            </div>
+          ) : activeTab === 'following' ? (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: C.textMuted, lineHeight: 1.6 }}>
+              Nothing from the places you follow in this window. Try the Global tab, or follow more listening posts.
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Nothing recorded in this window</div>

@@ -11,11 +11,7 @@
 
 ## 🔴 Now — Currently Building
 
-- [ ] **Follow system — Supabase + portal** (in progress; sign-in required only to follow)
-  - [x] Phase 1 — auth foundation: Email OTP (code) + Google sign-in; AuthProvider/useAuth, AuthModal, navbar account state. NEEDS dashboard config to work end to end (see below)
-  - [x] Phase 2 — `node_follows` table (user_id, node_id, created_at) + RLS; follow/unfollow button on NodePage (sign-in gated); public follower count via security-definer RPC
-  - [ ] Phase 3 — feed tabs Global | Following, gated until there are enough nodes to follow
-  - Config required (Noah, dashboards): Supabase email template add `{{ .Token }}`; Google OAuth client in Google Cloud + enable Google provider in Supabase; Supabase URL config (Site URL + redirect URLs); custom SMTP before launch
+_Nothing in progress — pull the next task up from "Next"/"Backlog" when ready._
 
 ---
 
@@ -54,6 +50,11 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **Follow system — Supabase + portal** (June 2026)
+  - Phase 1: auth (Email OTP code + Google sign-in), AuthProvider/useAuth, AuthModal, navbar account state
+  - Phase 2: node_follows table + RLS + follower-count RPC; follow/unfollow button on NodePage (sign-in gated), live follower count
+  - Phase 3: Global | Following feed tabs on MapPage, gated by MIN_NODES_FOR_TABS (4) or the signed-in user already following something (empty-room guard)
+  - Config done in dashboards: email template {{ .Token }}, Google OAuth client + provider, Supabase URL config. STILL TODO before public launch: custom SMTP (built-in email is throttled)
 - [x] **RegisterNode step-4 polling fix** (June 2026)
   - Timeout was 5 min (60×5s) but BirdNET install takes up to 25 min — raised to ~30 min (360 polls)
   - "Try again" did setStep(4) while already on step 4, so the effect deps never changed and polling never restarted (stuck spinner); now uses a pollNonce that genuinely restarts the interval and resets state
