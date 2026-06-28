@@ -13,7 +13,7 @@
 
 - [ ] **Follow system — Supabase + portal** (in progress; sign-in required only to follow)
   - [x] Phase 1 — auth foundation: Email OTP (code) + Google sign-in; AuthProvider/useAuth, AuthModal, navbar account state. NEEDS dashboard config to work end to end (see below)
-  - [ ] Phase 2 — `node_follows` table (user_id, node_id, created_at) + RLS; follow/unfollow button on NodePage; follower count
+  - [x] Phase 2 — `node_follows` table (user_id, node_id, created_at) + RLS; follow/unfollow button on NodePage (sign-in gated); public follower count via security-definer RPC
   - [ ] Phase 3 — feed tabs Global | Following, gated until there are enough nodes to follow
   - Config required (Noah, dashboards): Supabase email template add `{{ .Token }}`; Google OAuth client in Google Cloud + enable Google provider in Supabase; Supabase URL config (Site URL + redirect URLs); custom SMTP before launch
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useAuth } from '../lib/auth'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { parseNodeLocation } from '../lib/geo'
@@ -59,8 +60,11 @@ export default function NodePage() {
   const [insights, setInsights] = useState({})
   const [speciesNames, setSpeciesNames] = useState([])
   const [following, setFollowing] = useState(false)
+  const [followerCount, setFollowerCount] = useState(0)
+  const [followBusy, setFollowBusy] = useState(false)
   const [shareState, setShareState] = useState(null) // null | 'copied' | 'error'
   const fetchedWiki = useRef(new Set())
+  const { user, openSignIn } = useAuth()
 
   async function fetchData() {
     const [{ data: nodeData }, { data: dData }, { data: aciData }] = await Promise.all([
@@ -94,6 +98,32 @@ export default function NodePage() {
     supabase.from('detections').select('species_name').eq('node_id', id).gte('confidence', MIN_CONFIDENCE).limit(5000)
       .then(({ data }) => setSpeciesNames((data || []).map(d => d.species_name)))
   }, [id])
+
+  // Public follower count (security-definer RPC — no follower identities exposed)
+  useEffect(() => {
+    if (!id) return
+    supabase.rpc('node_follower_count', { n: id }).then(({ data }) => setFollowerCount(data ?? 0))
+  }, [id])
+
+  // Is the signed-in user following this place?
+  useEffect(() => {
+    if (!id || !user) { setFollowing(false); return }
+    supabase.from('node_follows').select('node_id').eq('node_id', id).eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => setFollowing(!!data))
+  }, [id, user])
+
+  async function toggleFollow() {
+    if (!user) { openSignIn(); return }
+    setFollowBusy(true)
+    if (following) {
+      const { error } = await supabase.from('node_follows').delete().eq('node_id', id)
+      if (!error) { setFollowing(false); setFollowerCount(c => Math.max(0, c - 1)) }
+    } else {
+      const { error } = await supabase.from('node_follows').insert({ node_id: id })
+      if (!error) { setFollowing(true); setFollowerCount(c => c + 1) }
+    }
+    setFollowBusy(false)
+  }
 
   useEffect(() => {
     const uniqueSpecies = [...new Set(detections.map(d => d.species_name).filter(Boolean))]
@@ -254,15 +284,17 @@ export default function NodePage() {
       </div>
 
       {/* Follow + Share */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
         <button
-          onClick={() => setFollowing(f => !f)}
+          onClick={toggleFollow}
+          disabled={followBusy}
           style={{
-            flex: 1, padding: '11px', borderRadius: '10px', cursor: 'pointer',
+            flex: 1, padding: '11px', borderRadius: '10px', cursor: followBusy ? 'default' : 'pointer',
             fontSize: '14px', fontWeight: '700', fontFamily: "'DM Sans', sans-serif",
             background: following ? C.bg : C.accent,
             border: `1px solid ${following ? C.border : C.accent}`,
             color: following ? C.textSub : '#fff',
+            opacity: followBusy ? 0.7 : 1,
           }}
         >
           {following ? '✓ Following' : '+ Follow'}
@@ -293,6 +325,9 @@ export default function NodePage() {
             </svg>
           )}
         </button>
+      </div>
+      <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '20px' }}>
+        {followerCount} {followerCount === 1 ? 'follower' : 'followers'}
       </div>
 
       {/* Profile stats */}
