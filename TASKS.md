@@ -39,17 +39,16 @@ _Empty — promote from Backlog when ready._
   - Called from RegisterNode wizard step 2
   - Creates node record + JWT auth user
 
-- [ ] **Dashboard redesign — Ecological Patterns**
-  - Remove business KPI aesthetic
-  - Soundscape health chart → river-style visualization (not bar chart)
-  - Add seasonal species shift, guild breakdown, migration timing
-
 - [ ] **Donate page** — `/donate` route, participation-first framing (sponsor nodes, open infrastructure)
 
 ---
 
 ## ✅ Done
 
+- [x] **Dashboard redesign — Ecological Patterns** (June 2026)
+  - Dropped KPI tile grid for a single-column editorial layout (Big Shoulders section headers + plain-language summary sentence)
+  - Soundscape "river": smooth SVG band (Catmull-Rom) across Dawn→Night, thickness = ACI complexity (replaces bar list)
+  - Sections: community/guild breakdown, migration mix, seasonal species shift (new, fills in over the year), most recorded (links to species), listening posts (link to nodes)
 - [x] **Follow system — Supabase + portal** (June 2026)
   - Phase 1: auth (Email OTP code + Google sign-in), AuthProvider/useAuth, AuthModal, navbar account state
   - Phase 2: node_follows table + RLS + follower-count RPC; follow/unfollow button on NodePage (sign-in gated), live follower count
