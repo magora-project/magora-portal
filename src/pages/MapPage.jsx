@@ -10,6 +10,8 @@ import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 import EcologicalPipeline from '../components/EcologicalPipeline'
 import EcologicalCommons from '../components/EcologicalCommons'
 import ListenButton from '../components/ListenButton'
+import MobileDetectionCard from '../components/MobileDetectionCard'
+import { AMBER } from '../lib/listen'
 
 function MapController({ nodes }) {
   const map = useMap()
@@ -56,6 +58,7 @@ export default function MapPage() {
   const mapSectionRef = useRef(null)
   const [aciLogs, setAciLogs] = useState([])
   const [detections, setDetections] = useState([])
+  const [mobileDetections, setMobileDetections] = useState([])
   const [nodes, setNodes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -79,7 +82,7 @@ export default function MapPage() {
     todayStart.setUTCHours(0, 0, 0, 0)
 
     try {
-      const [nodesRes, detRes, aciRes, todayRes] = await Promise.all([
+      const [nodesRes, detRes, aciRes, todayRes, mobileRes] = await Promise.all([
         supabase.from('nodes').select('*').eq('is_active', true),
         supabase.from('detections')
           .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
@@ -87,6 +90,7 @@ export default function MapPage() {
           .order('detected_at', { ascending: false }).limit(50),
         supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
         supabase.from('detections').select('species_name').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString()),
+        supabase.from('public_mobile_detections').select('*').order('detected_at', { ascending: false }).limit(50),
       ])
 
       // supabase-js resolves with { data, error } even on API failures — surface those too
@@ -95,6 +99,7 @@ export default function MapPage() {
 
       setNodes(nodesRes.data || [])
       setDetections(detRes.data || [])
+      setMobileDetections(mobileRes.data || [])
       setAciLogs(aciRes.data || [])
       setTodayDetections(todayRes.data || [])
       setTodaySpeciesCount(new Set((todayRes.data || []).map(d => d.species_name).filter(n => n && !isHiddenSpecies(n))).size)
@@ -180,6 +185,20 @@ export default function MapPage() {
     if (isHiddenSpecies(name)) return false
     return baseDetections.findIndex(x => (x.species_name || x.raw_label) === name) === idx
   })
+
+  // Mobile Listens with at least one confident, non-hidden ID (avoids empty cards).
+  const mobileFeed = mobileDetections.filter(m =>
+    (m.species || []).some(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name)))
+
+  // Unified, time-sorted feed. Mobile Listens only show on Global (they don't
+  // belong to a followed node).
+  const feedItems = (activeTab === 'following'
+    ? dedupedDetections.map(d => ({ type: 'node', ts: d.detected_at, key: `n-${d.id}`, d }))
+    : [
+        ...dedupedDetections.map(d => ({ type: 'node', ts: d.detected_at, key: `n-${d.id}`, d })),
+        ...mobileFeed.map(m => ({ type: 'mobile', ts: m.detected_at, key: `m-${m.id}`, m })),
+      ]
+  ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
 
   const mappableNodes = nodes
     .map(n => ({ ...n, coords: parseNodeLocation(n.location) }))
@@ -348,6 +367,22 @@ export default function MapPage() {
                   </Tooltip>
                 </CircleMarker>
               ))}
+              {mobileFeed.map(m => (
+                <CircleMarker
+                  key={`mob-${m.id}`}
+                  center={[m.lat, m.lon]}
+                  radius={7}
+                  pathOptions={{ fillColor: AMBER.base, color: AMBER.dark, weight: 2, fillOpacity: 0.8 }}
+                  className="node-pulse"
+                >
+                  <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
+                    <strong style={{ fontSize: '13px' }}>〰 Listen</strong><br />
+                    <span style={{ fontSize: '12px', color: '#555' }}>
+                      {m.species?.find(s => s.confidence >= MIN_CONFIDENCE)?.common_name || 'A field recording'}
+                    </span>
+                  </Tooltip>
+                </CircleMarker>
+              ))}
             </MapContainer>
           </div>
         </div>
@@ -387,14 +422,18 @@ export default function MapPage() {
 
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Loading...</div>
-          ) : dedupedDetections.length > 0 ? (
+          ) : feedItems.length > 0 ? (
             <div className="detection-grid">
-              {dedupedDetections.map(d => (
-                <DetectionCard
-                  key={d.id} d={d} node={nodeById[d.node_id]} showNode wikiData={wikiData}
-                  count={speciesCountToday[d.species_name || d.raw_label] || 1}
-                  insight={insights[d.id]} onRequestInsight={() => requestInsight(d)}
-                />
+              {feedItems.map(item => (
+                item.type === 'mobile' ? (
+                  <MobileDetectionCard key={item.key} d={item.m} />
+                ) : (
+                  <DetectionCard
+                    key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
+                    count={speciesCountToday[item.d.species_name || item.d.raw_label] || 1}
+                    insight={insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
+                  />
+                )
               ))}
             </div>
           ) : error ? (

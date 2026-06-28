@@ -23,12 +23,6 @@ _Empty — promote from Backlog when ready._
 
 ## 🔵 Backlog — Prioritized
 
-- [ ] **Listen feature — Phase 4: Feed + map integration**
-  - `MobileDetectionCard.jsx` — amber pulse icon, "Listened by @user" header, species + metadata
-  - Feed renders both DetectionCard (nodes) and MobileDetectionCard (mobile) in unified stream
-  - Map: amber animated pulse markers for mobile_detections (distinct from solid green node pins)
-  - Map popup for mobile detections matches feed card content
-
 - [ ] **Listen feature — Phase 5: Offline queue**
   - Install `idb` library
   - `listenQueue.js` — IndexedDB store for pending recordings (audio blob + metadata)
@@ -50,6 +44,13 @@ _Empty — promote from Backlog when ready._
 ---
 
 ## ✅ Done
+
+- [x] **Listen feature — Phase 4: Feed + map integration** (June 2026)
+  - Migration `20260630_listen_phase4_public_view.sql`: sanitized public view `public_mobile_detections` (definer-rights) — completed rows only, exposes species + ecological metadata, **hides** user_id/notes/audio_path/device_info, coarsens lat/lon to 3 decimals (~110m) for privacy. Granted to anon+authenticated (verified: returns rows for anon)
+  - `MobileDetectionCard.jsx`: amber 〰 Listen badge (distinct from green node cards), species filtered to ≥30% + hidden-species filter, ecological metadata tags, relative time, species links to /species
+  - MapPage: fetches `public_mobile_detections`, merges node + mobile into one time-sorted feed (mobile only on Global tab), amber pulse `CircleMarker`s with tooltips on the map. Verified: feed renders mobile cards, build passes, no page errors
+  - **Known gap (follow-up):** mobile Listens skip the per-node eBird regional whitelist, so implausible low-confidence species can surface (e.g. Black-faced Ibis in Wyoming). Card display filters to ≥30%, but a real fix is to apply eBird regional filtering (by lat/lon) in the worker
+  - Pre-existing MapPage lint warnings (set-state-in-effect, lines ~75/116) left as-is — not introduced here
 
 - [x] **Listen feature — Phase 3: Listen flow frontend** (June 2026)
   - `lib/listen.js`: amber palette, metadata option lists, `pickAudioMime` (webm/mp4/ogg fallback), `reverseGeocode` (OSM Nominatim), `getPosition` (geolocation promise)
