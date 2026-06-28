@@ -23,15 +23,6 @@ _Empty — promote from Backlog when ready._
 
 ## 🔵 Backlog — Prioritized
 
-- [ ] **Listen feature — Phase 2: Worker VM** — _code complete, deploy pending_
-  - [x] Queue-access RPCs (portal migration `20260629_listen_phase2_queue_rpc.sql`, pushed to prod): `read_audio_jobs` / `delete_audio_job` / `archive_audio_job`, SECURITY DEFINER, granted to service_role only (verified: anon is denied). Worker talks to the queue over HTTPS — no direct Postgres connection / DB password
-  - [x] `/worker` dir in `magora-acoustic-biodiversity`: `inference_worker.py` (poll loop + BirdNET, params identical to detect.py: min_conf 0.20 / sensitivity 1.25 / overlap 1.5, same EXCLUDE+insect filter, dedupe best-per-species), `requirements.txt`, `Dockerfile` (python:3.11-slim + ffmpeg), `fly.toml`, `README.md` with deploy steps
-  - [x] Poison-message guard (archive + mark row failed after MAX_ATTEMPTS); audio deleted after inference (ephemeral)
-  - **Deviation from spec:** VM memory set to 1GB, not the spec's 256MB — the BirdNET model won't fit in 256MB. Worker enqueue uses the Phase 1 trigger (no Storage webhook/Edge Function)
-  - [ ] **DEPLOY (needs your Fly.io account + Fly CLI):** `fly auth login` → `fly launch --no-deploy` → `fly secrets set SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY` → `fly deploy`. Fly builds remotely, so no local Docker needed. Steps in `worker/README.md`
-  - [ ] Test end-to-end: upload WAV → trigger enqueues → BirdNET runs → results written → audio deleted
-  - [ ] (optional) pin `birdnetlib` to the Pi's version for exact parity
-
 - [ ] **Listen feature — Phase 3: Listen flow frontend**
   - `ListenButton.jsx` — amber/gold color, Navbar + homepage hero placement
   - `ListenModal.jsx` — 4 states: Ready → Recording → Pending → Results
@@ -69,6 +60,14 @@ _Empty — promote from Backlog when ready._
 ---
 
 ## ✅ Done
+
+- [x] **Listen feature — Phase 2: Worker VM** (June 2026) — deployed & running on Fly.io
+  - Queue-access RPCs (portal migration `20260629`): `read_audio_jobs` / `delete_audio_job` / `archive_audio_job`, SECURITY DEFINER, service_role only (verified anon denied). Worker talks to the queue over HTTPS — no direct Postgres / DB password
+  - `magora-acoustic-biodiversity/worker/`: `inference_worker.py` (poll loop + BirdNET, params identical to detect.py: min_conf 0.20 / sensitivity 1.25 / overlap 1.5, same EXCLUDE+insect filter, dedupe best-per-species, poison-message guard, audio deleted after inference), `requirements.txt`, `Dockerfile`, `fly.toml`, `README.md`
+  - Deployed to Fly.io app `magora-listen-worker` (region dfw, shared-cpu-1x / 1GB). Verified: model loads, "Polling audio_inference queue", machine `started`
+  - **Fixes during deploy:** (1) pinned `numpy<2` — tflite-runtime is built against NumPy 1.x and crash-looped on NumPy 2.4.6; (2) removed the `[http_service]` block `fly launch` auto-injected — the worker has no web server, and that block would have auto-stopped the machine for lack of HTTP traffic
+  - **Deviations from spec:** VM memory 1GB not 256MB (BirdNET won't fit in 256MB); enqueue via the Phase 1 trigger (no Storage webhook/Edge Function)
+  - Remaining: full audio round-trip naturally validated in Phase 3 (needs a real Listen upload); optional — pin `birdnetlib` to the Pi's version for exact parity
 
 - [x] **Listen feature — Phase 1: Database + Storage** (June 2026)
   - Migration `20260628_listen_phase1_mobile_detections.sql`, pushed to prod (verified: table live, migration history synced)
