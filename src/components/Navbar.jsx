@@ -33,6 +33,12 @@ export default function Navbar() {
               }}>
                 {(user.email || '?')[0].toUpperCase()}
               </span>
+              <Link to="/journal/me" style={{
+                background: 'transparent', border: '1px solid #1f5230', color: '#c8e6d0',
+                borderRadius: '8px', padding: '7px 14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', textDecoration: 'none',
+              }}>
+                My journal
+              </Link>
               <button onClick={signOut} style={{
                 background: 'none', border: 'none', color: '#7aad8a',
                 fontSize: '13px', fontWeight: 600, cursor: 'pointer', padding: '4px',

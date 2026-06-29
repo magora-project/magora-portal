@@ -8,6 +8,7 @@ import AboutPage from './pages/AboutPage'
 import NodePage from './pages/NodePage'
 import SpeciesPage from './pages/SpeciesPage'
 import DonatePage from './pages/DonatePage'
+import JournalPage from './pages/JournalPage'
 import DonatePrompt from './components/DonatePrompt'
 import { AuthProvider } from './lib/auth'
 import { initListenQueue } from './lib/listenQueue'
@@ -29,6 +30,7 @@ function App() {
               <Route path="/" element={<MapPage />} />
               <Route path="/node/:id" element={<NodePage />} />
               <Route path="/species/:name" element={<SpeciesPage />} />
+              <Route path="/journal/:handle" element={<JournalPage />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/register" element={<RegisterNode />} />
               <Route path="/about" element={<AboutPage />} />

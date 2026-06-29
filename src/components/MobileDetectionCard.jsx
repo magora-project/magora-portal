@@ -30,6 +30,8 @@ export default function MobileDetectionCard({ d, insight, onRequestInsight }) {
     d.disturbance_level && d.disturbance_level !== 'none' ? `${d.disturbance_level} disturbance` : null,
   ].filter(Boolean)
 
+  const listenerHandle = d.listener_handle
+
   return (
     <div style={S.card}>
       <div style={S.header}>
@@ -40,6 +42,13 @@ export default function MobileDetectionCard({ d, insight, onRequestInsight }) {
       <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '10px' }}>
         A field recording from someone in the network
       </div>
+      {listenerHandle && (
+        <div style={{ marginBottom: '10px', fontSize: '12px' }}>
+          <Link to={`/journal/${listenerHandle}`} style={{ color: C.textSub, textDecoration: 'underline' }}>
+            Listened by @{listenerHandle}
+          </Link>
+        </div>
+      )}
 
       {species.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
