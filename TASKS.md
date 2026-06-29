@@ -29,6 +29,16 @@ _Empty — promote from Backlog when ready._
   - Auto-flush on reconnect (`navigator.onLine` / `online` event listener)
   - Pending card UI state: "Syncing..." indicator on feed cards awaiting upload
 
+- [ ] **Listener Field Journal** — public profile + field journal for Listeners (people who use Listen, no hardware). Route: `/journal/:handle`. A Listener profile is a FIELD JOURNAL (a person's relationship with many places), distinct from a NodePage (a place profile). Deliberate design line: NO follow system for Listeners in v1 — we follow places, not people.
+  - **New `listeners` table** (Option B, same pattern as `nodes`): `id uuid pk references auth.users(id)` (= auth.uid(), no join table), `handle text unique not null` (lowercase, URL-safe [a-z0-9_], reserved-word blocklist incl. admin/api/journal), `display_name`, `bio`, `home_region`, `avatar_path`, `created_at`. RLS: public SELECT; insert/update only own row. Handle-claim UI on first Listen or first journal visit + client-side format validation.
+  - **Profile editor**: display_name, bio, home_region, avatar upload (small, public-read).
+  - **Sanitized journal data path** — CRITICAL PRIVACY GATE: before building, inspect the `public_mobile_detections` view definition and confirm whether it exposes `user_id`. If yes, the journal view can join on it. If NO (stripped for privacy), do the join on base `mobile_detections` inside a SECURITY DEFINER function, still applying the ~110m coord coarsening. The journal must never leak precise coordinates, observer notes, audio paths, or anything the public feed already hides.
+  - **`/journal/:handle` page** (vertical order): (1) life-list headline stat — "23 species across 11 places"; (2) journal map — reuse Leaflet, amber pulse markers, this Listener's Listens only, auto-fit bounds, ~110m coarsened, tap marker → full Listen results; (3) journal entries list — each Listen as a notebook entry (location name, date, species count, top species), chronological, tap → full results.
+  - **Wire-up**: link MobileDetectionCard's "Listened by @handle" → `/journal/:handle`; add "My journal" to the account menu; share button reusing the DetectionCard share pattern.
+  - **Build order**: table+RLS+handle UI → profile editor → sanitized data path → page → wire-up → share. Pause after each for confirmation.
+  - **Out of scope v1**: no follow system, no private/public toggle (public by default), no species-page links yet (render species as plain text).
+  - **Language** (per the Language Audit): the person is a "Listener" not "user" in public copy; the page is their "field journal"; a recording is "a Listen"; the species total is their "life list."
+
 - [ ] **birdnode1 rebuild**
   - New SD card, flash latest Pi OS image
   - Run magora-firstrun.sh from bootfs config
