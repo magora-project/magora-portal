@@ -6,6 +6,7 @@ import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { useAuth } from '../lib/auth'
 import { parseNodeLocation } from '../lib/geo'
+import { subscribeQueuedListens } from '../lib/listenQueue'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 import EcologicalPipeline from '../components/EcologicalPipeline'
 import EcologicalCommons from '../components/EcologicalCommons'
@@ -66,15 +67,26 @@ export default function MapPage() {
   const [insights, setInsights] = useState({})
   const [todaySpeciesCount, setTodaySpeciesCount] = useState(null)
   const [todayDetections, setTodayDetections] = useState([])
+  const [queuedListens, setQueuedListens] = useState([])
   const fetchedWiki = useRef(new Set())
   const { user, openSignIn } = useAuth()
   const [tab, setTab] = useState('global')
   const [followedIds, setFollowedIds] = useState([])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!user) { setFollowedIds([]); return }
     supabase.from('node_follows').select('node_id')
       .then(({ data }) => setFollowedIds((data || []).map(r => r.node_id)))
+  }, [user])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!user) { setQueuedListens([]); return }
+    const unsubscribe = subscribeQueuedListens(items => {
+      setQueuedListens(items.filter(item => item.user_id === user.id))
+    })
+    return unsubscribe
   }, [user])
 
   async function fetchData() {
@@ -113,6 +125,7 @@ export default function MapPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData()
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)
@@ -218,11 +231,22 @@ export default function MapPage() {
   const mobileFeed = mobileDetections.filter(m =>
     (m.species || []).some(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name)))
 
+  const queuedFeed = queuedListens.map(item => ({
+    type: 'queued',
+    ts: item.queued_at || item.detected_at,
+    key: `q-${item.id}`,
+    item,
+  }))
+
   // Unified, time-sorted feed. Mobile Listens only show on Global (they don't
-  // belong to a followed node).
+  // belong to a followed node). Local queued listens are shown alongside them.
   const feedItems = (activeTab === 'following'
-    ? dedupedDetections.map(d => ({ type: 'node', ts: d.detected_at, key: `n-${d.id}`, d }))
+    ? [
+        ...queuedFeed,
+        ...dedupedDetections.map(d => ({ type: 'node', ts: d.detected_at, key: `n-${d.id}`, d })),
+      ]
     : [
+        ...queuedFeed,
         ...dedupedDetections.map(d => ({ type: 'node', ts: d.detected_at, key: `n-${d.id}`, d })),
         ...mobileFeed.map(m => ({ type: 'mobile', ts: m.detected_at, key: `m-${m.id}`, m })),
       ]
@@ -236,6 +260,7 @@ export default function MapPage() {
 
   function isRecentNode(node) {
     if (!node.last_seen) return false
+    // eslint-disable-next-line react-hooks/purity
     return (Date.now() - new Date(node.last_seen).getTime()) / 60000 <= 5
   }
 
@@ -471,6 +496,19 @@ export default function MapPage() {
                     key={item.key} d={item.m}
                     insight={insights[item.m.id]} onRequestInsight={() => requestMobileInsight(item.m)}
                   />
+                ) : item.type === 'queued' ? (
+                  <div key={item.key} style={{ background: '#1f3326', border: `1px solid ${C.border}`, borderLeft: `3px solid ${AMBER.base}`, borderRadius: '16px', padding: '16px', color: C.text }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <strong style={{ fontSize: '14px' }}>〰 Listen</strong>
+                      <span style={{ fontSize: '11px', color: C.textMuted }}>Syncing…</span>
+                    </div>
+                    <div style={{ fontSize: '13px', color: C.textMuted, marginBottom: '12px' }}>
+                      Your recording is queued locally and will upload automatically when your device reconnects.
+                    </div>
+                    <div style={{ fontSize: '13px', color: C.text, lineHeight: 1.5 }}>
+                      Saved at {new Date(item.item.queued_at || item.item.detected_at).toLocaleString()}
+                    </div>
+                  </div>
                 ) : (
                   <DetectionCard
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}

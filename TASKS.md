@@ -23,11 +23,11 @@ _Empty — promote from Backlog when ready._
 
 ## 🔵 Backlog — Prioritized
 
-- [ ] **Listen feature — Phase 5: Offline queue**
-  - Install `idb` library
-  - `listenQueue.js` — IndexedDB store for pending recordings (audio blob + metadata)
-  - Auto-flush on reconnect (`navigator.onLine` / `online` event listener)
-  - Pending card UI state: "Syncing..." indicator on feed cards awaiting upload
+- [x] **Listen feature — Phase 5: Offline queue**
+  - Added `idb` queue in `src/lib/listenQueue.js` for pending offline recordings
+  - `ListenModal.jsx` saves offline recordings locally when offline and auto-syncs on reconnect
+  - `App.jsx` starts the queue listener at app launch
+  - `MapPage.jsx` renders queued local Listens as "Syncing…" cards in the feed
 
 - [ ] **Listener Field Journal** — public profile + field journal for Listeners (people who use Listen, no hardware). Route: `/journal/:handle`. A Listener profile is a FIELD JOURNAL (a person's relationship with many places), distinct from a NodePage (a place profile). Deliberate design line: NO follow system for Listeners in v1 — we follow places, not people.
   - **New `listeners` table** (Option B, same pattern as `nodes`): `id uuid pk references auth.users(id)` (= auth.uid(), no join table), `handle text unique not null` (lowercase, URL-safe [a-z0-9_], reserved-word blocklist incl. admin/api/journal), `display_name`, `bio`, `home_region`, `avatar_path`, `created_at`. RLS: public SELECT; insert/update only own row. Handle-claim UI on first Listen or first journal visit + client-side format validation.
