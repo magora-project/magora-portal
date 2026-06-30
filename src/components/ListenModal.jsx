@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
+import { addQueuedListen } from '../lib/listenQueue'
 import {
   AMBER, BUCKET, RECORD_SECONDS, MAX_OPEN_SECONDS, DURATIONS, HABITATS, CANOPY, DISTURBANCE,
   pickAudioMime, reverseGeocode, getPosition, formatClock,
@@ -25,6 +26,7 @@ export default function ListenModal({ onClose }) {
   const [elapsed, setElapsed] = useState(0)
   const [species, setSpecies] = useState([])
   const [errorMsg, setErrorMsg] = useState(null)
+  const [queuedOffline, setQueuedOffline] = useState(false)
 
   // Optional ecological metadata (Results step)
   const [habitat, setHabitat] = useState(null)
@@ -164,6 +166,22 @@ export default function ListenModal({ onClose }) {
     const path = `${user.id}/${id}.${ext}`
 
     try {
+      if (!navigator.onLine) {
+        await addQueuedListen({
+          id,
+          user_id: user.id,
+          lat: coords.lat,
+          lon: coords.lon,
+          audio_blob: blob,
+          audio_ext: ext,
+          audio_type: blob.type,
+          device_info: { ua: navigator.userAgent },
+          detected_at: new Date().toISOString(),
+        })
+        setQueuedOffline(true)
+        return
+      }
+
       // Contract: upload the audio FIRST, then insert the row — the DB trigger
       // enqueues the inference job on insert, so the audio must already exist.
       const up = await supabase.storage.from(BUCKET).upload(path, blob, {
@@ -360,9 +378,13 @@ export default function ListenModal({ onClose }) {
         {step === 'pending' && (
           <div style={{ textAlign: 'center', padding: '10px 0' }}>
             <div style={S.pulse}>〰</div>
-            <h2 style={S.h2}>Got your recording</h2>
-            <p style={S.sub}>Identifying species… nothing is posted automatically. Stay here to review it and choose whether to post.</p>
-            <button onClick={onClose} style={S.ghostBtn}>Cancel</button>
+            <h2 style={S.h2}>{queuedOffline ? 'Saved offline' : 'Got your recording'}</h2>
+            <p style={S.sub}>
+              {queuedOffline
+                ? 'Your recording is saved locally and will sync automatically when your device reconnects.'
+                : 'Identifying species… nothing is posted automatically. Stay here to review it and choose whether to post.'}
+            </p>
+            <button onClick={onClose} style={S.ghostBtn}>{queuedOffline ? 'Close' : 'Cancel'}</button>
           </div>
         )}
 

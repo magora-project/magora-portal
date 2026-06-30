@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
+import { getListenerAvatarUrl } from '../lib/listener'
 
 const TABS = [
   { path: '/',          src: '/icons/live_feed.svg',  label: 'Network'             },
@@ -8,9 +10,72 @@ const TABS = [
   { path: '/about',     src: '/icons/about.svg',      label: 'About the Project', zoom: 1.5 },
 ]
 
+// Collapses the signed-in account controls into a single avatar button that
+// opens a small menu — keeps the mobile top bar uncluttered. Closes on outside
+// click and whenever the route changes.
+function AccountMenu({ user, listener, signOut }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const avatarUrl = getListenerAvatarUrl(listener?.avatar_path)
+  const initial = (listener?.display_name || listener?.handle || user.email || '?')[0].toUpperCase()
+
+  // Closing on navigation is already covered: menu items close on click, and
+  // tapping a nav tab fires the outside-pointerdown handler below.
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    function onKey(e) { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        title={user.email}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Account menu"
+        style={{
+          width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+          background: '#1D9E75', color: '#fff', fontWeight: 700, fontSize: '14px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: open ? '2px solid #5DCAA5' : '2px solid transparent',
+          padding: 0, cursor: 'pointer', overflow: 'hidden',
+        }}
+      >
+        {avatarUrl
+          ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : initial}
+      </button>
+      {open && (
+        <div role="menu" style={{
+          position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 50,
+          minWidth: '170px', background: '#163d22', border: '1px solid #1f5230',
+          borderRadius: '12px', padding: '6px', boxShadow: '0 10px 30px rgba(0,0,0,0.45)',
+        }}>
+          <Link to="/journal/me" role="menuitem" className="account-menu-item" onClick={() => setOpen(false)}>
+            My journal
+          </Link>
+          <button role="menuitem" className="account-menu-item" onClick={() => { setOpen(false); signOut() }}>
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Navbar() {
   const location = useLocation()
-  const { user, signOut, openSignIn } = useAuth()
+  const { user, listener, signOut, openSignIn } = useAuth()
 
   return (
     <nav className="navbar">
@@ -25,21 +90,7 @@ export default function Navbar() {
 
         <div style={{ marginLeft: 'auto', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
           {user ? (
-            <>
-              <span title={user.email} style={{
-                width: '30px', height: '30px', borderRadius: '50%', flexShrink: 0,
-                background: '#1D9E75', color: '#fff', fontWeight: 700, fontSize: '14px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                {(user.email || '?')[0].toUpperCase()}
-              </span>
-              <button onClick={signOut} style={{
-                background: 'none', border: 'none', color: '#7aad8a',
-                fontSize: '13px', fontWeight: 600, cursor: 'pointer', padding: '4px',
-              }}>
-                Sign out
-              </button>
-            </>
+            <AccountMenu user={user} listener={listener} signOut={signOut} />
           ) : (
             <button onClick={openSignIn} style={{
               background: 'transparent', border: '1px solid #1f5230', color: '#c8e6d0',

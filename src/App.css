@@ -95,6 +95,30 @@ select option { background: #163d22; color: #f0ede8; }
   text-overflow: ellipsis;
 }
 
+.account-menu-item {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #c8e6d0;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account-menu-item:hover,
+.account-menu-item:focus-visible {
+  background: #1f5230;
+  color: #fff;
+  outline: none;
+}
+
 .navbar-links {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
