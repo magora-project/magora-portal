@@ -35,15 +35,16 @@ _Empty — promote from Backlog when ready._
   - Test provision-node Edge Function
   - Confirm detections flowing to Supabase
 
-- [ ] **provision-node Edge Function**
-  - Build and deploy to Supabase
-  - Called from RegisterNode wizard step 2
-  - Creates node record + JWT auth user
-
-
 ---
 
 ## ✅ Done
+
+- [x] **provision-node Edge Function** — built, deployed, and unbroken (July 2026)
+  - `supabase/functions/provision-node/index.ts`: called from RegisterNode wizard step 2. Gated by an `x-provision-secret` header; with the service role it creates the node's Supabase auth user (`node-<uuid>@magora.internal`) + inserts the `nodes` row (id = auth uuid, Option B), rolling back the auth user if the insert fails, and returns `node_id`/`email`/`password` to the wizard.
+  - **Was silently broken in prod:** it had been redeployed with the default `verify_jwt = true`, so Supabase's gateway 401'd (`UNAUTHORIZED_NO_AUTH_HEADER`) every registration before the request reached the function — the wizard sends only `x-provision-secret`, no Supabase JWT. **Fixed:** redeployed with `--no-verify-jwt` (now version 5, `verify_jwt = false`); verified the wizard's exact call path works (correct secret + empty body → 400 missing fields, i.e. gateway open + `VITE_PROVISION_SECRET` matches the function's `PROVISION_SECRET`, no node created).
+  - **Regression guard:** added `supabase/config.toml` pinning `[functions.provision-node] verify_jwt = false` so a future `supabase functions deploy` can't reset it.
+  - Not done: a true end-to-end registration (would create a real node/auth user in prod) — left for the birdnode1 rebuild.
+
 
 - [x] **Listener Field Journal** — public profile + field journal for Listeners at `/journal/:handle` (June 2026)
   - `listeners` table + RLS (public SELECT, own-row insert/update/delete), public `listener-avatars` bucket with per-user folder policies, `listener_handle` exposed on `public_mobile_detections` (migration `20260703`). Client-side handle format validation + reserved-word blocklist.

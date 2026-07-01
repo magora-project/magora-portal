@@ -1,0 +1,14 @@
+# Minimal Supabase CLI config. This project is driven by the linked project ref
+# (supabase/.temp/), so the only thing pinned here is the provision-node function's
+# JWT setting.
+#
+# provision-node MUST be deployed with JWT verification OFF: the RegisterNode
+# wizard calls it with only an x-provision-secret header (no Supabase JWT), and
+# the function does its own secret check. A plain `supabase functions deploy`
+# once reset this to the default (verify_jwt = true), which made the gateway 401
+# every registration before the request reached the function. Pinning it here
+# keeps future deploys from regressing it.
+project_id = "wqxmmuwrfltpaxnuddwk"
+
+[functions.provision-node]
+verify_jwt = false
