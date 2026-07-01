@@ -69,16 +69,26 @@ export default function ListenModal({ onClose }) {
   useEffect(() => () => teardown(), [teardown])
 
   // ── Step 1: get location for the Ready screen ───────────────────────────────
+  // Retryable: in-app browsers (opening the link from Instagram/Messages/etc.)
+  // often block geolocation, which otherwise dead-ends this screen.
+  async function requestLocation() {
+    setLocError(null)
+    setCoords(null)
+    try {
+      const { lat, lon } = await getPosition()
+      setCoords({ lat, lon })
+      setPlace(await reverseGeocode(lat, lon))
+    } catch (err) {
+      // GeolocationPositionError.PERMISSION_DENIED === 1
+      setLocError(err?.code === 1
+        ? 'Location is blocked. If you opened Magora from a link inside another app (Instagram, Messages, etc.), tap the ⋯ menu and “Open in Safari” (or Chrome), then allow location.'
+        : 'Couldn’t get your location. Turn location on and tap Try again — or, if you came from an in-app link, open Magora in Safari or Chrome.')
+    }
+  }
+
   useEffect(() => {
-    let cancelled = false
-    getPosition()
-      .then(async ({ lat, lon }) => {
-        if (cancelled) return
-        setCoords({ lat, lon })
-        setPlace(await reverseGeocode(lat, lon))
-      })
-      .catch(() => { if (!cancelled) setLocError('Location access is needed to place your recording on the map.') })
-    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    requestLocation()
   }, [])
 
   // ── Waveform drawing during recording ───────────────────────────────────────
@@ -347,9 +357,13 @@ export default function ListenModal({ onClose }) {
                 : 'Longer clips can pick up more species.'}
             </p>
 
-            <button onClick={beginListening} disabled={!coords} style={S.amberBtn(!coords)}>
-              {coords ? 'Begin listening' : 'Waiting for location…'}
-            </button>
+            {coords ? (
+              <button onClick={beginListening} style={S.amberBtn(false)}>Begin listening</button>
+            ) : locError ? (
+              <button onClick={requestLocation} style={S.amberBtn(false)}>Try location again</button>
+            ) : (
+              <button disabled style={S.amberBtn(true)}>Waiting for location…</button>
+            )}
           </>
         )}
 
