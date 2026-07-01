@@ -439,12 +439,16 @@ export default function MapPage() {
                   radius={7}
                   pathOptions={{ fillColor: AMBER.base, color: AMBER.dark, weight: 2, fillOpacity: 0.8 }}
                   className="node-pulse"
+                  eventHandlers={m.listener_handle ? { click: () => navigate(`/journal/${m.listener_handle}`) } : undefined}
                 >
                   <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
                     <strong style={{ fontSize: '13px' }}>〰 Listen</strong><br />
                     <span style={{ fontSize: '12px', color: '#555' }}>
                       {m.species?.find(s => s.confidence >= MIN_CONFIDENCE)?.common_name || 'A field recording'}
                     </span>
+                    {m.listener_handle && (
+                      <><br /><span style={{ fontSize: '11px', color: '#1D9E75', fontWeight: 700 }}>Tap to view @{m.listener_handle}’s journal</span></>
+                    )}
                   </Tooltip>
                 </CircleMarker>
               ))}
