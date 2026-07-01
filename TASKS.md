@@ -39,6 +39,25 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **Storage upload JWT workaround — `storage-upload` Edge Function** (July 2026)
+  - Authenticated Storage uploads (listener avatars + Listen audio) were failing with `new row violates row-level security policy` even though policies were correct. Root cause: the project enabled **JWT signing keys**, so GoTrue stamps a `kid` header into tokens; the **Storage service (v1.60.10) can't parse kid'd tokens** and treated every upload as anonymous (`auth.uid()` null → RLS deny). PostgREST/DB validated the same tokens fine, so DB writes worked — Storage was the only casualty. Rotating keys / removing the ECC key in the dashboard did NOT drop the kid.
+  - **Fix (workaround):** new `supabase/functions/storage-upload` validates the user's session server-side via `admin.auth.getUser(jwt)` (GoTrue handles the kid) and uploads with the service role, scoped to the caller's own `{uid}/` folder (bucket allowlist listener-avatars + temp-audio, filename sanitized, no path traversal). Deployed `--no-verify-jwt` (pinned in `config.toml`). Client helper `src/lib/storageUpload.js` (`uploadViaFunction`) rewired into `uploadListenerAvatar`, the ListenModal audio upload, and the offline-queue sync. Verified end-to-end (both buckets, 401 no-auth, 400 bad-bucket/traversal).
+  - **⚠️ TODO — revert later:** this is a workaround for an old Storage version. Once Supabase upgrades the project's Storage service to one that supports JWT signing keys, delete `storage-upload` + `storageUpload.js` and go back to direct `supabase.storage.from(bucket).upload(...)`. See memory note `storage_jwt_es256_break.md`. (Noah rolled the signing key back to the legacy HS256 shared secret in the dashboard, but the kid persists, so the workaround is still required.)
+
+- [x] **Follow journals (people), with Following-feed integration** (July 2026)
+  - Reverses the v1 "follow places, not people" line. Migration `20260706`: `listener_follows` table (follower + followed listener, self-follow blocked) with own-row RLS + a security-definer `listener_follower_count` RPC (mirrors `node_follows`).
+  - JournalPage: Follow button + follower count in the header (hidden on your own journal, prompts sign-in when signed out). MapPage: the **Following feed now includes Listens from Listeners you follow** (matched by public `listener_handle`) alongside followed places; tab gate + empty-state copy updated. Verified follow/unfollow/count + self-follow guard against prod.
+
+- [x] **Node registration requires sign-in + links node to its steward** (July 2026)
+  - `/register` is gated on sign-in (signed-out visitors get a sign-in prompt). The wizard sends the signed-in user's id; `provision-node` requires `owner_id` and stores it, so a registered node auto-appears on the steward's field journal.
+  - Migration `20260705`: repointed `nodes.owner_id` FK from the legacy (empty) `public.users` table to `auth.users` so it can hold a real account id. birdnode11 claimed to the `noahwaldron` account. JournalPage shows a **"Listening posts"** section listing owned nodes (links to NodePage).
+
+- [x] **Journal + Listen onboarding polish** (July 2026)
+  - **Handle prompt** now fires right after a Listener posts their first Listen (was: immediately after sign-in), and tapping **Listen while signed out auto-opens the recorder** once signed in (survives the Google OAuth redirect).
+  - Journal redesign: **map moved up** under the stat buttons; **edit-profile moved out of the page into the navbar account menu** (`ProfileEditorModal`); ecosystem insight is now an **inline collapsible** (collapsed by default, resets on refresh) on both feed + journal, replacing the portal modal; stats grid mobile-clipping fixed.
+  - **Map:** tapping a glowing amber Listen dot opens that Listener's journal.
+  - **Listen location UX:** location fetch is retryable ("Try location again") with guidance for in-app-browser (open in Safari) and iOS Location Services settings, instead of a dead-ended "Waiting for location…".
+
 - [x] **provision-node Edge Function** — built, deployed, and unbroken (July 2026)
   - `supabase/functions/provision-node/index.ts`: called from RegisterNode wizard step 2. Gated by an `x-provision-secret` header; with the service role it creates the node's Supabase auth user (`node-<uuid>@magora.internal`) + inserts the `nodes` row (id = auth uuid, Option B), rolling back the auth user if the insert fails, and returns `node_id`/`email`/`password` to the wizard.
   - **Was silently broken in prod:** it had been redeployed with the default `verify_jwt = true`, so Supabase's gateway 401'd (`UNAUTHORIZED_NO_AUTH_HEADER`) every registration before the request reached the function — the wizard sends only `x-provision-secret`, no Supabase JWT. **Fixed:** redeployed with `--no-verify-jwt` (now version 5, `verify_jwt = false`); verified the wizard's exact call path works (correct secret + empty body → 400 missing fields, i.e. gateway open + `VITE_PROVISION_SECRET` matches the function's `PROVISION_SECRET`, no node created).
