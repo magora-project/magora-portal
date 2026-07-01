@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
-import { AMBER } from '../lib/listen'
 import { useAuth } from '../lib/auth'
+import { useEcosystemInsight } from '../lib/useEcosystemInsight'
 import MobileDetectionCard from '../components/MobileDetectionCard'
+import EcosystemInsightModal from '../components/EcosystemInsightModal'
 import {
   validateHandle,
   createListener,
@@ -148,8 +148,7 @@ export default function JournalPage() {
   const [claimError, setClaimError] = useState(null)
   const [claimAvatar, setClaimAvatar] = useState(null)
   const [avatarBust, setAvatarBust] = useState(null)
-  const [insights, setInsights] = useState({})
-  const [openInsight, setOpenInsight] = useState(null)
+  const mobileInsight = useEcosystemInsight()
 
   // Section anchors so the Life list / Places / Listens stat buttons can scroll
   // straight to their content (the journal is one page, like the live feed).
@@ -278,12 +277,25 @@ export default function JournalPage() {
     setClaimError(null)
 
     try {
+      // Same guard as the profile editor: the avatar upload and the listeners
+      // INSERT are RLS-gated on auth.uid(). If the session has lapsed the request
+      // goes out as anon and Postgres rejects it with a confusing "new row
+      // violates row-level security policy". getSession() refreshes a valid
+      // session; if it can't, prompt a fresh sign-in.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setClaimError('Your session has expired. Please sign in again to claim your journal.')
+        openSignIn()
+        return
+      }
+      const uid = session.user.id
+
       let avatar_path = null
       if (claimAvatar) {
-        avatar_path = await uploadListenerAvatar(user.id, claimAvatar)
+        avatar_path = await uploadListenerAvatar(uid, claimAvatar)
       }
       const created = await createListener({
-        id: user.id,
+        id: uid,
         handle: normalized,
         display_name: claimDisplayName || null,
         bio: claimBio || null,
@@ -306,39 +318,6 @@ export default function JournalPage() {
     // their new avatar immediately instead of the CDN-cached one.
     if (avatarChanged) setAvatarBust(Date.now())
     refreshListener()
-  }
-
-  // Ecosystem insight, same behavior as the live feed: generate on demand, cache
-  // the result back on the row (SECURITY DEFINER RPC, only writes when null) so it
-  // generates exactly once and later viewers read the stored text.
-  async function requestMobileInsight(m) {
-    setInsights(prev => ({ ...prev, [m.id]: { loading: true } }))
-    try {
-      const conf = (m.species || []).filter(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name))
-      const res = await fetch('/api/insight', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mobile: true, detection_id: m.id, species: conf,
-          lat: m.lat, lon: m.lon, detected_at: m.detected_at,
-          habitat_type: m.habitat_type, canopy_cover: m.canopy_cover,
-          water_present: m.water_present, disturbance_level: m.disturbance_level,
-        }),
-      })
-      if (!res.ok) throw new Error()
-      const data = await res.json()
-      setInsights(prev => ({ ...prev, [m.id]: { text: data.insight } }))
-      supabase.rpc('set_detection_insight', { detection_id: m.id, insight_text: data.insight })
-        .then(({ error }) => { if (error) console.warn('set_detection_insight failed:', error) })
-    } catch {
-      setInsights(prev => ({ ...prev, [m.id]: { error: true } }))
-    }
-  }
-
-  function openMobileInsight(m) {
-    setOpenInsight(m)
-    const already = m.insight || insights[m.id]?.text
-    if (!already && !insights[m.id]?.loading) requestMobileInsight(m)
   }
 
   const isLoadedOwner = isOwner && profile
@@ -552,8 +531,8 @@ export default function JournalPage() {
               <MobileDetectionCard
                 key={entry.id}
                 d={entry}
-                insight={insights[entry.id]}
-                onOpenInsight={() => openMobileInsight(entry)}
+                insight={mobileInsight.insights[entry.id]}
+                onOpenInsight={() => mobileInsight.openMobileInsight(entry)}
               />
             ))}
           </div>
@@ -564,44 +543,12 @@ export default function JournalPage() {
         )}
       </section>
 
-      {/* Ecosystem-insight modal — portaled to <body> so a feed re-render can't
-          collapse it, same pattern as the live feed. */}
-      {openInsight && createPortal(
-        <div
-          onClick={() => setOpenInsight(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(6,20,12,0.72)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${AMBER.base}`, borderRadius: '14px', maxWidth: '440px', width: '100%', maxHeight: '80vh', overflowY: 'auto', padding: '20px 22px', boxShadow: '0 12px 40px rgba(0,0,0,0.45)' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: AMBER.light, fontWeight: 800, fontSize: '15px' }}>
-                〰 What&apos;s the ecosystem saying?
-              </span>
-              <button onClick={() => setOpenInsight(null)} aria-label="Close" style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: '22px', lineHeight: 1, cursor: 'pointer', padding: '0 4px' }}>×</button>
-            </div>
-            {(() => {
-              const st = insights[openInsight.id] || {}
-              const text = openInsight.insight || st.text
-              if (text) return <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.7 }}>{text}</div>
-              if (st.error) return (
-                <div style={{ color: C.textMuted, fontSize: '14px', lineHeight: 1.6 }}>
-                  Couldn&apos;t read the soundscape just now.
-                  <button
-                    onClick={() => requestMobileInsight(openInsight)}
-                    style={{ display: 'block', marginTop: '12px', padding: '9px 14px', background: 'transparent', border: `1px solid ${AMBER.dark}`, borderRadius: '8px', color: AMBER.light, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    Try again
-                  </button>
-                </div>
-              )
-              return <div style={{ color: C.textMuted, fontSize: '14px' }}>🔍 Reading the soundscape…</div>
-            })()}
-          </div>
-        </div>,
-        document.body
-      )}
+      <EcosystemInsightModal
+        openInsight={mobileInsight.openInsight}
+        insights={mobileInsight.insights}
+        onClose={mobileInsight.closeInsight}
+        onRetry={mobileInsight.requestInsight}
+      />
     </div>
   )
 }

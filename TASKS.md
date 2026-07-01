@@ -29,16 +29,6 @@ _Empty — promote from Backlog when ready._
   - `App.jsx` starts the queue listener at app launch
   - `MapPage.jsx` renders queued local Listens as "Syncing…" cards in the feed
 
-- [ ] **Listener Field Journal** — public profile + field journal for Listeners (people who use Listen, no hardware). Route: `/journal/:handle`. A Listener profile is a FIELD JOURNAL (a person's relationship with many places), distinct from a NodePage (a place profile). Deliberate design line: NO follow system for Listeners in v1 — we follow places, not people.
-  - **New `listeners` table** (Option B, same pattern as `nodes`): `id uuid pk references auth.users(id)` (= auth.uid(), no join table), `handle text unique not null` (lowercase, URL-safe [a-z0-9_], reserved-word blocklist incl. admin/api/journal), `display_name`, `bio`, `home_region`, `avatar_path`, `created_at`. RLS: public SELECT; insert/update only own row. Handle-claim UI on first Listen or first journal visit + client-side format validation.
-  - **Profile editor**: display_name, bio, home_region, avatar upload (small, public-read).
-  - **Sanitized journal data path** — CRITICAL PRIVACY GATE: before building, inspect the `public_mobile_detections` view definition and confirm whether it exposes `user_id`. If yes, the journal view can join on it. If NO (stripped for privacy), do the join on base `mobile_detections` inside a SECURITY DEFINER function, still applying the ~110m coord coarsening. The journal must never leak precise coordinates, observer notes, audio paths, or anything the public feed already hides.
-  - **`/journal/:handle` page** (vertical order): (1) life-list headline stat — "23 species across 11 places"; (2) journal map — reuse Leaflet, amber pulse markers, this Listener's Listens only, auto-fit bounds, ~110m coarsened, tap marker → full Listen results; (3) journal entries list — each Listen as a notebook entry (location name, date, species count, top species), chronological, tap → full results.
-  - **Wire-up**: link MobileDetectionCard's "Listened by @handle" → `/journal/:handle`; add "My journal" to the account menu; share button reusing the DetectionCard share pattern.
-  - **Build order**: table+RLS+handle UI → profile editor → sanitized data path → page → wire-up → share. Pause after each for confirmation.
-  - **Out of scope v1**: no follow system, no private/public toggle (public by default), no species-page links yet (render species as plain text).
-  - **Language** (per the Language Audit): the person is a "Listener" not "user" in public copy; the page is their "field journal"; a recording is "a Listen"; the species total is their "life list."
-
 - [ ] **birdnode1 rebuild**
   - New SD card, flash latest Pi OS image
   - Run magora-firstrun.sh from bootfs config
@@ -54,6 +44,19 @@ _Empty — promote from Backlog when ready._
 ---
 
 ## ✅ Done
+
+- [x] **Listener Field Journal** — public profile + field journal for Listeners at `/journal/:handle` (June 2026)
+  - `listeners` table + RLS (public SELECT, own-row insert/update/delete), public `listener-avatars` bucket with per-user folder policies, `listener_handle` exposed on `public_mobile_detections` (migration `20260703`). Client-side handle format validation + reserved-word blocklist.
+  - Profile editor (display_name, bio, home_region, avatar upload). Handle-claim UI on `/journal/me`.
+  - **Privacy gate satisfied without a SECURITY DEFINER function:** the journal reads the existing sanitized `public_mobile_detections` view (already coarsens coords ~110m and hides user_id/notes/audio_path), filtered by `listener_handle` — so it never leaks anything the public feed hides.
+  - Wire-up: MobileDetectionCard "Listened by @handle" → journal; "My journal" in the account menu.
+  - **Follow-ups shipped this session:**
+    - **Handle prompt** (`HandlePrompt.jsx`): signed-in Listeners without a handle get a dismissable claim modal after sign-in (covers new sign-ups + returning users). `validateHandle`/`RESERVED_HANDLES` promoted to shared exports in `listener.js`.
+    - **Mobile layout fix:** stats grid was clipping the third card + double-padding on phones — now shrinks to fit and uses the page gutter.
+    - **Live-feed redesign:** journal now renders Listen posts with the same `MobileDetectionCard` + `.detection-grid` (edge-to-edge, no bubbles) as the live feed, incl. the ecosystem-insight portal flow. Life list / Places / Listens are scroll-to-section buttons; Life list shows the full species list.
+    - **Avatar RLS fix:** "new row violates row-level security policy" on Save Profile was a lapsed session (write hitting Postgres as anon; prod bucket + policies verified correct). `ProfileEditor` now `getSession()`s first — refreshes and writes with the fresh uid, or prompts re-auth.
+  - **Out of scope v1 (as designed):** no follow system, no public/private toggle, species as plain text in the life list.
+  - **Known follow-ups (not blocking):** same session guard not yet on the first-time claim form; insight-modal duplicated between MapPage and JournalPage (extract to a shared component later).
 
 - [x] **Cache "What's the ecosystem saying?" — serve stored insight** (June 2026)
   - On-demand ecosystem insights for older mobile Listens were regenerating (a fresh Claude API call) for every viewer who tapped the button. Now they generate ONCE: the first viewer generates it, the result is written back, everyone after reads the stored text.
