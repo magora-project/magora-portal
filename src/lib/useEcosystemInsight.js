@@ -4,14 +4,11 @@ import { isHiddenSpecies } from './hiddenSpecies'
 
 // Shared state + generation for the mobile "What's the ecosystem saying?" insight,
 // used by both the live feed (MapPage) and the field journal (JournalPage) so the
-// generate-once / write-back / open-in-modal behavior stays identical in both.
-//
-// Pairs with <EcosystemInsightModal>: the page spreads `insights` and
-// `openMobileInsight` onto its MobileDetectionCards, and renders the modal with
-// `openInsight` / `closeInsight` / `requestInsight`.
+// generate-once / write-back behavior stays identical in both. The card owns its
+// own collapsed/expanded UI; this hook just holds per-Listen generation state
+// (`insights[id]` → { loading | text | error }) and generates on demand.
 export function useEcosystemInsight() {
   const [insights, setInsights] = useState({})
-  const [openInsight, setOpenInsight] = useState(null)
 
   async function requestInsight(m) {
     setInsights(prev => ({ ...prev, [m.id]: { loading: true } }))
@@ -41,19 +38,5 @@ export function useEcosystemInsight() {
     }
   }
 
-  // Open the modal for a Listen, generating on demand only if it isn't already
-  // stored on the row or generated this session (and not already in flight).
-  function openMobileInsight(m) {
-    setOpenInsight(m)
-    const already = m.insight || insights[m.id]?.text
-    if (!already && !insights[m.id]?.loading) requestInsight(m)
-  }
-
-  return {
-    insights,
-    openInsight,
-    openMobileInsight,
-    requestInsight,
-    closeInsight: () => setOpenInsight(null),
-  }
+  return { insights, requestInsight }
 }

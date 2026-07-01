@@ -106,6 +106,17 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
   const [callState, setCallState] = useState(null) // null | 'loading' | 'ready' | 'error'
   const [soundUrl, setSoundUrl] = useState(null)
   const [shareOpen, setShareOpen] = useState(false)
+  // Ecosystem insight is collapsed by default and resets to collapsed on refresh.
+  const [insightOpen, setInsightOpen] = useState(false)
+
+  function toggleInsight() {
+    // If a previous attempt failed, let the button retry instead of collapsing.
+    if (insightOpen && insight?.error) { onRequestInsight?.(); return }
+    const next = !insightOpen
+    setInsightOpen(next)
+    // Node insights aren't stored — generate on first expand if we don't have it.
+    if (next && !insight?.text && !insight?.loading) onRequestInsight?.()
+  }
 
   async function loadCall() {
     setCallState('loading')
@@ -326,31 +337,33 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
           </div>
         )}
 
-        {/* Insight caption */}
-        {insight?.text && (
-          <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.6, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '12px', marginBottom: '14px' }}>
-            {insight.text}
-          </div>
-        )}
-
         {/* Actions */}
         <div className="feed-card-insight" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {listenBtn}
           {shareBtn}
-          {!insight?.text && (
-            <button onClick={onRequestInsight} disabled={insight?.loading} style={{
-              flex: 1, padding: '10px',
-              background: insight?.loading ? C.border : C.accent,
-              border: 'none', borderRadius: '10px',
-              color: insight?.loading ? '#4a7a58' : '#fff',
-              fontSize: '14px', fontWeight: '700',
-              cursor: insight?.loading ? 'default' : 'pointer',
-              fontFamily: "'DM Sans', sans-serif",
-            }}>
-              {insight?.loading ? '🔍 Generating...' : "What's the ecosystem saying?"}
-            </button>
-          )}
+          <button onClick={toggleInsight} aria-expanded={insightOpen} disabled={insight?.loading} style={{
+            flex: 1, padding: '10px',
+            background: insight?.loading ? C.border : C.accent,
+            border: 'none', borderRadius: '10px',
+            color: insight?.loading ? '#4a7a58' : '#fff',
+            fontSize: '14px', fontWeight: '700',
+            cursor: insight?.loading ? 'default' : 'pointer',
+            fontFamily: "'DM Sans', sans-serif",
+            display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px',
+          }}>
+            {insight?.loading ? '🔍 Generating...' : "What's the ecosystem saying?"}
+            {!insight?.loading && <span aria-hidden="true" style={{ fontSize: '10px' }}>{insightOpen ? '▲' : '▼'}</span>}
+          </button>
         </div>
+
+        {/* Collapsible insight */}
+        {insightOpen && (insight?.text || insight?.error) && (
+          <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.6, borderLeft: `3px solid ${C.accentLight}`, paddingLeft: '12px', marginTop: '14px' }}>
+            {insight?.text || (
+              <span style={{ color: C.textMuted }}>Couldn&apos;t generate that just now. Tap the button to try again.</span>
+            )}
+          </div>
+        )}
       </div>
 
       {shareOpen && (

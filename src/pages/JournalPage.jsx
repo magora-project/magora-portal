@@ -7,7 +7,6 @@ import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { useAuth } from '../lib/auth'
 import { useEcosystemInsight } from '../lib/useEcosystemInsight'
 import MobileDetectionCard from '../components/MobileDetectionCard'
-import EcosystemInsightModal from '../components/EcosystemInsightModal'
 import {
   validateHandle,
   createListener,
@@ -532,7 +531,7 @@ export default function JournalPage() {
                 key={entry.id}
                 d={entry}
                 insight={mobileInsight.insights[entry.id]}
-                onOpenInsight={() => mobileInsight.openMobileInsight(entry)}
+                onGenerate={() => mobileInsight.requestInsight(entry)}
               />
             ))}
           </div>
@@ -543,12 +542,6 @@ export default function JournalPage() {
         )}
       </section>
 
-      <EcosystemInsightModal
-        openInsight={mobileInsight.openInsight}
-        insights={mobileInsight.insights}
-        onClose={mobileInsight.closeInsight}
-        onRetry={mobileInsight.requestInsight}
-      />
     </div>
   )
 }

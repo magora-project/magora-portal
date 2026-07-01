@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
@@ -21,15 +21,28 @@ function relativeTime(iso) {
 // A mobile "Listen" in the feed — visually distinct from node DetectionCards
 // (amber 〰 instead of a node header, no precise location/identity).
 //
-// The "What's the ecosystem saying?" panel is NOT rendered here: onOpenInsight
-// asks the parent to open it in a portal modal at the app root, so a feed
-// re-render (new detection arriving) can't collapse an insight the user is
-// reading. Memoized + keyed by detection id so existing cards stay mounted when
-// the feed updates.
-function MobileDetectionCard({ d, insight, onOpenInsight }) {
+// The "What's the ecosystem saying?" insight is an inline collapsible panel,
+// collapsed by default. onGenerate asks the parent (useEcosystemInsight) to
+// generate one for older Listens with no stored insight. Memoized + keyed by
+// detection id so existing cards keep their expanded state across feed updates,
+// while a full page refresh resets everything to collapsed.
+function MobileDetectionCard({ d, insight, onGenerate }) {
+  // Collapsed by default. Being local UI state (not derived from the row), it
+  // resets to collapsed on a page refresh even for insights stored on the row.
+  const [expanded, setExpanded] = useState(false)
+
   const species = (d.species || [])
     .filter(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name))
     .sort((a, b) => b.confidence - a.confidence)
+
+  const insightText = d.insight || insight?.text
+
+  function toggleInsight() {
+    const next = !expanded
+    setExpanded(next)
+    // Generate on first expand only for older Listens with no stored insight.
+    if (next && !insightText && !insight?.loading) onGenerate?.()
+  }
 
   const tags = [
     d.habitat_type, d.canopy_cover && `${d.canopy_cover} canopy`,
@@ -81,23 +94,39 @@ function MobileDetectionCard({ d, insight, onOpenInsight }) {
         </div>
       )}
 
-      {/* Ecological insight — prefer the one stored with the post (covers all
-          species + the listener's notes); fall back to on-demand for older posts. */}
-      {(d.insight || insight?.text) && (
-        <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6, borderLeft: `3px solid ${AMBER.base}`, paddingLeft: '12px', marginTop: '12px' }}>
-          {d.insight || insight.text}
+      {/* Ecosystem insight — collapsible, collapsed by default. Stored insights
+          (d.insight) and on-demand ones alike live behind this toggle. */}
+      {species.length > 0 && (
+        <div style={{ marginTop: '12px' }}>
+          <button onClick={toggleInsight} aria-expanded={expanded} style={{
+            width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '9px 12px', background: 'transparent', border: `1px solid ${AMBER.dark}`,
+            borderRadius: '8px', color: AMBER.light, fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+          }}>
+            <span>What&apos;s the ecosystem saying?</span>
+            <span aria-hidden="true" style={{ fontSize: '10px', opacity: 0.8 }}>{expanded ? '▲' : '▼'}</span>
+          </button>
+          {expanded && (
+            <div style={{ marginTop: '10px', borderLeft: `3px solid ${AMBER.base}`, paddingLeft: '12px' }}>
+              {insightText ? (
+                <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6 }}>{insightText}</div>
+              ) : insight?.loading ? (
+                <div style={{ fontSize: '13px', color: C.textMuted }}>🔍 Reading the soundscape…</div>
+              ) : insight?.error ? (
+                <div style={{ fontSize: '13px', color: C.textMuted, lineHeight: 1.6 }}>
+                  Couldn&apos;t read the soundscape just now.
+                  <button onClick={onGenerate} style={{
+                    display: 'block', marginTop: '10px', padding: '8px 12px', background: 'transparent',
+                    border: `1px solid ${AMBER.dark}`, borderRadius: '8px', color: AMBER.light,
+                    fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                  }}>
+                    Try again
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
-      )}
-      {onOpenInsight && species.length > 0 && !d.insight && !insight?.text && (
-        <button onClick={onOpenInsight} disabled={insight?.loading} style={{
-          width: '100%', marginTop: '12px', padding: '9px',
-          background: insight?.loading ? C.border : 'transparent',
-          border: `1px solid ${AMBER.dark}`, borderRadius: '8px',
-          color: insight?.loading ? C.textMuted : AMBER.light,
-          fontSize: '13px', fontWeight: 700, cursor: insight?.loading ? 'default' : 'pointer',
-        }}>
-          {insight?.loading ? '🔍 Reading the soundscape…' : insight?.error ? 'Try again' : "What's the ecosystem saying?"}
-        </button>
       )}
     </div>
   )

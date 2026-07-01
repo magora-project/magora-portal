@@ -13,7 +13,6 @@ import EcologicalPipeline from '../components/EcologicalPipeline'
 import EcologicalCommons from '../components/EcologicalCommons'
 import ListenButton from '../components/ListenButton'
 import MobileDetectionCard from '../components/MobileDetectionCard'
-import EcosystemInsightModal from '../components/EcosystemInsightModal'
 import { AMBER } from '../lib/listen'
 
 function MapController({ points }) {
@@ -472,7 +471,7 @@ export default function MapPage() {
                 item.type === 'mobile' ? (
                   <MobileDetectionCard
                     key={item.key} d={item.m}
-                    insight={mobileInsight.insights[item.m.id]} onOpenInsight={() => mobileInsight.openMobileInsight(item.m)}
+                    insight={mobileInsight.insights[item.m.id]} onGenerate={() => mobileInsight.requestInsight(item.m)}
                   />
                 ) : item.type === 'queued' ? (
                   <div key={item.key} style={{ background: '#1f3326', border: `1px solid ${C.border}`, borderLeft: `3px solid ${AMBER.base}`, borderRadius: '16px', padding: '16px', color: C.text }}>
@@ -562,13 +561,6 @@ export default function MapPage() {
 
       {/* Section 5 — Ecological Commons */}
       <EcologicalCommons />
-
-      <EcosystemInsightModal
-        openInsight={mobileInsight.openInsight}
-        insights={mobileInsight.insights}
-        onClose={mobileInsight.closeInsight}
-        onRetry={mobileInsight.requestInsight}
-      />
 
     </div>
   )
