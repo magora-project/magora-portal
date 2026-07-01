@@ -6,6 +6,7 @@ import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { useAuth } from '../lib/auth'
 import {
+  validateHandle,
   createListener,
   getListenerByHandle,
   getListenerByUser,
@@ -19,11 +20,6 @@ const C = {
   accent: '#1D9E75', accentLight: '#5DCAA5',
   text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
 }
-
-const RESERVED_HANDLES = new Set([
-  'admin', 'api', 'journal', 'me', 'support', 'help', 'www', 'mail',
-  'node', 'species', 'dashboard', 'register', 'about', 'donate', 'listen',
-])
 
 function MapController({ points }) {
   const map = useMap()
@@ -60,17 +56,6 @@ function entryTags(entry) {
     entry.water_present ? 'water nearby' : null,
     entry.disturbance_level && entry.disturbance_level !== 'none' ? `${entry.disturbance_level} disturbance` : null,
   ].filter(Boolean)
-}
-
-function validateHandle(value) {
-  if (!value) return 'Choose a handle for your field journal.'
-  if (!/^[a-z0-9_]{3,24}$/.test(value)) {
-    return 'Use 3–24 lowercase letters, numbers, or underscores.'
-  }
-  if (RESERVED_HANDLES.has(value)) {
-    return 'That handle is reserved. Pick another one.'
-  }
-  return null
 }
 
 // Owner-only profile editor. Local state is lazily seeded from `profile` on mount

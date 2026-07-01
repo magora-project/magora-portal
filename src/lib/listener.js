@@ -1,5 +1,24 @@
 import { supabase } from './supabase'
 
+// Handles are lowercase, URL-safe, and can't collide with app routes. Kept here
+// (not in a page) so both the /journal/:handle claim form and the sign-in handle
+// prompt validate against the same rules.
+export const RESERVED_HANDLES = new Set([
+  'admin', 'api', 'journal', 'me', 'support', 'help', 'www', 'mail',
+  'node', 'species', 'dashboard', 'register', 'about', 'donate', 'listen',
+])
+
+export function validateHandle(value) {
+  if (!value) return 'Choose a handle for your field journal.'
+  if (!/^[a-z0-9_]{3,24}$/.test(value)) {
+    return 'Use 3–24 lowercase letters, numbers, or underscores.'
+  }
+  if (RESERVED_HANDLES.has(value)) {
+    return 'That handle is reserved. Pick another one.'
+  }
+  return null
+}
+
 // Upload limits for listener avatars. Kept small — these are public-read and
 // rendered at ~90px, so there's no reason to accept large originals.
 const AVATAR_MAX_BYTES = 3 * 1024 * 1024 // 3 MB

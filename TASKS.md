@@ -60,7 +60,7 @@ _Empty — promote from Backlog when ready._
   - `public_mobile_detections` already exposed `insight` (added in `20260702`, preserved through `20260703`) — no view change needed.
   - New migration `20260704_set_detection_insight.sql`: RPC `set_detection_insight(detection_id uuid, insight_text text)`, `SECURITY DEFINER`, `set search_path = public`, granted execute to anon + authenticated. Writes **only when `insight IS NULL`** so it can never overwrite an existing insight (idempotent under concurrent first-viewers). Needed because the public view is read-only and the base table is owner-only RLS, so a non-owner viewer can't write back directly.
   - `MapPage.requestMobileInsight` now calls the RPC with the anon key right after a successful generation (best-effort; a failed write-back just regenerates next time). The card already gated the button on `!d.insight`, so stored insights display with no API call.
-  - **Migration to push to prod: `20260704`** (not yet applied — needs `supabase db push`).
+  - **Migration `20260704`: applied to prod** (confirmed via `supabase migration list` — present in Remote; verified July 2026).
 
 - [x] **Open ecosystem insight must survive new detections** (June 2026)
   - The "What's the ecosystem saying?" panel was rendered inline inside `MobileDetectionCard`, in the feed scroll container, so a feed re-render (new detection arriving) could collapse an insight the user was reading.
