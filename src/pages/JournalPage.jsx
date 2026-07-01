@@ -398,7 +398,9 @@ export default function JournalPage() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto' }}>
+    // No horizontal padding here — the parent .main-content already provides the
+    // page gutter (16px on mobile); adding more double-pads and cramps small screens.
+    <div style={{ padding: '4px 0 40px' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', marginBottom: '24px' }}>
         <div style={{ width: '90px', height: '90px', borderRadius: '22px', background: '#162e20', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {avatarUrl ? (
@@ -419,7 +421,9 @@ export default function JournalPage() {
 
       {error && <div style={{ ...S.error, marginBottom: '20px' }}>{error}</div>}
 
-      <div style={{ display: 'grid', gap: '18px', marginBottom: '28px', gridTemplateColumns: 'repeat(3, minmax(180px, 1fr))' }}>
+      {/* auto-fit + minmax lets the three stats stay 3-across on a normal phone,
+          shrink to fit instead of clipping, and wrap gracefully on tiny screens. */}
+      <div style={{ display: 'grid', gap: '12px', marginBottom: '28px', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))' }}>
         <div style={S.statCard}>
           <div style={S.statLabel}>Life list</div>
           <div style={S.statValue}>{lifeListCount}</div>
