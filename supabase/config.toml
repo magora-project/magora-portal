@@ -12,3 +12,8 @@ project_id = "wqxmmuwrfltpaxnuddwk"
 
 [functions.provision-node]
 verify_jwt = false
+
+# Validates the user token itself (GoTrue handles the kid'd JWT that the gateway
+# / old Storage can't), so gateway JWT verification must be off.
+[functions.storage-upload]
+verify_jwt = false

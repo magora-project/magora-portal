@@ -1,6 +1,7 @@
 import { openDB } from 'idb'
 import { supabase } from './supabase'
 import { BUCKET } from './listen'
+import { uploadViaFunction } from './storageUpload'
 
 const DB_NAME = 'magora-listen-queue'
 const STORE_NAME = 'pending-listens'
@@ -67,15 +68,19 @@ export async function deleteQueuedListen(id) {
 export async function syncQueuedListen(item) {
   await updateQueuedListen(item.id, { status: 'syncing', error_message: null })
 
-  const path = `${item.user_id}/${item.id}.${item.audio_ext}`
-  const upload = await supabase.storage.from(BUCKET).upload(path, item.audio_blob, {
-    contentType: item.audio_type,
-    upsert: false,
-  })
-
-  if (upload.error) {
-    await updateQueuedListen(item.id, { status: 'error', error_message: upload.error.message })
-    throw upload.error
+  // Via the storage-upload function (see uploadViaFunction) — direct Storage
+  // uploads fail token validation on this project's Storage version. Returns the
+  // stored "{uid}/{filename}" path.
+  let path
+  try {
+    path = await uploadViaFunction({
+      bucket: BUCKET,
+      filename: `${item.id}.${item.audio_ext}`,
+      file: item.audio_blob,
+    })
+  } catch (e) {
+    await updateQueuedListen(item.id, { status: 'error', error_message: e.message })
+    throw e
   }
 
   const insert = await supabase.from('mobile_detections').insert({

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { uploadViaFunction } from './storageUpload'
 
 // Handles are lowercase, URL-safe, and can't collide with app routes. Kept here
 // (not in a page) so both the /journal/:handle claim form and the sign-in handle
@@ -48,6 +49,8 @@ export async function updateListener(userId, patch) {
   return data
 }
 
+// userId is kept for call-site compatibility but the target folder is derived
+// server-side from the validated session (see uploadViaFunction).
 export async function uploadListenerAvatar(userId, file) {
   if (!file) return null
   const ext = AVATAR_TYPES[file.type]
@@ -57,13 +60,7 @@ export async function uploadListenerAvatar(userId, file) {
   if (file.size > AVATAR_MAX_BYTES) {
     throw new Error('Avatar is too large. Please use an image under 3 MB.')
   }
-  const path = `${userId}/avatar.${ext}`
-  const { error } = await supabase.storage.from('listener-avatars').upload(path, file, {
-    upsert: true,
-    contentType: file.type,
-  })
-  if (error) throw error
-  return path
+  return uploadViaFunction({ bucket: 'listener-avatars', filename: `avatar.${ext}`, file })
 }
 
 export function getListenerAvatarUrl(path) {

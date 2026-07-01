@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { addQueuedListen } from '../lib/listenQueue'
+import { uploadViaFunction } from '../lib/storageUpload'
 import {
   AMBER, BUCKET, RECORD_SECONDS, MAX_OPEN_SECONDS, DURATIONS, HABITATS, CANOPY, DISTURBANCE,
   pickAudioMime, reverseGeocode, getPosition, formatClock,
@@ -184,10 +185,9 @@ export default function ListenModal({ onClose }) {
 
       // Contract: upload the audio FIRST, then insert the row — the DB trigger
       // enqueues the inference job on insert, so the audio must already exist.
-      const up = await supabase.storage.from(BUCKET).upload(path, blob, {
-        contentType: blob.type, upsert: false,
-      })
-      if (up.error) throw up.error
+      // Via the storage-upload function (see uploadViaFunction) because direct
+      // Storage uploads fail token validation on this project's Storage version.
+      await uploadViaFunction({ bucket: BUCKET, filename: `${id}.${ext}`, file: blob })
 
       const ins = await supabase.from('mobile_detections').insert({
         id,
