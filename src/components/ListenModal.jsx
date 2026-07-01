@@ -81,8 +81,8 @@ export default function ListenModal({ onClose }) {
     } catch (err) {
       // GeolocationPositionError.PERMISSION_DENIED === 1
       setLocError(err?.code === 1
-        ? 'Location is blocked. If you opened Magora from a link inside another app (Instagram, Messages, etc.), tap the ⋯ menu and “Open in Safari” (or Chrome), then allow location.'
-        : 'Couldn’t get your location. Turn location on and tap Try again — or, if you came from an in-app link, open Magora in Safari or Chrome.')
+        ? 'Location is blocked for this site. On iPhone: Settings → Privacy & Security → Location Services — make sure it’s on and Safari is set to “Ask” or “While Using,” then reload and tap Try again. (If you opened Magora from a link inside another app, open it in Safari first.)'
+        : 'Couldn’t get your location. Make sure Location Services are on for your browser (iPhone: Settings → Privacy & Security → Location Services), then tap Try again.')
     }
   }
 
