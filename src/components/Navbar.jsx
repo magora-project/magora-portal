@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { getListenerAvatarUrl } from '../lib/listener'
+import ProfileEditorModal from './ProfileEditorModal'
 
 const TABS = [
   { path: '/',          src: '/icons/live_feed.svg',  label: 'Network'             },
@@ -15,6 +16,7 @@ const TABS = [
 // click and whenever the route changes.
 function AccountMenu({ user, listener, signOut }) {
   const [open, setOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const ref = useRef(null)
   const avatarUrl = getListenerAvatarUrl(listener?.avatar_path)
   const initial = (listener?.display_name || listener?.handle || user.email || '?')[0].toUpperCase()
@@ -64,11 +66,17 @@ function AccountMenu({ user, listener, signOut }) {
           <Link to="/journal/me" role="menuitem" className="account-menu-item" onClick={() => setOpen(false)}>
             My journal
           </Link>
+          {listener?.handle && (
+            <button role="menuitem" className="account-menu-item" onClick={() => { setOpen(false); setEditOpen(true) }}>
+              Edit profile
+            </button>
+          )}
           <button role="menuitem" className="account-menu-item" onClick={() => { setOpen(false); signOut() }}>
             Sign out
           </button>
         </div>
       )}
+      {editOpen && <ProfileEditorModal onClose={() => setEditOpen(false)} />}
     </div>
   )
 }

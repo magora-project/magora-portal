@@ -14,7 +14,6 @@ import {
   getListenerByUser,
   getListenerAvatarUrl,
   uploadListenerAvatar,
-  updateListener,
 } from '../lib/listener'
 
 const C = {
@@ -51,84 +50,6 @@ function visibleSpecies(entry) {
     .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
 }
 
-// Owner-only profile editor. Local state is lazily seeded from `profile` on mount
-// (the editor only renders once the owner's profile is loaded), so there's no
-// prop→state sync effect to keep in step.
-function ProfileEditor({ profile, onSaved, onNeedsAuth }) {
-  const [displayName, setDisplayName] = useState(profile.display_name || '')
-  const [homeRegion, setHomeRegion] = useState(profile.home_region || '')
-  const [bio, setBio] = useState(profile.bio || '')
-  const [avatar, setAvatar] = useState(null)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
-
-  async function handleSubmit(event) {
-    event.preventDefault()
-    setSaving(true)
-    setError(null)
-    try {
-      // The avatar upload and the listeners UPDATE are both RLS-gated on
-      // auth.uid(). If the session has lapsed, the request goes out as the anon
-      // role and Postgres rejects it with "new row violates row-level security
-      // policy" — a confusing error for the user. getSession() refreshes a valid
-      // session; if it can't, we prompt a fresh sign-in instead of failing cryptically.
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        setError('Your session has expired. Please sign in again to save your profile.')
-        onNeedsAuth?.()
-        return
-      }
-      const uid = session.user.id
-
-      let avatar_path = profile.avatar_path
-      if (avatar) {
-        avatar_path = await uploadListenerAvatar(uid, avatar)
-      }
-      const updated = await updateListener(uid, {
-        display_name: displayName || null,
-        bio: bio || null,
-        home_region: homeRegion || null,
-        avatar_path,
-      })
-      onSaved(updated, Boolean(avatar))
-      setAvatar(null)
-    } catch (err) {
-      console.warn('Profile save failed:', err)
-      setError(err.message || 'Unable to save your profile right now.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div style={{ marginBottom: '32px', background: C.card, border: `1px solid ${C.border}`, borderRadius: '20px', padding: '22px' }}>
-      <div style={{ marginBottom: '18px', fontSize: '15px', fontWeight: 700, color: C.text }}>Edit your profile</div>
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '16px' }}>
-        <label style={S.label}>
-          Display name
-          <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Display name" style={S.input} />
-        </label>
-        <label style={S.label}>
-          Home region
-          <input value={homeRegion} onChange={e => setHomeRegion(e.target.value)} placeholder="E.g. Rocky Mountains" style={S.input} />
-        </label>
-        <label style={S.label}>
-          Bio
-          <textarea value={bio} onChange={e => setBio(e.target.value)} rows={3} placeholder="A short sentence about why you listen." style={S.textarea} />
-        </label>
-        <label style={S.label}>
-          Profile avatar
-          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setAvatar(e.target.files?.[0] || null)} style={S.fileInput} />
-        </label>
-        {error && <div style={S.error}>{error}</div>}
-        <button type="submit" disabled={saving} style={S.primaryButton(saving)}>
-          {saving ? 'Saving…' : 'Save profile'}
-        </button>
-      </form>
-    </div>
-  )
-}
-
 export default function JournalPage() {
   const { handle: rawHandle } = useParams()
   const handle = rawHandle?.toLowerCase() || ''
@@ -147,6 +68,7 @@ export default function JournalPage() {
   const [claimError, setClaimError] = useState(null)
   const [claimAvatar, setClaimAvatar] = useState(null)
   const [avatarBust, setAvatarBust] = useState(null)
+  const [nodes, setNodes] = useState([])
   const mobileInsight = useEcosystemInsight()
 
   // Section anchors so the Life list / Places / Listens stat buttons can scroll
@@ -157,7 +79,6 @@ export default function JournalPage() {
   const scrollTo = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   const isMeRoute = handle === 'me'
-  const isOwner = profile?.id && user?.id === profile.id
   const isClaiming = isMeRoute && user && !listener?.handle && !profile?.handle
 
   useEffect(() => {
@@ -238,6 +159,30 @@ export default function JournalPage() {
     loadEntries()
   }, [profile])
 
+  // Listening posts: nodes (hardware stations) this Listener stewards, via
+  // nodes.owner_id = their auth uid (= the listener id). Public-readable.
+  useEffect(() => {
+    async function loadNodes() {
+      if (!profile?.id) { setNodes([]); return }
+      const { data, error } = await supabase
+        .from('nodes')
+        .select('id, name, hardware_type, habitat_type, is_active')
+        .eq('owner_id', profile.id)
+        .order('name')
+      if (error) { console.warn('Journal nodes failed:', error); setNodes([]) }
+      else setNodes(data || [])
+    }
+    loadNodes()
+  }, [profile])
+
+  // The profile editor now lives in the navbar and refreshes `listener`. For the
+  // owner's own journal, bust the avatar cache so a re-uploaded image (same
+  // storage path) shows immediately; the header text refreshes via loadProfile.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (listener && user && listener.id === user.id) setAvatarBust(Date.now())
+  }, [listener, user])
+
   const speciesTotals = useMemo(() => {
     const map = {}
     for (const entry of entries) {
@@ -311,15 +256,6 @@ export default function JournalPage() {
     }
   }
 
-  function handleProfileSaved(updated, avatarChanged) {
-    setProfile(updated)
-    // Re-uploads reuse the same storage path, so bust the cache so the owner sees
-    // their new avatar immediately instead of the CDN-cached one.
-    if (avatarChanged) setAvatarBust(Date.now())
-    refreshListener()
-  }
-
-  const isLoadedOwner = isOwner && profile
   const headerName = profile?.display_name || (profile ? `@${profile.handle}` : 'Listener')
   const baseAvatarUrl = getListenerAvatarUrl(profile?.avatar_path)
   const avatarUrl = baseAvatarUrl && avatarBust ? `${baseAvatarUrl}?v=${avatarBust}` : baseAvatarUrl
@@ -464,28 +400,8 @@ export default function JournalPage() {
         </button>
       </div>
 
-      {isLoadedOwner && (
-        <ProfileEditor profile={profile} onSaved={handleProfileSaved} onNeedsAuth={openSignIn} />
-      )}
-
-      {/* Life list — every species this Listener has recorded */}
-      <section ref={lifeListRef} style={S.section}>
-        <h2 style={S.sectionLabel}>Life list</h2>
-        {allSpecies.length > 0 ? (
-          <div style={{ display: 'grid', gap: '10px' }}>
-            {allSpecies.map(([name, count]) => (
-              <div key={name} style={{ display: 'flex', justifyContent: 'space-between', color: C.text }}>
-                <span>{name}</span>
-                <span style={{ color: C.textMuted }}>{count}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ color: C.textMuted }}>No species published yet.</div>
-        )}
-      </section>
-
-      {/* Places — the map of where they've listened */}
+      {/* Places — the map of where they've listened. Kept near the top, right
+          under the stat buttons. */}
       <section ref={placesRef} style={S.section}>
         <h2 style={S.sectionLabel}>Places</h2>
         {mapPoints.length > 0 ? (
@@ -517,6 +433,54 @@ export default function JournalPage() {
           <div style={{ color: C.textMuted, minHeight: '120px', display: 'flex', alignItems: 'center' }}>
             No published Listens yet.
           </div>
+        )}
+      </section>
+
+      {/* Listening posts — nodes (hardware stations) this Listener stewards. */}
+      {nodes.length > 0 && (
+        <section style={S.section}>
+          <h2 style={S.sectionLabel}>Listening posts</h2>
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {nodes.map((n) => (
+              <Link key={n.id} to={`/node/${n.id}`} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px',
+                background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px',
+                padding: '14px 16px', textDecoration: 'none',
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: C.text, fontWeight: 700, fontSize: '15px' }}>{n.name}</div>
+                  <div style={{ color: C.textMuted, fontSize: '12px', marginTop: '2px', textTransform: 'capitalize' }}>
+                    {[n.habitat_type, n.hardware_type].filter(Boolean).join(' · ') || 'Listening post'}
+                  </div>
+                </div>
+                <span style={{
+                  flexShrink: 0, fontSize: '11px', fontWeight: 700, padding: '3px 9px', borderRadius: '12px',
+                  color: n.is_active ? C.accentLight : C.textMuted,
+                  background: n.is_active ? 'rgba(29,158,117,0.15)' : 'transparent',
+                  border: `1px solid ${n.is_active ? C.accent : C.border}`,
+                }}>
+                  {n.is_active ? 'Active' : 'Offline'}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Life list — every species this Listener has recorded */}
+      <section ref={lifeListRef} style={S.section}>
+        <h2 style={S.sectionLabel}>Life list</h2>
+        {allSpecies.length > 0 ? (
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {allSpecies.map(([name, count]) => (
+              <div key={name} style={{ display: 'flex', justifyContent: 'space-between', color: C.text }}>
+                <span>{name}</span>
+                <span style={{ color: C.textMuted }}>{count}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: C.textMuted }}>No species published yet.</div>
         )}
       </section>
 
