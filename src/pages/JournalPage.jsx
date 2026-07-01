@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
+import { AMBER } from '../lib/listen'
 import { useAuth } from '../lib/auth'
+import MobileDetectionCard from '../components/MobileDetectionCard'
 import {
   validateHandle,
   createListener,
@@ -49,19 +52,10 @@ function visibleSpecies(entry) {
     .sort((a, b) => (b.confidence || 0) - (a.confidence || 0))
 }
 
-function entryTags(entry) {
-  return [
-    entry.habitat_type,
-    entry.canopy_cover && `${entry.canopy_cover} canopy`,
-    entry.water_present ? 'water nearby' : null,
-    entry.disturbance_level && entry.disturbance_level !== 'none' ? `${entry.disturbance_level} disturbance` : null,
-  ].filter(Boolean)
-}
-
 // Owner-only profile editor. Local state is lazily seeded from `profile` on mount
 // (the editor only renders once the owner's profile is loaded), so there's no
 // prop→state sync effect to keep in step.
-function ProfileEditor({ profile, userId, onSaved }) {
+function ProfileEditor({ profile, onSaved, onNeedsAuth }) {
   const [displayName, setDisplayName] = useState(profile.display_name || '')
   const [homeRegion, setHomeRegion] = useState(profile.home_region || '')
   const [bio, setBio] = useState(profile.bio || '')
@@ -74,11 +68,24 @@ function ProfileEditor({ profile, userId, onSaved }) {
     setSaving(true)
     setError(null)
     try {
+      // The avatar upload and the listeners UPDATE are both RLS-gated on
+      // auth.uid(). If the session has lapsed, the request goes out as the anon
+      // role and Postgres rejects it with "new row violates row-level security
+      // policy" — a confusing error for the user. getSession() refreshes a valid
+      // session; if it can't, we prompt a fresh sign-in instead of failing cryptically.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setError('Your session has expired. Please sign in again to save your profile.')
+        onNeedsAuth?.()
+        return
+      }
+      const uid = session.user.id
+
       let avatar_path = profile.avatar_path
       if (avatar) {
-        avatar_path = await uploadListenerAvatar(userId, avatar)
+        avatar_path = await uploadListenerAvatar(uid, avatar)
       }
-      const updated = await updateListener(userId, {
+      const updated = await updateListener(uid, {
         display_name: displayName || null,
         bio: bio || null,
         home_region: homeRegion || null,
@@ -141,7 +148,15 @@ export default function JournalPage() {
   const [claimError, setClaimError] = useState(null)
   const [claimAvatar, setClaimAvatar] = useState(null)
   const [avatarBust, setAvatarBust] = useState(null)
-  const [expandedId, setExpandedId] = useState(null)
+  const [insights, setInsights] = useState({})
+  const [openInsight, setOpenInsight] = useState(null)
+
+  // Section anchors so the Life list / Places / Listens stat buttons can scroll
+  // straight to their content (the journal is one page, like the live feed).
+  const lifeListRef = useRef(null)
+  const placesRef = useRef(null)
+  const listensRef = useRef(null)
+  const scrollTo = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   const isMeRoute = handle === 'me'
   const isOwner = profile?.id && user?.id === profile.id
@@ -246,9 +261,8 @@ export default function JournalPage() {
     .map(entry => `${entry.lat.toFixed(3)}|${entry.lon.toFixed(3)}`)
   ).size
 
-  const topSpecies = Object.entries(speciesTotals)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
+  // Full life list (every species, most-recorded first) for the Life list section.
+  const allSpecies = Object.entries(speciesTotals).sort((a, b) => b[1] - a[1])
 
   async function handleClaimSubmit(event) {
     event.preventDefault()
@@ -292,6 +306,39 @@ export default function JournalPage() {
     // their new avatar immediately instead of the CDN-cached one.
     if (avatarChanged) setAvatarBust(Date.now())
     refreshListener()
+  }
+
+  // Ecosystem insight, same behavior as the live feed: generate on demand, cache
+  // the result back on the row (SECURITY DEFINER RPC, only writes when null) so it
+  // generates exactly once and later viewers read the stored text.
+  async function requestMobileInsight(m) {
+    setInsights(prev => ({ ...prev, [m.id]: { loading: true } }))
+    try {
+      const conf = (m.species || []).filter(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name))
+      const res = await fetch('/api/insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mobile: true, detection_id: m.id, species: conf,
+          lat: m.lat, lon: m.lon, detected_at: m.detected_at,
+          habitat_type: m.habitat_type, canopy_cover: m.canopy_cover,
+          water_present: m.water_present, disturbance_level: m.disturbance_level,
+        }),
+      })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setInsights(prev => ({ ...prev, [m.id]: { text: data.insight } }))
+      supabase.rpc('set_detection_insight', { detection_id: m.id, insight_text: data.insight })
+        .then(({ error }) => { if (error) console.warn('set_detection_insight failed:', error) })
+    } catch {
+      setInsights(prev => ({ ...prev, [m.id]: { error: true } }))
+    }
+  }
+
+  function openMobileInsight(m) {
+    setOpenInsight(m)
+    const already = m.insight || insights[m.id]?.text
+    if (!already && !insights[m.id]?.loading) requestMobileInsight(m)
   }
 
   const isLoadedOwner = isOwner && profile
@@ -421,147 +468,140 @@ export default function JournalPage() {
 
       {error && <div style={{ ...S.error, marginBottom: '20px' }}>{error}</div>}
 
-      {/* auto-fit + minmax lets the three stats stay 3-across on a normal phone,
-          shrink to fit instead of clipping, and wrap gracefully on tiny screens. */}
-      <div style={{ display: 'grid', gap: '12px', marginBottom: '28px', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))' }}>
-        <div style={S.statCard}>
-          <div style={S.statLabel}>Life list</div>
-          <div style={S.statValue}>{lifeListCount}</div>
-        </div>
-        <div style={S.statCard}>
-          <div style={S.statLabel}>Places</div>
-          <div style={S.statValue}>{placeCount}</div>
-        </div>
-        <div style={S.statCard}>
-          <div style={S.statLabel}>Listens</div>
-          <div style={S.statValue}>{entries.length}</div>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gap: '24px', marginBottom: '32px' }}>
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '20px', padding: '18px' }}>
-          <div style={{ marginBottom: '12px', fontSize: '13px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Journal map
-          </div>
-          {mapPoints.length > 0 ? (
-            <div style={{ height: '340px', minHeight: '280px' }}>
-              <MapContainer style={{ width: '100%', height: '100%', borderRadius: '18px' }} center={mapPoints[0]} zoom={6} scrollWheelZoom={false}>
-                <TileLayer
-                  attribution='&copy; OpenStreetMap contributors'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                <MapController points={mapPoints} />
-                {entries.filter(e => e.lat != null && e.lon != null).map((entry) => (
-                  <CircleMarker
-                    key={entry.id}
-                    center={[entry.lat, entry.lon]}
-                    radius={10}
-                    pathOptions={{ color: C.accentLight, fillColor: C.accent, fillOpacity: 0.9, weight: 2 }}
-                    eventHandlers={{ click: () => setExpandedId(entry.id) }}
-                  >
-                    <Popup>
-                      <div style={{ color: '#0f2718' }}>
-                        <div style={{ fontWeight: 700, marginBottom: '4px' }}>{formatDate(entry.detected_at)}</div>
-                        <div>{visibleSpecies(entry).length} species</div>
-                      </div>
-                    </Popup>
-                  </CircleMarker>
-                ))}
-              </MapContainer>
-            </div>
-          ) : (
-            <div style={{ color: C.textMuted, minHeight: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              No published Listens yet.
-            </div>
-          )}
-        </div>
-
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '20px', padding: '18px' }}>
-          <div style={{ marginBottom: '12px', fontSize: '13px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Top species
-          </div>
-          {topSpecies.length > 0 ? (
-            <div style={{ display: 'grid', gap: '10px' }}>
-              {topSpecies.map(([name, count]) => (
-                <div key={name} style={{ display: 'flex', justifyContent: 'space-between', color: C.text }}> 
-                  <span>{name}</span>
-                  <span style={{ color: C.textMuted }}>{count}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ color: C.textMuted }}>No species published yet.</div>
-          )}
-        </div>
+      {/* Stat buttons — tap to scroll to that section (the journal is one page,
+          like the live feed). auto-fit keeps them 3-across on phones and shrinks
+          instead of clipping. */}
+      <div style={{ display: 'grid', gap: '12px', marginBottom: '32px', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))' }}>
+        <button style={S.statButton} onClick={() => scrollTo(lifeListRef)}>
+          <span style={S.statValue}>{lifeListCount}</span>
+          <span style={S.statLabel}>Life list</span>
+        </button>
+        <button style={S.statButton} onClick={() => scrollTo(placesRef)}>
+          <span style={S.statValue}>{placeCount}</span>
+          <span style={S.statLabel}>Places</span>
+        </button>
+        <button style={S.statButton} onClick={() => scrollTo(listensRef)}>
+          <span style={S.statValue}>{entries.length}</span>
+          <span style={S.statLabel}>Listens</span>
+        </button>
       </div>
 
       {isLoadedOwner && (
-        <ProfileEditor profile={profile} userId={user.id} onSaved={handleProfileSaved} />
+        <ProfileEditor profile={profile} onSaved={handleProfileSaved} onNeedsAuth={openSignIn} />
       )}
 
-      <div style={{ display: 'grid', gap: '16px' }}>
-        {entries.length > 0 ? entries.map((entry) => {
-          const seen = visibleSpecies(entry)
-          const tags = entryTags(entry)
-          const expanded = expandedId === entry.id
-          const shownSpecies = expanded ? seen : seen.slice(0, 4)
-          const hiddenCount = seen.length - shownSpecies.length
-          return (
-            <div
-              key={entry.id}
-              style={S.entryCard}
-              onClick={() => setExpandedId(expanded ? null : entry.id)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(expanded ? null : entry.id) } }}
-              aria-expanded={expanded}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap' }}>
-                <div>
-                  <div style={{ fontSize: '15px', fontWeight: 700, color: C.text }}>{formatDate(entry.detected_at)}</div>
-                  <div style={{ color: C.textMuted, marginTop: '4px' }}>
-                    {seen.length} species · {entry.habitat_type || 'Unknown habitat'}
-                  </div>
-                </div>
-                <div style={{ fontSize: '13px', color: C.textMuted, textAlign: 'right' }}>
-                  <div>{entry.lat?.toFixed(3)}, {entry.lon?.toFixed(3)}</div>
-                  <div style={{ marginTop: '4px', color: C.accentLight, fontSize: '12px' }}>
-                    {expanded ? 'Hide details ▲' : 'View Listen ▼'}
-                  </div>
-                </div>
+      {/* Life list — every species this Listener has recorded */}
+      <section ref={lifeListRef} style={S.section}>
+        <h2 style={S.sectionLabel}>Life list</h2>
+        {allSpecies.length > 0 ? (
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {allSpecies.map(([name, count]) => (
+              <div key={name} style={{ display: 'flex', justifyContent: 'space-between', color: C.text }}>
+                <span>{name}</span>
+                <span style={{ color: C.textMuted }}>{count}</span>
               </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: C.textMuted }}>No species published yet.</div>
+        )}
+      </section>
 
-              {shownSpecies.length > 0 && (
-                <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {shownSpecies.map((s, index) => (
-                    <span key={`${entry.id}-${index}`} style={S.tag}>{s.common_name}</span>
-                  ))}
-                  {hiddenCount > 0 && <span style={S.tag}>+{hiddenCount} more</span>}
-                </div>
-              )}
+      {/* Places — the map of where they've listened */}
+      <section ref={placesRef} style={S.section}>
+        <h2 style={S.sectionLabel}>Places</h2>
+        {mapPoints.length > 0 ? (
+          <div style={{ height: '340px', minHeight: '280px' }}>
+            <MapContainer style={{ width: '100%', height: '100%', borderRadius: '16px' }} center={mapPoints[0]} zoom={6} scrollWheelZoom={false}>
+              <TileLayer
+                attribution='&copy; OpenStreetMap contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <MapController points={mapPoints} />
+              {entries.filter(e => e.lat != null && e.lon != null).map((entry) => (
+                <CircleMarker
+                  key={entry.id}
+                  center={[entry.lat, entry.lon]}
+                  radius={10}
+                  pathOptions={{ color: C.accentLight, fillColor: C.accent, fillOpacity: 0.9, weight: 2 }}
+                >
+                  <Popup>
+                    <div style={{ color: '#0f2718' }}>
+                      <div style={{ fontWeight: 700, marginBottom: '4px' }}>{formatDate(entry.detected_at)}</div>
+                      <div>{visibleSpecies(entry).length} species</div>
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              ))}
+            </MapContainer>
+          </div>
+        ) : (
+          <div style={{ color: C.textMuted, minHeight: '120px', display: 'flex', alignItems: 'center' }}>
+            No published Listens yet.
+          </div>
+        )}
+      </section>
 
-              {expanded && tags.length > 0 && (
-                <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {tags.map(t => <span key={t} style={S.metaTag}>{t}</span>)}
-                </div>
-              )}
-
-              {entry.insight && (
-                <div style={{
-                  marginTop: '12px', color: C.textSub, lineHeight: 1.6,
-                  ...(expanded ? {} : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }),
-                }}>
-                  {entry.insight}
-                </div>
-              )}
-            </div>
-          )
-        }) : (
-          <div style={{ color: C.textMuted, padding: '24px', border: `1px solid ${C.border}`, borderRadius: '18px' }}>
+      {/* Listens — the feed, rendered exactly like the live feed (edge-to-edge
+          MobileDetectionCards via .detection-grid). */}
+      <section ref={listensRef} style={S.section}>
+        <h2 style={S.sectionLabel}>Listens</h2>
+        {entries.length > 0 ? (
+          <div className="detection-grid">
+            {entries.map((entry) => (
+              <MobileDetectionCard
+                key={entry.id}
+                d={entry}
+                insight={insights[entry.id]}
+                onOpenInsight={() => openMobileInsight(entry)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div style={{ color: C.textMuted, padding: '24px', border: `1px solid ${C.border}`, borderRadius: '16px' }}>
             This Listener has not published any Listens yet.
           </div>
         )}
-      </div>
+      </section>
+
+      {/* Ecosystem-insight modal — portaled to <body> so a feed re-render can't
+          collapse it, same pattern as the live feed. */}
+      {openInsight && createPortal(
+        <div
+          onClick={() => setOpenInsight(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(6,20,12,0.72)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${AMBER.base}`, borderRadius: '14px', maxWidth: '440px', width: '100%', maxHeight: '80vh', overflowY: 'auto', padding: '20px 22px', boxShadow: '0 12px 40px rgba(0,0,0,0.45)' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: AMBER.light, fontWeight: 800, fontSize: '15px' }}>
+                〰 What&apos;s the ecosystem saying?
+              </span>
+              <button onClick={() => setOpenInsight(null)} aria-label="Close" style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: '22px', lineHeight: 1, cursor: 'pointer', padding: '0 4px' }}>×</button>
+            </div>
+            {(() => {
+              const st = insights[openInsight.id] || {}
+              const text = openInsight.insight || st.text
+              if (text) return <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.7 }}>{text}</div>
+              if (st.error) return (
+                <div style={{ color: C.textMuted, fontSize: '14px', lineHeight: 1.6 }}>
+                  Couldn&apos;t read the soundscape just now.
+                  <button
+                    onClick={() => requestMobileInsight(openInsight)}
+                    style={{ display: 'block', marginTop: '12px', padding: '9px 14px', background: 'transparent', border: `1px solid ${AMBER.dark}`, borderRadius: '8px', color: AMBER.light, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Try again
+                  </button>
+                </div>
+              )
+              return <div style={{ color: C.textMuted, fontSize: '14px' }}>🔍 Reading the soundscape…</div>
+            })()}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
@@ -592,24 +632,22 @@ const S = {
     background: 'transparent', border: `1px solid ${C.accentLight}`, color: C.accentLight,
     padding: '10px 18px', borderRadius: '12px', cursor: 'pointer',
   },
-  statCard: {
-    background: '#0d2818', border: `1px solid ${C.border}`, borderRadius: '18px', padding: '18px',
-  },
-  statLabel: {
-    fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: C.textMuted,
+  statButton: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+    background: '#0d2818', border: `1px solid ${C.border}`, borderRadius: '16px',
+    padding: '16px 10px', cursor: 'pointer', color: C.text,
   },
   statValue: {
-    marginTop: '10px', fontSize: '30px', fontWeight: 800, color: C.text,
+    fontSize: '28px', fontWeight: 800, color: C.text, lineHeight: 1,
   },
-  entryCard: {
-    background: C.card, border: `1px solid ${C.border}`, borderRadius: '18px', padding: '18px',
-    textDecoration: 'none', color: C.text, cursor: 'pointer',
+  statLabel: {
+    fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: C.textMuted,
   },
-  tag: {
-    background: '#112e1c', color: C.textMuted, padding: '6px 10px', borderRadius: '999px', fontSize: '12px',
+  section: {
+    marginBottom: '32px', scrollMarginTop: '72px',
   },
-  metaTag: {
-    background: '#0f2918', color: C.textSub, padding: '5px 10px', borderRadius: '999px',
-    fontSize: '12px', border: `1px solid ${C.border}`, textTransform: 'capitalize',
+  sectionLabel: {
+    margin: '0 0 14px', fontSize: '14px', fontWeight: 700, color: C.textMuted,
+    textTransform: 'uppercase', letterSpacing: '0.08em',
   },
 }
