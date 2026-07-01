@@ -69,6 +69,9 @@ export default function JournalPage() {
   const [claimAvatar, setClaimAvatar] = useState(null)
   const [avatarBust, setAvatarBust] = useState(null)
   const [nodes, setNodes] = useState([])
+  const [following, setFollowing] = useState(false)
+  const [followerCount, setFollowerCount] = useState(0)
+  const [followBusy, setFollowBusy] = useState(false)
   const mobileInsight = useEcosystemInsight()
 
   // Section anchors so the Life list / Places / Listens stat buttons can scroll
@@ -79,6 +82,7 @@ export default function JournalPage() {
   const scrollTo = (ref) => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   const isMeRoute = handle === 'me'
+  const isOwner = !!(profile?.id && user?.id === profile.id)
   const isClaiming = isMeRoute && user && !listener?.handle && !profile?.handle
 
   useEffect(() => {
@@ -182,6 +186,37 @@ export default function JournalPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (listener && user && listener.id === user.id) setAvatarBust(Date.now())
   }, [listener, user])
+
+  // Public follower count (security-definer RPC — no follower identities exposed).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!profile?.id) { setFollowerCount(0); return }
+    supabase.rpc('listener_follower_count', { l: profile.id })
+      .then(({ data }) => setFollowerCount(data ?? 0))
+  }, [profile])
+
+  // Is the signed-in viewer following this journal?
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!profile?.id || !user) { setFollowing(false); return }
+    supabase.from('listener_follows').select('followed_id')
+      .eq('followed_id', profile.id).eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => setFollowing(!!data))
+  }, [profile, user])
+
+  async function toggleFollow() {
+    if (!user) { openSignIn(); return }
+    if (!profile?.id) return
+    setFollowBusy(true)
+    if (following) {
+      const { error } = await supabase.from('listener_follows').delete().eq('followed_id', profile.id)
+      if (!error) { setFollowing(false); setFollowerCount(c => Math.max(0, c - 1)) }
+    } else {
+      const { error } = await supabase.from('listener_follows').insert({ followed_id: profile.id })
+      if (!error) { setFollowing(true); setFollowerCount(c => c + 1) }
+    }
+    setFollowBusy(false)
+  }
 
   const speciesTotals = useMemo(() => {
     const map = {}
@@ -377,6 +412,22 @@ export default function JournalPage() {
           </div>
           {profile.home_region && <div style={{ marginTop: '6px', color: C.textMuted }}>{profile.home_region}</div>}
           {profile.bio && <p style={{ marginTop: '12px', color: C.textSub, lineHeight: 1.8 }}>{profile.bio}</p>}
+          <div style={{ marginTop: '14px', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+            <span style={{ color: C.textMuted, fontSize: '13px' }}>
+              {followerCount} {followerCount === 1 ? 'follower' : 'followers'}
+            </span>
+            {!isOwner && (
+              <button onClick={toggleFollow} disabled={followBusy} style={{
+                padding: '8px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
+                cursor: followBusy ? 'default' : 'pointer', opacity: followBusy ? 0.7 : 1,
+                background: following ? C.bg : C.accent,
+                border: `1px solid ${following ? C.border : C.accent}`,
+                color: following ? C.textSub : '#fff',
+              }}>
+                {following ? 'Following' : 'Follow'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

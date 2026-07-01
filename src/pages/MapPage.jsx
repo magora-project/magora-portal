@@ -77,12 +77,27 @@ export default function MapPage() {
   const { user, openSignIn } = useAuth()
   const [tab, setTab] = useState('global')
   const [followedIds, setFollowedIds] = useState([])
+  const [followedHandles, setFollowedHandles] = useState([])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!user) { setFollowedIds([]); return }
     supabase.from('node_follows').select('node_id')
       .then(({ data }) => setFollowedIds((data || []).map(r => r.node_id)))
+  }, [user])
+
+  // Followed Listeners (people) → their handles, to surface their Listens in the
+  // Following feed alongside followed places.
+  useEffect(() => {
+    async function loadFollowedListeners() {
+      if (!user) { setFollowedHandles([]); return }
+      const { data } = await supabase.from('listener_follows').select('followed_id')
+      const ids = (data || []).map(r => r.followed_id)
+      if (ids.length === 0) { setFollowedHandles([]); return }
+      const { data: ls } = await supabase.from('listeners').select('handle').in('id', ids)
+      setFollowedHandles((ls || []).map(l => l.handle).filter(Boolean))
+    }
+    loadFollowedListeners()
   }, [user])
 
   useEffect(() => {
@@ -192,9 +207,11 @@ export default function MapPage() {
   // Following tab gates on the "empty room" problem: hidden until the network is
   // big enough to follow, or the signed-in user already follows something.
   const MIN_NODES_FOR_TABS = 4
-  const showTabs = nodes.length >= MIN_NODES_FOR_TABS || (!!user && followedIds.length > 0)
+  const showTabs = nodes.length >= MIN_NODES_FOR_TABS ||
+    (!!user && (followedIds.length > 0 || followedHandles.length > 0))
   const activeTab = showTabs ? tab : 'global'
   const followedSet = new Set(followedIds)
+  const followedHandleSet = new Set(followedHandles)
   const baseDetections = activeTab === 'following'
     ? detections.filter(d => followedSet.has(d.node_id))
     : detections
@@ -215,12 +232,17 @@ export default function MapPage() {
     item,
   }))
 
-  // Unified, time-sorted feed. Mobile Listens only show on Global (they don't
-  // belong to a followed node). Local queued listens are shown alongside them.
+  // Following-tab Listens: those posted by Listeners the user follows.
+  const followedMobile = mobileFeed.filter(m => m.listener_handle && followedHandleSet.has(m.listener_handle))
+
+  // Unified, time-sorted feed. On Global, all Listens show; on Following, only
+  // Listens from followed people (alongside followed places). Local queued listens
+  // are shown alongside them.
   const feedItems = (activeTab === 'following'
     ? [
         ...queuedFeed,
         ...dedupedDetections.map(d => ({ type: 'node', ts: d.detected_at, key: `n-${d.id}`, d })),
+        ...followedMobile.map(m => ({ type: 'mobile', ts: m.detected_at, key: `m-${m.id}`, m })),
       ]
     : [
         ...queuedFeed,
@@ -514,7 +536,7 @@ export default function MapPage() {
             </div>
           ) : activeTab === 'following' ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: C.textMuted, lineHeight: 1.6 }}>
-              Nothing from the places you follow in this window. Try the Global tab, or follow more listening posts.
+              Nothing from the places or people you follow in this window. Try the Global tab, or follow more listening posts and journals.
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Nothing recorded in this window</div>
