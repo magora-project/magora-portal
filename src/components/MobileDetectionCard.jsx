@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import { MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
@@ -19,7 +20,13 @@ function relativeTime(iso) {
 
 // A mobile "Listen" in the feed — visually distinct from node DetectionCards
 // (amber 〰 instead of a node header, no precise location/identity).
-export default function MobileDetectionCard({ d, insight, onRequestInsight }) {
+//
+// The "What's the ecosystem saying?" panel is NOT rendered here: onOpenInsight
+// asks the parent to open it in a portal modal at the app root, so a feed
+// re-render (new detection arriving) can't collapse an insight the user is
+// reading. Memoized + keyed by detection id so existing cards stay mounted when
+// the feed updates.
+function MobileDetectionCard({ d, insight, onOpenInsight }) {
   const species = (d.species || [])
     .filter(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name))
     .sort((a, b) => b.confidence - a.confidence)
@@ -81,8 +88,8 @@ export default function MobileDetectionCard({ d, insight, onRequestInsight }) {
           {d.insight || insight.text}
         </div>
       )}
-      {onRequestInsight && species.length > 0 && !d.insight && !insight?.text && (
-        <button onClick={onRequestInsight} disabled={insight?.loading} style={{
+      {onOpenInsight && species.length > 0 && !d.insight && !insight?.text && (
+        <button onClick={onOpenInsight} disabled={insight?.loading} style={{
           width: '100%', marginTop: '12px', padding: '9px',
           background: insight?.loading ? C.border : 'transparent',
           border: `1px solid ${AMBER.dark}`, borderRadius: '8px',
@@ -95,6 +102,8 @@ export default function MobileDetectionCard({ d, insight, onRequestInsight }) {
     </div>
   )
 }
+
+export default memo(MobileDetectionCard)
 
 const S = {
   card: { background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${AMBER.base}`, borderRadius: '12px', padding: '14px 16px' },

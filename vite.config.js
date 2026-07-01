@@ -3,6 +3,17 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // Dev-only: the /api/* serverless functions don't run under `vite dev`, so
+  // forward them to the deployed Vercel functions. No effect on build/deploy.
+  server: {
+    proxy: {
+      '/api': {
+        target: 'https://magora-portal.vercel.app',
+        changeOrigin: true,
+        secure: true,
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

@@ -55,6 +55,19 @@ _Empty — promote from Backlog when ready._
 
 ## ✅ Done
 
+- [x] **Cache "What's the ecosystem saying?" — serve stored insight** (June 2026)
+  - On-demand ecosystem insights for older mobile Listens were regenerating (a fresh Claude API call) for every viewer who tapped the button. Now they generate ONCE: the first viewer generates it, the result is written back, everyone after reads the stored text.
+  - `public_mobile_detections` already exposed `insight` (added in `20260702`, preserved through `20260703`) — no view change needed.
+  - New migration `20260704_set_detection_insight.sql`: RPC `set_detection_insight(detection_id uuid, insight_text text)`, `SECURITY DEFINER`, `set search_path = public`, granted execute to anon + authenticated. Writes **only when `insight IS NULL`** so it can never overwrite an existing insight (idempotent under concurrent first-viewers). Needed because the public view is read-only and the base table is owner-only RLS, so a non-owner viewer can't write back directly.
+  - `MapPage.requestMobileInsight` now calls the RPC with the anon key right after a successful generation (best-effort; a failed write-back just regenerates next time). The card already gated the button on `!d.insight`, so stored insights display with no API call.
+  - **Migration to push to prod: `20260704`** (not yet applied — needs `supabase db push`).
+
+- [x] **Open ecosystem insight must survive new detections** (June 2026)
+  - The "What's the ecosystem saying?" panel was rendered inline inside `MobileDetectionCard`, in the feed scroll container, so a feed re-render (new detection arriving) could collapse an insight the user was reading.
+  - Lifted the open insight into a **portal modal** (`react-dom` `createPortal` → `document.body`) mounted at the app root in `MapPage`, fully decoupled from the feed list. Its open state (`openInsight`) lives on `MapPage`, outside the feed mapping, so feed re-renders can't touch it. The card's button now calls `onOpenInsight` instead of rendering/generating inline.
+  - Wrapped `MobileDetectionCard` and `DetectionCard` in `React.memo`; both are keyed by detection id in the feed, so existing cards stay mounted (never remount / lose state) when new detections prepend.
+  - Note: the public feed currently refreshes via a 30s poll (the only Realtime channel is the per-recording one in `ListenModal`); the portal modal makes the open insight immune to *any* feed re-render regardless of trigger. Feed merge is append/prepend-safe with stable keys.
+
 - [x] **Listen feature — Phase 4: Feed + map integration** (June 2026)
   - Migration `20260630_listen_phase4_public_view.sql`: sanitized public view `public_mobile_detections` (definer-rights) — completed rows only, exposes species + ecological metadata, **hides** user_id/notes/audio_path/device_info, coarsens lat/lon to 3 decimals (~110m) for privacy. Granted to anon+authenticated (verified: returns rows for anon)
   - `MobileDetectionCard.jsx`: amber 〰 Listen badge (distinct from green node cards), species filtered to ≥30% + hidden-species filter, ecological metadata tags, relative time, species links to /species

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import ShareSheet from './ShareSheet'
 
@@ -99,7 +99,9 @@ const BADGE_EXPLAIN = {
   sensitive: () => 'Conservation-sensitive species, flagged because this bird is vulnerable to habitat loss, climate change, or declining populations. Its presence or absence at this node is ecologically meaningful.',
 }
 
-export default function DetectionCard({ d, node, showNode = false, wikiData, count, insight, onRequestInsight }) {
+// Memoized + keyed by detection id in the feed so a new detection arriving (feed
+// re-render) doesn't remount existing cards and wipe their local state.
+function DetectionCard({ d, node, showNode = false, wikiData, count, insight, onRequestInsight }) {
   const [activeBadge, setActiveBadge] = useState(null)
   const [callState, setCallState] = useState(null) // null | 'loading' | 'ready' | 'error'
   const [soundUrl, setSoundUrl] = useState(null)
@@ -357,3 +359,5 @@ export default function DetectionCard({ d, node, showNode = false, wikiData, cou
     </article>
   )
 }
+
+export default memo(DetectionCard)

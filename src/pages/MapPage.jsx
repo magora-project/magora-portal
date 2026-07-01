@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, Link } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -65,6 +66,10 @@ export default function MapPage() {
   const [error, setError] = useState(false)
   const [wikiData, setWikiData] = useState({})
   const [insights, setInsights] = useState({})
+  // The mobile Listen whose ecosystem insight is open (a row snapshot). Rendered
+  // in a portal modal at the app root, so it lives OUTSIDE the feed list and a
+  // feed re-render (new detection arriving) can never collapse it.
+  const [openInsight, setOpenInsight] = useState(null)
   const [todaySpeciesCount, setTodaySpeciesCount] = useState(null)
   const [todayDetections, setTodayDetections] = useState([])
   const [queuedListens, setQueuedListens] = useState([])
@@ -202,9 +207,24 @@ export default function MapPage() {
       if (!res.ok) throw new Error()
       const data = await res.json()
       setInsights(prev => ({ ...prev, [m.id]: { text: data.insight } }))
+      // Cache it on the row so this generates exactly once: the next viewer reads
+      // the stored text instead of triggering another API call. The RPC is
+      // SECURITY DEFINER and only writes when insight IS NULL (never overwrites),
+      // so it's safe to call with the anon key and idempotent under concurrent
+      // first-viewers. Best-effort — a failed write-back just means it regenerates.
+      supabase.rpc('set_detection_insight', { detection_id: m.id, insight_text: data.insight })
+        .then(({ error }) => { if (error) console.warn('set_detection_insight failed:', error) })
     } catch {
       setInsights(prev => ({ ...prev, [m.id]: { error: true } }))
     }
+  }
+
+  // Open the insight modal for a Listen, generating on-demand only if it isn't
+  // already stored on the row or generated this session (and not already in flight).
+  function openMobileInsight(m) {
+    setOpenInsight(m)
+    const already = m.insight || insights[m.id]?.text
+    if (!already && !insights[m.id]?.loading) requestMobileInsight(m)
   }
 
   const speciesCountToday = (todayDetections || []).reduce((acc, d) => {
@@ -494,7 +514,7 @@ export default function MapPage() {
                 item.type === 'mobile' ? (
                   <MobileDetectionCard
                     key={item.key} d={item.m}
-                    insight={insights[item.m.id]} onRequestInsight={() => requestMobileInsight(item.m)}
+                    insight={insights[item.m.id]} onOpenInsight={() => openMobileInsight(item.m)}
                   />
                 ) : item.type === 'queued' ? (
                   <div key={item.key} style={{ background: '#1f3326', border: `1px solid ${C.border}`, borderLeft: `3px solid ${AMBER.base}`, borderRadius: '16px', padding: '16px', color: C.text }}>
@@ -584,6 +604,45 @@ export default function MapPage() {
 
       {/* Section 5 — Ecological Commons */}
       <EcologicalCommons />
+
+      {/* Ecosystem-insight modal — portaled to <body>, so it's fully outside the
+          feed scroll container. New detections re-render the feed; this stays put. */}
+      {openInsight && createPortal(
+        <div
+          onClick={() => setOpenInsight(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(6,20,12,0.72)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: C.card, border: `1px solid ${C.border}`, borderLeft: `3px solid ${AMBER.base}`, borderRadius: '14px', maxWidth: '440px', width: '100%', maxHeight: '80vh', overflowY: 'auto', padding: '20px 22px', boxShadow: '0 12px 40px rgba(0,0,0,0.45)' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: AMBER.light, fontWeight: 800, fontSize: '15px' }}>
+                〰 What&apos;s the ecosystem saying?
+              </span>
+              <button onClick={() => setOpenInsight(null)} aria-label="Close" style={{ background: 'none', border: 'none', color: C.textMuted, fontSize: '22px', lineHeight: 1, cursor: 'pointer', padding: '0 4px' }}>×</button>
+            </div>
+            {(() => {
+              const st = insights[openInsight.id] || {}
+              const text = openInsight.insight || st.text
+              if (text) return <div style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.7 }}>{text}</div>
+              if (st.error) return (
+                <div style={{ color: C.textMuted, fontSize: '14px', lineHeight: 1.6 }}>
+                  Couldn&apos;t read the soundscape just now.
+                  <button
+                    onClick={() => requestMobileInsight(openInsight)}
+                    style={{ display: 'block', marginTop: '12px', padding: '9px 14px', background: 'transparent', border: `1px solid ${AMBER.dark}`, borderRadius: '8px', color: AMBER.light, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Try again
+                  </button>
+                </div>
+              )
+              return <div style={{ color: C.textMuted, fontSize: '14px' }}>🔍 Reading the soundscape…</div>
+            })()}
+          </div>
+        </div>,
+        document.body
+      )}
 
     </div>
   )
