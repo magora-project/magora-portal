@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
 import { supabase } from './supabase'
 import AuthModal from '../components/AuthModal'
 import HandlePrompt from '../components/HandlePrompt'
@@ -12,26 +11,23 @@ const AuthContext = createContext({
   signOut: () => {},
   openSignIn: () => {},
   refreshListener: () => {},
+  promptHandleClaim: () => {},
 })
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [listener, setListener] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [listenerLoaded, setListenerLoaded] = useState(false)
   const [signInOpen, setSignInOpen] = useState(false)
-  const [handlePromptDismissed, setHandlePromptDismissed] = useState(false)
-  const location = useLocation()
+  const [handlePromptOpen, setHandlePromptOpen] = useState(false)
 
   async function refreshListener(userId) {
     if (!userId) {
       setListener(null)
-      setListenerLoaded(false)
       return
     }
     const data = await getListenerByUser(userId)
     setListener(data)
-    setListenerLoaded(true)
   }
 
   useEffect(() => {
@@ -50,9 +46,7 @@ export function AuthProvider({ children }) {
         refreshListener(authUser.id)
       } else {
         setListener(null)
-        setListenerLoaded(false)
-        // Re-arm the handle prompt so the next person to sign in gets it.
-        setHandlePromptDismissed(false)
+        setHandlePromptOpen(false)
       }
     })
     return () => sub.subscription.unsubscribe()
@@ -65,21 +59,19 @@ export function AuthProvider({ children }) {
     signOut: () => supabase.auth.signOut(),
     openSignIn: () => setSignInOpen(true),
     refreshListener: () => refreshListener(user?.id),
+    // Called at a natural moment (right after a Listen is posted) to nudge a
+    // handle-less Listener to claim one for their journal — no-op if they already
+    // have one, so callers don't have to check.
+    promptHandleClaim: () => setHandlePromptOpen(true),
   }
 
-  // Prompt a signed-in Listener to claim a handle once their profile has loaded
-  // and we know they don't have one. Gated on listenerLoaded so it never flashes
-  // before the fetch resolves; skipped on /journal/me, which has its own claim
-  // form; dismissable per sign-in (re-armed on sign-out).
-  const showHandlePrompt =
-    Boolean(user) && listenerLoaded && !listener?.handle &&
-    !handlePromptDismissed && !signInOpen && location.pathname !== '/journal/me'
+  const showHandlePrompt = handlePromptOpen && Boolean(user) && !listener?.handle
 
   return (
     <AuthContext.Provider value={value}>
       {children}
       {signInOpen && <AuthModal onClose={() => setSignInOpen(false)} />}
-      {showHandlePrompt && <HandlePrompt onDismiss={() => setHandlePromptDismissed(true)} />}
+      {showHandlePrompt && <HandlePrompt onDismiss={() => setHandlePromptOpen(false)} />}
     </AuthContext.Provider>
   )
 }

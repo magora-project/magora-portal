@@ -17,7 +17,7 @@ const C = {
 const RESULT_TIMEOUT_MS = 90000
 
 export default function ListenModal({ onClose }) {
-  const { user } = useAuth()
+  const { user, listener, promptHandleClaim } = useAuth()
   const [step, setStep] = useState('ready') // ready | recording | pending | results | error
   const [place, setPlace] = useState(null)
   const [coords, setCoords] = useState(null)
@@ -287,6 +287,9 @@ export default function ListenModal({ onClose }) {
     }).eq('id', detectionIdRef.current)
     setSavingMeta(false)
     onClose()
+    // Natural moment to nudge for a journal handle: they just posted their first
+    // Listen. No-op if they already have one.
+    if (!listener?.handle) promptHandleClaim()
   }
 
   async function discardListen() {
