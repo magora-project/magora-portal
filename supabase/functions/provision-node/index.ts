@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid JSON body" }, 400)
   }
 
-  const { name, hardware_type, lat, lon, elevation_m, habitat_type, species_whitelist } = body as {
+  const { name, hardware_type, lat, lon, elevation_m, habitat_type, species_whitelist, owner_id } = body as {
     name: string
     hardware_type: string
     lat: number
@@ -40,10 +40,16 @@ Deno.serve(async (req) => {
     elevation_m?: number
     habitat_type: string
     species_whitelist?: string[]
+    owner_id?: string
   }
 
   if (!name || !hardware_type || lat == null || lon == null || !habitat_type) {
     return json({ error: "Missing required fields: name, hardware_type, lat, lon, habitat_type" }, 400)
+  }
+
+  // Nodes must be registered to a signed-in steward (the wizard sends their uid).
+  if (!owner_id) {
+    return json({ error: "Missing owner_id — sign in to register a node" }, 400)
   }
 
   // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are auto-injected by Supabase
@@ -75,6 +81,7 @@ Deno.serve(async (req) => {
   // --- step 2: create nodes row (id = auth user UUID, per Option B) ---
   const { error: nodeError } = await admin.from("nodes").insert({
     id: userId,
+    owner_id,
     name,
     hardware_type,
     location: `POINT(${lon} ${lat})`,

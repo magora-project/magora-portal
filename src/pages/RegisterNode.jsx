@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/auth'
 
 const HARDWARE_OPTIONS = [
   { id: 'rpi-zero-2w', name: 'Raspberry Pi Zero 2W', sub: 'Recommended · ~$15' },
@@ -22,6 +23,7 @@ const C = {
 const IMAGE_URL = 'https://github.com/magora-project/magora-acoustic-biodiversity/releases/latest/download/magora-node.img.xz'
 
 export default function RegisterNode() {
+  const { user, openSignIn } = useAuth()
   const [step, setStep] = useState(1)
   const [hardware, setHardware] = useState('rpi-zero-2w')
   const [form, setForm] = useState({
@@ -89,6 +91,9 @@ export default function RegisterNode() {
             elevation_m: parseFloat(form.elevation) || null,
             habitat_type: form.habitat,
             species_whitelist: whitelist || undefined,
+            // Links the node to the signed-in steward so it appears on their
+            // field journal (nodes.owner_id → auth.users).
+            owner_id: user?.id,
           }),
         }
       )
@@ -182,6 +187,25 @@ export default function RegisterNode() {
   }
 
   const steps = ['Hardware', 'Location', 'Flash', 'Live!']
+
+  // A node is registered to its steward's account, so require sign-in first.
+  if (!user) {
+    return (
+      <div style={{ maxWidth: '480px', margin: '0 auto', padding: '48px 20px', textAlign: 'center' }}>
+        <h2 style={{ color: C.text, fontSize: '1.6rem', margin: '0 0 12px' }}>Add a listening post</h2>
+        <p style={{ color: C.textMuted, lineHeight: 1.7, marginBottom: '22px' }}>
+          Sign in to register a node. It&apos;ll be linked to your account and appear on your field journal.
+        </p>
+        <button onClick={openSignIn} style={{
+          background: C.accent, color: '#fff', border: 'none', borderRadius: '10px',
+          padding: '12px 24px', fontSize: '15px', fontWeight: 700, cursor: 'pointer',
+          fontFamily: "'DM Sans', sans-serif",
+        }}>
+          Sign in
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div style={{ maxWidth: '480px', margin: '0 auto' }}>
