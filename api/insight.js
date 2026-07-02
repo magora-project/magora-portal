@@ -103,15 +103,16 @@ async function reverseGeocodeServer(lat, lon) {
 // species heard, the listener's place metadata, and (best of all) the recording's
 // own coordinates for real eBird regional context — anywhere in the world.
 async function mobileInsight(req, res) {
-  const { species = [], lat, lon, detected_at, habitat_type, canopy_cover, water_present, disturbance_level, observer_notes } = req.body
-  if (!species.length) return res.status(400).json({ error: 'species required' })
+  const { species = [], nearby = null, lat, lon, detected_at, habitat_type, canopy_cover, water_present, disturbance_level, observer_notes } = req.body
+  // Either birds were heard, or we have the surrounding iNaturalist web to describe.
+  if (!species.length && !nearby) return res.status(400).json({ error: 'species or nearby required' })
 
   const ebirdKey = process.env.EBIRD_API_KEY
-  const top = species[0]
+  const top = species[0] || null
 
   const [placeLabel, ebird] = await Promise.all([
     (lat != null && lon != null) ? reverseGeocodeServer(lat, lon) : Promise.resolve(null),
-    (ebirdKey && lat != null && lon != null) ? getEbirdContext(lat, lon, ebirdKey, top.common_name) : Promise.resolve(null),
+    (ebirdKey && lat != null && lon != null) ? getEbirdContext(lat, lon, ebirdKey, top?.common_name) : Promise.resolve(null),
   ])
 
   const locationLabel = placeLabel || 'this location'
@@ -128,28 +129,51 @@ async function mobileInsight(req, res) {
   const notesDesc = observer_notes && observer_notes.trim() ? observer_notes.trim() : null
   const ebirdDesc = ebird ? [
     `${ebird.richness} species reported within 25km in the past 7 days`,
-    ebird.confirmed
+    top && (ebird.confirmed
       ? `${top.common_name} is confirmed locally${ebird.daysSince != null ? ` (last eBird report ${ebird.daysSince} day${ebird.daysSince !== 1 ? 's' : ''} ago)` : ''}`
-      : `${top.common_name} is not in recent local eBird reports, so it may be notable here`,
+      : `${top.common_name} is not in recent local eBird reports, so it may be notable here`),
     ebird.nearby.length > 0 && `Also recently reported nearby: ${ebird.nearby.join(', ')}`,
   ].filter(Boolean).join('. ') : null
 
-  const prompt = `You are a field ecologist interpreting a single phone "Listen" — an ambient field recording someone made with their phone at ${locationLabel}. BirdNET identified the species below, already filtered to what's plausible at this exact location and time of year. You write for curious non-biologists. Interpret this specific moment and place, never generic species facts. Plain prose, commas and periods, never em-dashes.
+  // The surrounding multi-taxa web from iNaturalist (Tier 0). Emphasize the non-bird
+  // life (plants/insects/mammals/fungi) — that's the cross-taxa value the mic can't hear.
+  const nearbyDesc = nearby ? [
+    `${(nearby.total_species ?? 0).toLocaleString()} species verified on iNaturalist within ${nearby.radius_km}km (research-grade)`,
+    Array.isArray(nearby.groups) && nearby.groups.length
+      ? `Breadth: ${nearby.groups.map(g => `${g.count} ${g.label}`).join(', ')}`
+      : null,
+    Array.isArray(nearby.top) && nearby.top.length
+      ? `Non-bird life present: ${nearby.top.filter(t => t.iconic !== 'Aves').slice(0, 10).map(t => t.common || t.name).filter(Boolean).join(', ')}`
+      : null,
+  ].filter(Boolean).join('. ') : null
+
+  const heardBirds = species.length > 0
+  const mustBullets = [
+    heardBirds
+      ? 'Read ALL the birds heard together as a single community in one place, and say what that combination suggests about the habitat and what is happening right now (do not just describe one bird)'
+      : 'No birds were confidently identified this time, so tell the story of what lives here from the surrounding iNaturalist web instead',
+    nearbyDesc && (heardBirds
+      ? 'Ground the moment in the whole ecosystem by connecting what was heard to the surrounding web it depends on (the plants, insects, mammals, and fungi), not just the birds'
+      : 'Read the surrounding web (plants, insects, mammals, fungi) as one community and say what it suggests about this habitat'),
+    (metaDesc || notesDesc) && 'Weave in what the listener told you about the place and their notes, where relevant',
+    heardBirds && 'Infer what these birds are likely doing at this time of day and season',
+    ebirdDesc && 'Use the regional picture to judge whether this is a typical or a notable mix for the area',
+    'Sound like real field curiosity, never a field guide entry',
+    'Never open with a species name or "This recording"',
+  ].filter(Boolean).map(b => `- ${b}`).join('\n')
+
+  const prompt = `You are a field ecologist interpreting a single phone "Listen" — an ambient field recording someone made with their phone at ${locationLabel}. You write for curious non-biologists. Interpret this specific moment and place, never generic species facts. Plain prose, commas and periods, never em-dashes.
 
 THE LISTEN
 Location: ${locationLabel}${timingDesc ? `\nApproximate local time of day: ${timingDesc}` : ''}
-Species heard (all in this one recording): ${speciesDesc}
+${heardBirds ? `Birds heard (all in this one recording, BirdNET, filtered to what's plausible here now): ${speciesDesc}` : `BirdNET did not confidently identify any birds in this clip.`}
 ${metaDesc ? `The place (from the listener): ${metaDesc}` : ''}
 ${notesDesc ? `The listener's own notes: "${notesDesc}"` : ''}
 ${ebirdDesc ? `\nREGIONAL PICTURE (eBird, 25km, last 7 days)\n${ebirdDesc}` : ''}
+${nearbyDesc ? `\nTHE SURROUNDING WEB (iNaturalist, research-grade nearby)\n${nearbyDesc}` : ''}
 
 Write 3 to 4 sentences that turn this into a genuine ecological story about this place and moment. Your response must:
-- Read ALL the species heard together as a single community in one place, and say what that combination suggests about the habitat and what is happening right now (do not just describe one bird)
-- Weave in what the listener told you about the place and their notes, where relevant
-- Infer what these birds are likely doing at this time of day and season
-- Use the regional picture to judge whether this is a typical or a notable mix for the area
-- Sound like real field curiosity, never a field guide entry
-- Never open with a species name or "This recording"`
+${mustBullets}`
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

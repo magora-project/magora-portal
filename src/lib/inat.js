@@ -24,6 +24,21 @@ export function iconicMeta(name) {
   return ICONIC[name] || { emoji: '➕', label: (name || 'other').toLowerCase() }
 }
 
+// Public iNaturalist page for a taxon id — works for every taxon (plants, insects,
+// fungi, mammals), which the bird-oriented internal /species page does not.
+export function inatTaxonUrl(id) {
+  return `https://www.inaturalist.org/taxa/${id}`
+}
+
+// How many of the acoustically-detected species are also verified nearby on iNat.
+// Matches by scientific name (case-insensitive) against the returned taxa — the
+// concrete tie between what the mic heard and the surrounding observed web.
+export function corroboratedCount(heardSpecies, nearby) {
+  if (!nearby?.taxa?.length || !heardSpecies?.length) return 0
+  const verified = new Set(nearby.taxa.map((t) => (t.name || '').toLowerCase()))
+  return heardSpecies.filter((s) => s.scientific_name && verified.has(s.scientific_name.toLowerCase())).length
+}
+
 // Turn the API's `groups` object into a display-sorted summary (most diverse group first).
 export function summarizeGroups(groups) {
   if (!groups) return []

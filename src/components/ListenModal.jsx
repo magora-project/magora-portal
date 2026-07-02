@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { addQueuedListen } from '../lib/listenQueue'
 import { uploadViaFunction } from '../lib/storageUpload'
-import { fetchNearbyLife, summarizeGroups } from '../lib/inat'
+import { fetchNearbyLife, summarizeGroups, inatTaxonUrl, corroboratedCount } from '../lib/inat'
 import {
   AMBER, BUCKET, RECORD_SECONDS, MAX_OPEN_SECONDS, DURATIONS, HABITATS, CANOPY, DISTURBANCE,
   pickAudioMime, reverseGeocode, getPosition, formatClock,
@@ -44,6 +44,7 @@ export default function ListenModal({ onClose }) {
   // "The wider web here" — ambient iNaturalist nearby life (Tier 0), loaded on results
   const [nearby, setNearby] = useState(null)
   const [nearbyBusy, setNearbyBusy] = useState(false)
+  const [expandedGroup, setExpandedGroup] = useState(null) // iconic taxon name, or null
 
   const streamRef = useRef(null)
   const recorderRef = useRef(null)
@@ -285,6 +286,14 @@ export default function ListenModal({ onClose }) {
           water_present: water === null ? null : water === 'Yes',
           disturbance_level: disturbance?.toLowerCase() ?? null,
           observer_notes: notes.trim() || null,
+          // The surrounding multi-taxa web from iNat, so the insight can reason across
+          // the whole ecosystem (plants/insects/fungi), not just the birds we heard.
+          nearby: nearby ? {
+            total_species: nearby.total_species,
+            radius_km: nearby.location?.radius_km,
+            groups: summarizeGroups(nearby.groups).map((g) => ({ label: g.label, count: g.count })),
+            top: nearby.taxa.slice(0, 20).map((t) => ({ common: t.common, name: t.name, iconic: t.iconic })),
+          } : null,
         }),
       })
       if (!res.ok) throw new Error()
@@ -447,18 +456,50 @@ export default function ListenModal({ onClose }) {
                   <div style={{ fontSize: '12px', color: C.textMuted }}>Looking around this place…</div>
                 ) : nearby && nearby.total_species > 0 ? (
                   <>
-                    <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6, marginBottom: '10px' }}>
-                      <strong style={{ color: C.text }}>{nearby.total_species.toLocaleString()}</strong> species verified within {nearby.location.radius_km} km of here — not just birds.
+                    <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6, marginBottom: '8px' }}>
+                      <strong style={{ color: C.text }}>{nearby.total_species.toLocaleString()}</strong> species verified within {nearby.location.radius_km} km of here — the living web around your recording. Tap a group to explore.
                     </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-                      {summarizeGroups(nearby.groups).map((g) => (
-                        <span key={g.iconic} style={S.webChip}>{g.emoji} {g.count} {g.label}</span>
-                      ))}
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {nearby.taxa.slice(0, 6).map((t) => (
-                        <span key={t.id} style={S.webTaxon} title={t.name}>{t.common || t.name}</span>
-                      ))}
+
+                    {/* Tie the surrounding web back to what the mic actually heard */}
+                    {species.length > 0 && (() => {
+                      const n = corroboratedCount(species, nearby)
+                      return n > 0 ? (
+                        <div style={S.webCorroboration}>
+                          ✓ {n} of the {species.length} {species.length === 1 ? 'bird' : 'birds'} you heard {n === 1 ? 'is' : 'are'} verified here on iNaturalist too.
+                        </div>
+                      ) : null
+                    })()}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {summarizeGroups(nearby.groups).map((g) => {
+                        const open = expandedGroup === g.iconic
+                        const list = nearby.groups[g.iconic] || []
+                        return (
+                          <div key={g.iconic}>
+                            <button onClick={() => setExpandedGroup(open ? null : g.iconic)} style={S.webGroupBtn}>
+                              <span>{g.emoji} <strong style={{ color: C.textSub }}>{g.count}</strong> {g.label}</span>
+                              <span style={{ color: C.textMuted }}>{open ? '▾' : '▸'}</span>
+                            </button>
+                            {open && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '6px 0 2px' }}>
+                                {list.slice(0, 12).map((t) => (
+                                  <a key={t.id} href={inatTaxonUrl(t.id)} target="_blank" rel="noreferrer" style={S.webSpeciesRow}>
+                                    {t.photo
+                                      ? <img src={t.photo} alt="" width={28} height={28} style={S.webThumb} />
+                                      : <span style={S.webThumbFallback}>{g.emoji}</span>}
+                                    <span style={{ flex: 1, color: C.textSub, fontSize: '12px', lineHeight: 1.3 }}>{t.common || t.name}</span>
+                                    <span style={{ color: C.textMuted, fontSize: '11px' }}>×{t.count}</span>
+                                    <span style={{ color: AMBER.dark, fontSize: '11px' }}>↗</span>
+                                  </a>
+                                ))}
+                                {list.length > 12 && (
+                                  <div style={{ fontSize: '11px', color: C.textMuted, padding: '2px 2px 0' }}>+{list.length - 12} more {g.label} nearby</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                     <div style={{ fontSize: '10px', color: C.textMuted, marginTop: '10px' }}>{nearby.attribution}</div>
                   </>
@@ -484,7 +525,7 @@ export default function ListenModal({ onClose }) {
               <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.65, borderLeft: `3px solid ${AMBER.base}`, paddingLeft: '12px', margin: '4px 0 16px' }}>
                 {insightText}
               </div>
-            ) : species.length > 0 && (
+            ) : (species.length > 0 || (nearby && nearby.total_species > 0)) && (
               <button onClick={generateInsight} disabled={insightBusy} style={{ ...S.ghostBtn, marginTop: 0, marginBottom: '16px', color: AMBER.light, borderColor: AMBER.dark }}>
                 {insightBusy ? '🔍 Reading the soundscape…' : insightError ? 'Try again' : "What's the ecosystem saying?"}
               </button>
@@ -532,8 +573,11 @@ function Chips({ label, options, value, onPick }) {
 }
 
 const S = {
-  overlay: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', overflowY: 'auto' },
-  sheet: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: '18px', padding: '22px', width: '100%', maxWidth: '400px' },
+  // alignItems:flex-start + margin:auto on the sheet centers it when it fits but keeps
+  // the top reachable when the content is taller than the viewport (a plain
+  // alignItems:center + overflow:auto clips the top and can't be scrolled to).
+  overlay: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px', overflowY: 'auto' },
+  sheet: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: '18px', padding: '22px', width: '100%', maxWidth: '400px', margin: 'auto' },
   close: { background: 'none', border: 'none', color: C.textMuted, fontSize: '16px', cursor: 'pointer', padding: '4px 8px' },
   h2: { fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '1.5rem', fontWeight: 900, color: C.text, textTransform: 'uppercase', letterSpacing: '-0.01em', margin: '0 0 8px' },
   sub: { fontSize: '13px', color: C.textMuted, lineHeight: 1.6, margin: '0 0 16px' },
@@ -546,8 +590,11 @@ const S = {
   details: { background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' },
   web: { background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' },
   webHead: { fontSize: '11px', fontWeight: 700, color: AMBER.light, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' },
-  webChip: { fontSize: '12px', fontWeight: 600, color: C.textSub, background: C.bg, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '4px 10px' },
-  webTaxon: { fontSize: '11px', color: C.textMuted, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '12px', padding: '3px 9px' },
+  webCorroboration: { fontSize: '12px', color: AMBER.light, background: C.bg, border: `1px solid ${AMBER.dark}`, borderRadius: '8px', padding: '7px 10px', marginBottom: '10px', lineHeight: 1.45 },
+  webGroupBtn: { width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '8px 10px', fontSize: '13px', fontWeight: 600, color: C.textSub, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" },
+  webSpeciesRow: { display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', padding: '4px 6px', borderRadius: '8px', background: C.card },
+  webThumb: { borderRadius: '6px', objectFit: 'cover', flexShrink: 0, background: C.border },
+  webThumbFallback: { width: '28px', height: '28px', display: 'grid', placeItems: 'center', fontSize: '14px', background: C.card, border: `1px solid ${C.border}`, borderRadius: '6px', flexShrink: 0 },
   summary: { cursor: 'pointer', color: C.textSub, fontSize: '13px', fontWeight: 700 },
   metaLabel: { display: 'block', fontSize: '11px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' },
   textarea: { width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', color: C.text, padding: '8px 10px', fontFamily: "'DM Sans', sans-serif", fontSize: '13px', resize: 'vertical' },
