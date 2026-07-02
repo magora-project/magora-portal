@@ -20,7 +20,7 @@
     - **Interactive wider-web:** groups are now tap-to-expand accordions showing species with photo thumbnails, observation counts, and tap-through to each taxon's **iNaturalist** page (works for all taxa, not just birds).
     - **Relates to the bioacoustics:** a corroboration line — "✓ N of the M birds you heard are verified here on iNaturalist too" (matches heard species' scientific names against the nearby set).
     - **Feeds the insight:** the nearby multi-taxa web is passed into `/api/insight` (mobile branch) so "What's the ecosystem saying?" reasons across the whole web; and the insight is now available **even when no birds were heard** (tells the place's story from the iNat web). Both paths exercised locally (no-birds + birds). Lint clean, build passes.
-  - [ ] **Real-device check** — confirm the enriched section + no-birds insight render on an actual capture in prod.
+  - [x] **Real-device check** — confirmed on-device in prod (July 2026): enriched wider-web section, tap-to-expand groups w/ thumbnails + iNat tap-through, clarified copy, and the sheet-scroll fix all working. (PWA service-worker cache had to be force-refreshed to pick up later deploys.)
   - [ ] Next surface: node/place profile ("The wider web here" on NodePage), reusing `lib/inat.js`.
   - [ ] Optional fast-follow: grid-cell/season DB cache (edge cache covers dogfood scale for now).
 
