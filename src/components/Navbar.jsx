@@ -5,10 +5,10 @@ import { getListenerAvatarUrl } from '../lib/listener'
 import ProfileEditorModal from './ProfileEditorModal'
 
 const TABS = [
-  { path: '/',          src: '/icons/live_feed.svg',  label: 'Network'             },
-  { path: '/dashboard', src: '/icons/dashboard.svg',  label: 'Ecological Patterns' },
-  { path: '/register',  src: '/icons/add_node.svg',   label: 'Add a Node'          },
-  { path: '/about',     src: '/icons/about.svg',      label: 'About the Project', zoom: 1.5 },
+  { path: '/',            src: '/icons/live_feed.webp', label: 'Network'    },
+  { path: '/journal/me',  src: '/icons/journal.webp',   label: 'Journal', gated: true },
+  { path: '/register',    src: '/icons/add_node.webp',  label: 'Add a Node' },
+  { path: '/about',       src: '/icons/about.webp',     label: 'About'      },
 ]
 
 // Collapses the signed-in account controls into a single avatar button that
@@ -111,21 +111,23 @@ export default function Navbar() {
       </div>
 
       <div className="navbar-links">
-        {TABS.map(({ path, src, label, zoom }) => (
+        {TABS.map(({ path, src, label, gated }) => (
           <Link
             key={path}
             to={path}
             className={location.pathname === path ? 'active' : ''}
             style={{ padding: 0 }}
+            // Journal is gated: signed-out users get the sign-in modal instead of
+            // navigating (same openSignIn pattern as the header "Sign in" button).
+            onClick={gated && !user ? (e) => { e.preventDefault(); openSignIn() } : undefined}
           >
             <img
               src={src}
               alt={label}
               style={{
                 width: '100%', height: '100%', display: 'block',
-                objectFit: 'contain',
+                objectFit: 'cover',
                 objectPosition: 'center',
-                ...(zoom ? { transform: `scale(${zoom})` } : {}),
               }}
             />
           </Link>
@@ -135,7 +137,7 @@ export default function Navbar() {
           className={`donate-tab${location.pathname === '/donate' ? ' active' : ''}`}
           style={{ padding: 0 }}
         >
-          <img src="/icons/donate.svg" alt="Donate" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} />
+          <img src="/icons/donate.webp" alt="Donate" style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} />
         </Link>
       </div>
     </nav>

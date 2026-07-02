@@ -128,32 +128,39 @@ select option { background: #163d22; color: #f0ede8; }
 
 .donate-tab {
   display: block;
-  background: #1D9E75;
+  /* Poster art covers the fill; the green border keeps Donate visually distinct
+     as the CTA among the darker-framed tabs. */
+  background: #0d2818;
   border: 1px solid #1D9E75;
   border-radius: 8px;
   text-decoration: none;
   cursor: pointer;
   overflow: hidden;
-  height: 60px;
+  aspect-ratio: 3 / 4;
 }
 
 .navbar-links a {
   display: block;
-  background: #163d22;
+  /* Dark fill matches the navbar so any sliver at the poster's rounded corners
+     blends in rather than showing green. */
+  background: #0d2818;
   border: 1px solid #1f5230;
   border-radius: 8px;
   text-decoration: none;
-  transition: background 0.15s, border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
   cursor: pointer;
   overflow: hidden;
   color: #c8e6d0;
-  height: 60px;
+  /* Portrait tiles matching the poster art (~3:4) so each renders full-bleed
+     instead of shrinking into the old 60px landscape slot. */
+  aspect-ratio: 3 / 4;
 }
 
+/* The active fill is hidden behind the full-bleed poster, so selection reads as
+   an accent ring instead of a background swap. */
 .navbar-links a.active {
-  background: #1D9E75;
-  border-color: #1D9E75;
-  border-radius: 8px;
+  border-color: #5DCAA5;
+  box-shadow: 0 0 0 2px #1D9E75;
 }
 
 .tab-icon {
