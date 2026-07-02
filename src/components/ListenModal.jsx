@@ -457,7 +457,11 @@ export default function ListenModal({ onClose }) {
                 ) : nearby && nearby.total_species > 0 ? (
                   <>
                     <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6, marginBottom: '8px' }}>
-                      <strong style={{ color: C.text }}>{nearby.total_species.toLocaleString()}</strong> species verified within {nearby.location.radius_km} km of here — the living web around your recording. Tap a group to explore.
+                      {species.length > 0
+                        ? 'Beyond the birds we just heard, here is the wider web of life around you: '
+                        : 'Here is the web of life around you: '}
+                      <strong style={{ color: C.text }}>{nearby.total_species.toLocaleString()}</strong> wild species that people have photographed and verified within {nearby.location.radius_km} km, through the community-science project{' '}
+                      <a href="https://www.inaturalist.org/" target="_blank" rel="noreferrer" style={{ color: AMBER.light }}>iNaturalist</a>. Tap a group to see what else lives here.
                     </div>
 
                     {/* Tie the surrounding web back to what the mic actually heard */}
@@ -573,11 +577,11 @@ function Chips({ label, options, value, onPick }) {
 }
 
 const S = {
-  // alignItems:flex-start + margin:auto on the sheet centers it when it fits but keeps
-  // the top reachable when the content is taller than the viewport (a plain
-  // alignItems:center + overflow:auto clips the top and can't be scrolled to).
-  overlay: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px', overflowY: 'auto' },
-  sheet: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: '18px', padding: '22px', width: '100%', maxWidth: '400px', margin: 'auto' },
+  overlay: { position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' },
+  // The sheet itself scrolls, capped to the viewport (dvh accounts for mobile browser
+  // chrome), so its top is always reachable. Scrolling the overlay while centering it
+  // clips the top on tall content and can't be scrolled back up.
+  sheet: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: '18px', padding: '22px', width: '100%', maxWidth: '400px', maxHeight: 'calc(100dvh - 40px)', overflowY: 'auto' },
   close: { background: 'none', border: 'none', color: C.textMuted, fontSize: '16px', cursor: 'pointer', padding: '4px 8px' },
   h2: { fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '1.5rem', fontWeight: 900, color: C.text, textTransform: 'uppercase', letterSpacing: '-0.01em', margin: '0 0 8px' },
   sub: { fontSize: '13px', color: C.textMuted, lineHeight: 1.6, margin: '0 0 16px' },
