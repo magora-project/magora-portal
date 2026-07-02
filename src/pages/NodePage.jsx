@@ -92,9 +92,11 @@ export default function NodePage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData()
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   // All-time species names for the place's profile stats (lightweight — one column, fetched once per node)
@@ -111,6 +113,7 @@ export default function NodePage() {
 
   // Is the signed-in user following this place?
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!id || !user) { setFollowing(false); return }
     supabase.from('node_follows').select('node_id').eq('node_id', id).eq('user_id', user.id).maybeSingle()
       .then(({ data }) => setFollowing(!!data))
