@@ -21,7 +21,7 @@
     - **Relates to the bioacoustics:** a corroboration line — "✓ N of the M birds you heard are verified here on iNaturalist too" (matches heard species' scientific names against the nearby set).
     - **Feeds the insight:** the nearby multi-taxa web is passed into `/api/insight` (mobile branch) so "What's the ecosystem saying?" reasons across the whole web; and the insight is now available **even when no birds were heard** (tells the place's story from the iNat web). Both paths exercised locally (no-birds + birds). Lint clean, build passes.
   - [x] **Real-device check** — confirmed on-device in prod (July 2026): enriched wider-web section, tap-to-expand groups w/ thumbnails + iNat tap-through, clarified copy, and the sheet-scroll fix all working. (PWA service-worker cache had to be force-refreshed to pick up later deploys.)
-  - [ ] Next surface: node/place profile ("The wider web here" on NodePage), reusing `lib/inat.js`.
+  - [x] **Second surface — node/place profile.** Added "The wider web here" card to NodePage (green palette to match the page), between "Most recorded here" and place details. Reuses `lib/inat.js` (fetch on node load, keyed on node id so the 30s refresh doesn't refetch), same tap-to-expand groups + thumbnails + iNat tap-through, plus a corroboration line relating the surrounding web to what the *node* records (`commonNamesVerified`, matched by common name). Verified end-to-end against birdnode11 (94 species / 5 km; 2 recorded species verified nearby). Lint: no new errors (2 pre-existing set-state-in-effect errors left as-is); build passes.
   - [ ] Optional fast-follow: grid-cell/season DB cache (edge cache covers dogfood scale for now).
 
 ---

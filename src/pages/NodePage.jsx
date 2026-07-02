@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { parseNodeLocation } from '../lib/geo'
+import { fetchNearbyLife, summarizeGroups, inatTaxonUrl, commonNamesVerified } from '../lib/inat'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 
 const C = {
@@ -63,6 +64,9 @@ export default function NodePage() {
   const [followerCount, setFollowerCount] = useState(0)
   const [followBusy, setFollowBusy] = useState(false)
   const [shareState, setShareState] = useState(null) // null | 'copied' | 'error'
+  const [nearby, setNearby] = useState(null) // ambient iNaturalist "wider web here"
+  const [nearbyBusy, setNearbyBusy] = useState(false)
+  const [expandedGroup, setExpandedGroup] = useState(null)
   const fetchedWiki = useRef(new Set())
   const { user, openSignIn } = useAuth()
 
@@ -111,6 +115,19 @@ export default function NodePage() {
     supabase.from('node_follows').select('node_id').eq('node_id', id).eq('user_id', user.id).maybeSingle()
       .then(({ data }) => setFollowing(!!data))
   }, [id, user])
+
+  // Ambient "wider web here" — research-grade iNaturalist life around the node (Tier 0).
+  // Keyed on node id (not the object) so the 30s refresh doesn't refetch iNat each tick.
+  useEffect(() => {
+    const c = node?.location ? parseNodeLocation(node.location) : null
+    if (!c) return
+    let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNearbyBusy(true)
+    fetchNearbyLife(c.lat, c.lon).then((d) => { if (!cancelled) { setNearby(d); setNearbyBusy(false) } })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node?.id])
 
   async function toggleFollow() {
     if (!user) { openSignIn(); return }
@@ -238,6 +255,13 @@ export default function NodePage() {
 
   const card = { background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '16px 18px' }
   const cardLabel = { fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }
+  const webGroupBtn = { width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '8px 10px', fontSize: '13px', fontWeight: 600, color: C.textSub, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }
+  const webSpeciesRow = { display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', padding: '4px 6px', borderRadius: '8px', background: C.card }
+  const webThumb = { borderRadius: '6px', objectFit: 'cover', flexShrink: 0, background: C.border }
+  const webThumbFallback = { width: '28px', height: '28px', display: 'grid', placeItems: 'center', fontSize: '14px', background: C.card, border: `1px solid ${C.border}`, borderRadius: '6px', flexShrink: 0 }
+
+  // How many of this node's recorded species are also verified nearby on iNaturalist.
+  const webVerified = commonNamesVerified(Object.keys(speciesStats), nearby)
 
   return (
     <div>
@@ -362,6 +386,64 @@ export default function NodePage() {
               <span style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, flexShrink: 0 }}>×{n}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* The wider web here — ambient iNaturalist context (Tier 0 / "the surrounding wild") */}
+      {(nearbyBusy || nearby) && (
+        <div style={{ ...card, marginBottom: '14px' }}>
+          <div style={cardLabel}>The wider web here</div>
+          {nearbyBusy && !nearby ? (
+            <div style={{ fontSize: '13px', color: C.textMuted }}>Looking around this place…</div>
+          ) : nearby && nearby.total_species > 0 ? (
+            <>
+              <p style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6, margin: '0 0 10px' }}>
+                Beyond what this node hears, here is the wider web of life around it: <strong style={{ color: C.text }}>{nearby.total_species.toLocaleString()}</strong> wild species that people have photographed and verified within {nearby.location.radius_km} km, through the community-science project{' '}
+                <a href="https://www.inaturalist.org/" target="_blank" rel="noreferrer" style={{ color: C.accentLight }}>iNaturalist</a>. Tap a group to see what else lives here.
+              </p>
+
+              {webVerified > 0 && (
+                <div style={{ fontSize: '12px', color: C.accentLight, background: C.bg, border: `1px solid ${C.accent}`, borderRadius: '8px', padding: '7px 10px', marginBottom: '10px', lineHeight: 1.45 }}>
+                  ✓ {webVerified} of the species this node records {webVerified === 1 ? 'is' : 'are'} verified here on iNaturalist too.
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {summarizeGroups(nearby.groups).map((g) => {
+                  const open = expandedGroup === g.iconic
+                  const list = nearby.groups[g.iconic] || []
+                  return (
+                    <div key={g.iconic}>
+                      <button onClick={() => setExpandedGroup(open ? null : g.iconic)} style={webGroupBtn}>
+                        <span>{g.emoji} <strong style={{ color: C.textSub }}>{g.count}</strong> {g.label}</span>
+                        <span style={{ color: C.textMuted }}>{open ? '▾' : '▸'}</span>
+                      </button>
+                      {open && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '6px 0 2px' }}>
+                          {list.slice(0, 12).map((t) => (
+                            <a key={t.id} href={inatTaxonUrl(t.id)} target="_blank" rel="noreferrer" style={webSpeciesRow}>
+                              {t.photo
+                                ? <img src={t.photo} alt="" width={28} height={28} style={webThumb} />
+                                : <span style={webThumbFallback}>{g.emoji}</span>}
+                              <span style={{ flex: 1, color: C.textSub, fontSize: '12px', lineHeight: 1.3 }}>{t.common || t.name}</span>
+                              <span style={{ color: C.textMuted, fontSize: '11px' }}>×{t.count}</span>
+                              <span style={{ color: C.accent, fontSize: '11px' }}>↗</span>
+                            </a>
+                          ))}
+                          {list.length > 12 && (
+                            <div style={{ fontSize: '11px', color: C.textMuted, padding: '2px 2px 0' }}>+{list.length - 12} more {g.label} nearby</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{ fontSize: '10px', color: C.textMuted, marginTop: '10px' }}>{nearby.attribution}</div>
+            </>
+          ) : (
+            <div style={{ fontSize: '12px', color: C.textMuted }}>No research-grade observations logged near here yet on iNaturalist.</div>
+          )}
         </div>
       )}
 

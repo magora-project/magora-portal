@@ -39,6 +39,17 @@ export function corroboratedCount(heardSpecies, nearby) {
   return heardSpecies.filter((s) => s.scientific_name && verified.has(s.scientific_name.toLowerCase())).length
 }
 
+// Same idea, but matching by common name — for callers (e.g. a node's recorded species)
+// that hold common names rather than scientific names.
+export function commonNamesVerified(commonNames, nearby) {
+  if (!nearby?.taxa?.length || !commonNames?.length) return 0
+  const verified = new Set(nearby.taxa.map((t) => (t.common || '').toLowerCase()).filter(Boolean))
+  const uniq = new Set(commonNames.map((n) => (n || '').toLowerCase()).filter(Boolean))
+  let c = 0
+  for (const n of uniq) if (verified.has(n)) c++
+  return c
+}
+
 // Turn the API's `groups` object into a display-sorted summary (most diverse group first).
 export function summarizeGroups(groups) {
   if (!groups) return []
