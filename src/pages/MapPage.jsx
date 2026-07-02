@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
@@ -34,30 +34,8 @@ const C = {
   text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
 }
 
-function WaveformSVG() {
-  return (
-    <svg
-      viewBox="0 0 1200 200"
-      preserveAspectRatio="xMidYMid slice"
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
-      aria-hidden="true"
-    >
-      <path d="M0,40 C100,20 200,60 300,40 C400,20 500,60 600,40 C700,20 800,60 900,40 C1000,20 1100,60 1200,40"
-        stroke="#1a1a1a" strokeWidth="1.5" fill="none" opacity="0.05"/>
-      <path d="M0,80 C100,52 200,108 300,80 C400,52 500,108 600,80 C700,52 800,108 900,80 C1000,52 1100,108 1200,80"
-        stroke="#1a1a1a" strokeWidth="1.5" fill="none" opacity="0.07"/>
-      <path d="M0,120 C100,90 200,150 300,120 C400,90 500,150 600,120 C700,90 800,150 900,120 C1000,90 1100,150 1200,120"
-        stroke="#1a1a1a" strokeWidth="1.5" fill="none" opacity="0.05"/>
-      <path d="M0,160 C100,135 200,185 300,160 C400,135 500,185 600,160 C700,135 800,185 900,160 C1000,135 1100,185 1200,160"
-        stroke="#1a1a1a" strokeWidth="1.5" fill="none" opacity="0.04"/>
-    </svg>
-  )
-}
-
-
 export default function MapPage() {
   const navigate = useNavigate()
-  const mapSectionRef = useRef(null)
   const [aciLogs, setAciLogs] = useState([])
   const [detections, setDetections] = useState([])
   const [mobileDetections, setMobileDetections] = useState([])
@@ -281,79 +259,13 @@ export default function MapPage() {
   return (
     <div>
 
-      {/* Section 1 — Hero */}
-      <section
-        className="section-full-bleed"
-        style={{ background: '#f0ebe0', padding: '48px 20px 56px', position: 'relative', overflow: 'hidden' }}
-      >
-        <WaveformSVG />
-        <div style={{ position: 'relative', zIndex: 1, maxWidth: '680px' }}>
-          <h1 style={{
-            fontFamily: "'Big Shoulders Display', sans-serif",
-            fontWeight: 900,
-            fontSize: 'clamp(1.8rem, 4vw, 3.2rem)',
-            color: '#1a1a1a',
-            lineHeight: 1.05,
-            letterSpacing: '-0.02em',
-            textTransform: 'uppercase',
-            marginBottom: '14px',
-          }}>
-            The ecosystem is telling a story.
-          </h1>
-          <p style={{
-            fontSize: '0.95rem',
-            color: '#3a3530',
-            lineHeight: 1.65,
-            marginBottom: '24px',
-            maxWidth: '540px',
-          }}>
-            Magora is an open-source ecological intelligence network. Low-cost listening posts turn the soundscape of a place into a living record of its ecosystem: the birds, the insects, the seasons, and the health of the land.
-          </p>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => mapSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
-              style={{
-                padding: '11px 22px',
-                background: '#1a1a1a',
-                color: '#f0ebe0',
-                border: 'none',
-                borderRadius: '3px',
-                fontFamily: "'Big Shoulders Display', sans-serif",
-                fontSize: '1rem',
-                fontWeight: 700,
-                letterSpacing: '0.07em',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              Explore the network
-            </button>
-            <Link
-              to="/register"
-              style={{
-                padding: '9px 22px',
-                background: 'transparent',
-                color: '#1a1a1a',
-                border: '2px solid #1a1a1a',
-                borderRadius: '3px',
-                textDecoration: 'none',
-                fontFamily: "'Big Shoulders Display', sans-serif",
-                fontSize: '1rem',
-                fontWeight: 700,
-                letterSpacing: '0.07em',
-                textTransform: 'uppercase',
-                display: 'inline-flex',
-                alignItems: 'center',
-              }}
-            >
-              Add a node
-            </Link>
-            <ListenButton variant="hero" />
-          </div>
-        </div>
-      </section>
+      {/* Listen CTA — sits right under the top nav so the live feed is visible at
+          a glance while still inviting people to participate. */}
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '22px 0 12px' }}>
+        <ListenButton variant="badge" />
+      </div>
 
-      {/* Section 2 — Heartbeat Strip */}
+      {/* Heartbeat Strip */}
       <section
         className="section-full-bleed"
         style={{
@@ -400,8 +312,8 @@ export default function MapPage() {
         </div>
       </section>
 
-      {/* Section 3 — The Ecological Record, Live */}
-      <div ref={mapSectionRef}>
+      {/* The Ecological Record, Live */}
+      <div>
 
         {/* Map */}
         <div style={{ marginBottom: '16px', marginLeft: '-20px', marginRight: '-20px', marginTop: '32px' }}>

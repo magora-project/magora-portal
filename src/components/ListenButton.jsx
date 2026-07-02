@@ -37,15 +37,21 @@ export default function ListenButton({ variant = 'pill', label }) {
     }
   }, [user])
 
-  const style = variant === 'hero' ? heroStyle : pillStyle
+  const style = variant === 'badge' ? badgeStyle : variant === 'hero' ? heroStyle : pillStyle
 
   return (
     <>
       <button onClick={handleClick} style={style} title="Listen" aria-label="Listen">
-        {label == null && (
-          <span aria-hidden="true" style={{ fontSize: variant === 'hero' ? '1.1em' : '1em' }}>〰</span>
+        {variant === 'badge' ? (
+          <img src="/icons/listen.webp" alt="Listen" style={badgeImgStyle} />
+        ) : (
+          <>
+            {label == null && (
+              <span aria-hidden="true" style={{ fontSize: variant === 'pill' ? '1em' : '1.1em' }}>〰</span>
+            )}
+            {label ?? 'Listen'}
+          </>
         )}
-        {label ?? 'Listen'}
       </button>
       {open && <ListenModal onClose={() => setOpen(false)} />}
     </>
@@ -67,6 +73,25 @@ const heroStyle = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: '8px',
+}
+
+// Circular poster-badge treatment for a standalone primary CTA (top of the feed).
+// The button is just a transparent wrapper; the artwork carries the label.
+const badgeStyle = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+  lineHeight: 0,
+  borderRadius: '50%',
+}
+
+const badgeImgStyle = {
+  display: 'block',
+  width: 'clamp(150px, 44vw, 190px)',
+  height: 'auto',
+  borderRadius: '50%',
+  boxShadow: '0 6px 22px rgba(0, 0, 0, 0.38)',
 }
 
 const pillStyle = {
