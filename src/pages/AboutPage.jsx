@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import ListenButton from '../components/ListenButton'
 
 const C = {
   bg:        '#0d2818',
@@ -11,20 +13,6 @@ const C = {
   textMuted: '#7aad8a',
 }
 
-const Section = ({ title, children }) => (
-  <div style={{ marginBottom: '34px' }}>
-    <div style={{
-      fontFamily: "'Big Shoulders Display', sans-serif",
-      fontSize: '22px', fontWeight: '900',
-      color: C.red, textTransform: 'uppercase',
-      letterSpacing: '0.04em', marginBottom: '12px', lineHeight: 1.1,
-    }}>
-      {title}
-    </div>
-    {children}
-  </div>
-)
-
 const P = ({ children, style }) => (
   <p style={{
     fontSize: '16px', color: C.textSub,
@@ -35,26 +23,38 @@ const P = ({ children, style }) => (
   </p>
 )
 
-const Pull = ({ children }) => (
-  <div style={{ borderLeft: `4px solid ${C.red}`, paddingLeft: '18px', margin: '24px 0' }}>
-    <span style={{
+const Card = ({ title, children, cta }) => (
+  <div style={{
+    display: 'flex', flexDirection: 'column', flex: '1 1 260px',
+    background: C.card, border: `1px solid ${C.border}`,
+    borderRadius: '12px', padding: '22px',
+  }}>
+    <div style={{
       fontFamily: "'Big Shoulders Display', sans-serif",
-      fontSize: '24px', fontWeight: '900',
-      color: C.text, textTransform: 'uppercase', letterSpacing: '0.03em', lineHeight: 1.15,
+      fontSize: '22px', fontWeight: '900',
+      color: C.red, textTransform: 'uppercase',
+      letterSpacing: '0.04em', marginBottom: '10px', lineHeight: 1.1,
     }}>
-      {children}
-    </span>
+      {title}
+    </div>
+    <P style={{ marginBottom: '20px' }}>{children}</P>
+    <div style={{ marginTop: 'auto' }}>{cta}</div>
   </div>
 )
 
-const Pillar = ({ label, children }) => (
-  <div style={{ marginBottom: '14px' }}>
-    <span style={{ fontWeight: '700', color: C.text }}>{label}.</span>{' '}
-    <span style={{ color: C.textSub }}>{children}</span>
-  </div>
-)
+const nodeCtaStyle = {
+  display: 'inline-flex', alignItems: 'center', gap: '8px',
+  padding: '11px 22px', background: C.accent, color: '#fff',
+  borderRadius: '3px', textDecoration: 'none',
+  fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '1rem',
+  fontWeight: '700', letterSpacing: '0.07em', textTransform: 'uppercase',
+}
 
 export default function AboutPage() {
+  useEffect(() => {
+    document.title = 'About — Magora'
+  }, [])
+
   return (
     <div style={{ maxWidth: '640px', margin: '0 auto', paddingBottom: '56px' }}>
 
@@ -64,146 +64,65 @@ export default function AboutPage() {
           fontFamily: "'Big Shoulders Display', sans-serif",
           fontSize: 'clamp(2.4rem, 9vw, 3.4rem)', fontWeight: '900',
           color: C.text, textTransform: 'uppercase',
-          letterSpacing: '-0.01em', lineHeight: 1.02, marginBottom: '20px',
+          letterSpacing: '-0.01em', lineHeight: 1.02, marginBottom: '0',
         }}>
-          Every place<br />is speaking.
+          A window into the living world around you.
         </h1>
-        <P style={{ fontSize: '17px', color: C.text }}>
-          Magora is an open-source ecological intelligence network. Low-cost listening posts
-          record the soundscape of a place, its birds, its insects, the wind, the weather,
-          the quiet, and turn it into a living record of how that ecosystem is doing, and how
-          it changes over time.
-        </P>
-        <Pull>It starts with birdsong. But it was never only about the birds.</Pull>
       </div>
 
       <div style={{ height: '1px', background: C.border, marginBottom: '34px' }} />
 
-      <Section title="What we're really listening to">
-        <P style={{ fontStyle: 'italic', color: C.text }}>A bird is not just a bird. It's a signal.</P>
-        <P>
-          Birds sit near the top of the food web, and they respond fast to change in the
-          insects they eat, the plants they shelter in, the water that moves through a
-          landscape, and the timing of the seasons. When the community of birds at a place shifts,
-          it's rarely about the birds themselves. It's the whole ecosystem underneath them,
-          moving.
-        </P>
-        <P>
-          So a list of species recorded at a listening post is really a readout of something
-          larger: habitat quality, food availability, seasonal timing, the health of a place.
-          Birds are the first thing the land tells us. They are an entry point, not the
-          destination.
-        </P>
-      </Section>
+      {/* Body */}
+      <P>
+        Most of us move through ecosystems we can't read. The birds calling at dawn, the insects
+        hovering over a flower, the fungi threading through the soil beneath your feet — these
+        aren't background noise. They're a conversation, and every participant is connected to
+        every other. Magora is built to help you hear it.
+      </P>
+      <P>
+        We listen. Acoustic sensors and your phone's microphone capture the soundscape of a
+        place — bird species identified by AI, soundscape health measured continuously,
+        detections placed in ecological context. But sound is only one angle. Through iNaturalist
+        integration, the plants, insects, pollinators, and fungi you observe in the field join
+        the same picture. Your journal entries, your observations, your attention — these are
+        data too.
+      </P>
+      <P>
+        What emerges from all of those angles, over time, is something no single sensor could
+        produce: a relational portrait of an ecosystem. Who's eating what. What's blooming when
+        the warblers arrive. Whether the pollinators and the flowers they depend on are still in
+        sync. These ecological relationships — threaded across species, across seasons, across
+        years — are the signals that tell us how a place is doing, and how a changing climate is
+        reshaping the web of life we depend on. Aggregated across Magora's network, they become
+        something ecologists and climate scientists can actually use: distributed, ground-level
+        phenological data, generated by people paying close attention to the places they know.
+      </P>
 
-      <Section title="Soundscape health">
-        <P>
-          Species tell us <em>who</em> is here. Soundscape health tells us how alive the whole
-          place <em>sounds</em>.
-        </P>
-        <P>
-          Every listening post continuously measures the complexity and richness of its entire
-          soundscape, not just the species it can name, but the full acoustic texture of a
-          place. We call this soundscape health. A rich, layered soundscape, with overlapping
-          songs, insects, movement, and depth, signals a healthy, active ecosystem. A thinning
-          one can signal stress long before any single species disappears.
-        </P>
-        <P>
-          Together, species detections and soundscape health give a fuller picture than either
-          could alone: who lives here, how the place is doing, and what is beginning to change.
-        </P>
-      </Section>
-
-      <Section title="The bigger record">
-        <P style={{ fontStyle: 'italic', color: C.text }}>
-          Birdsong is the first sensing layer. It is not the last.
-        </P>
-        <P>
-          Magora is built to grow. The same listening posts are designed to take on more senses
-          over time, like temperature, humidity, light, and other environmental signals, so that
-          a node becomes a fuller witness to its place. The longer a post listens, the more it can
-          reveal: the shifting timing of the dawn chorus across a season, species arriving
-          earlier or ranging into new territory, the slow signatures of a changing climate
-          written into the soundscape.
-        </P>
-        <P>
-          This is what turns scattered recordings into ecological memory, a continuous,
-          place-based account of a living system, kept over years.
-        </P>
-      </Section>
-
-      <Section title="Why this matters, and why you">
-        <P>
-          Most people experience nature as something they visit. Magora is built on a different
-          idea: that you are not a visitor to your ecosystem. You are part of it.
-        </P>
-        <P>
-          When you follow a listening post, whether your backyard, your schoolyard, a wash near
-          where you camp, or a restoration site you care about, something quietly changes. You start to
-          notice the rhythm of a place. You hear it wake up at dawn. You watch the species turn
-          over with the seasons. You begin to feel the threads that connect you to the living
-          system around you, the one you were always part of but rarely stopped to hear.
-        </P>
-        <P>
-          That's the real work here. Not collecting data. Helping people build a relationship
-          with the living world, and discover how deeply they belong to it.
-        </P>
-      </Section>
-
-      <Section title="Built in the open, built for everyone">
-        <P>Magora stands on four commitments:</P>
-        <div style={{
-          background: C.card, border: `1px solid ${C.border}`,
-          borderRadius: '12px', padding: '18px 20px', marginTop: '4px',
+      <div style={{ borderLeft: `4px solid ${C.red}`, paddingLeft: '18px', margin: '28px 0 8px' }}>
+        <span style={{
+          fontFamily: "'Big Shoulders Display', sans-serif",
+          fontSize: '24px', fontWeight: '900',
+          color: C.text, textTransform: 'uppercase', letterSpacing: '0.03em', lineHeight: 1.15,
         }}>
-          <Pillar label="Accessible">
-            Listening posts are built from low-cost, off-the-shelf parts. Anyone should be able
-            to deploy one, with no specialist hardware and no gatekeeping.
-          </Pillar>
-          <Pillar label="Open source">
-            All of it, the code, the hardware designs, and the data, is free and open. The
-            ecological record of Earth shouldn't be anyone's private property.
-          </Pillar>
-          <Pillar label="Research-grade">
-            The data is rigorous enough to matter to scientists, and contributes to the broader
-            record of biodiversity. Citizen science here is real science.
-          </Pillar>
-          <Pillar label="Community-owned">
-            The network grows through the people who tend it. Schools, families, researchers,
-            land trusts, restoration projects. Each listening post is a place with a steward,
-            and the network is the sum of those relationships.
-          </Pillar>
-        </div>
-      </Section>
+          You don't need to be a scientist to contribute. You need to be somewhere, and willing to look.
+        </span>
+      </div>
 
-      <Section title="The invitation">
-        <P>
-          Every place is speaking. Every listening post helps us hear it. Every steward helps
-          build the ecological record of Earth, and, along the way, a deeper bond with the
-          living world they're part of.
-        </P>
-        <P style={{ color: C.text }}>
-          You can listen. You can add a place. You can help the network grow.
-        </P>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '20px' }}>
-          <Link to="/" style={{
-            padding: '12px 22px', background: C.accent, color: '#fff',
-            borderRadius: '8px', textDecoration: 'none',
-            fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '1rem',
-            fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase',
-          }}>
-            Explore the network
-          </Link>
-          <Link to="/register" style={{
-            padding: '10px 22px', background: 'transparent', color: C.text,
-            border: `2px solid ${C.border}`, borderRadius: '8px', textDecoration: 'none',
-            fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '1rem',
-            fontWeight: '700', letterSpacing: '0.06em', textTransform: 'uppercase',
-          }}>
-            Add a listening post
-          </Link>
-        </div>
-      </Section>
+      {/* CTA cards */}
+      <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', marginTop: '32px' }}>
+        <Card
+          title="Listen"
+          cta={<ListenButton variant="hero" label="Start listening →" />}
+        >
+          Record ambient sound from wherever you are. The ecosystem will tell you who's there.
+        </Card>
+        <Card
+          title="Deploy a Node"
+          cta={<Link to="/register" style={nodeCtaStyle}>Build a node →</Link>}
+        >
+          A 24-hour listening post that builds the long-term acoustic record of a place.
+        </Card>
+      </div>
 
     </div>
   )

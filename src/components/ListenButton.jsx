@@ -9,7 +9,9 @@ const PENDING_KEY = 'magora:pendingListen'
 
 // Amber "Listen" CTA. Opens the recording modal; prompts sign-in first if needed
 // (a Listen needs a user_id). `variant`: 'hero' (homepage) | 'pill' (compact).
-export default function ListenButton({ variant = 'pill' }) {
+// `label` overrides the button text (e.g. the About page's "Start listening →");
+// when set, the leading 〰 glyph is dropped so custom copy reads cleanly.
+export default function ListenButton({ variant = 'pill', label }) {
   const { user, openSignIn } = useAuth()
   const [open, setOpen] = useState(false)
 
@@ -40,8 +42,10 @@ export default function ListenButton({ variant = 'pill' }) {
   return (
     <>
       <button onClick={handleClick} style={style} title="Listen" aria-label="Listen">
-        <span aria-hidden="true" style={{ fontSize: variant === 'hero' ? '1.1em' : '1em' }}>〰</span>
-        Listen
+        {label == null && (
+          <span aria-hidden="true" style={{ fontSize: variant === 'hero' ? '1.1em' : '1em' }}>〰</span>
+        )}
+        {label ?? 'Listen'}
       </button>
       {open && <ListenModal onClose={() => setOpen(false)} />}
     </>
