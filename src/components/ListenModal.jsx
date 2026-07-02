@@ -192,7 +192,7 @@ export default function ListenModal({ onClose }) {
           audio_blob: blob,
           audio_ext: ext,
           audio_type: blob.type,
-          device_info: { ua: navigator.userAgent },
+          device_info: { ua: navigator.userAgent, tz_offset: new Date().getTimezoneOffset(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
           detected_at: new Date().toISOString(),
         })
         setQueuedOffline(true)
@@ -281,6 +281,7 @@ export default function ListenModal({ onClose }) {
           lat: coords?.lat,
           lon: coords?.lon,
           detected_at: new Date().toISOString(),
+          tz_offset: new Date().getTimezoneOffset(), // device wall-clock offset (min)
           habitat_type: habitat?.toLowerCase() ?? null,
           canopy_cover: canopy?.toLowerCase() ?? null,
           water_present: water === null ? null : water === 'Yes',

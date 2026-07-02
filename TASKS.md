@@ -28,7 +28,7 @@
 
 ## 🟡 Next — Confirmed, In Order
 
-_Empty — promote from Backlog when ready._
+- [ ] **Durable timezone fix — expose recorder offset in the public view.** The insight's time-of-day now uses the device UTC offset (civil/wall-clock time) instead of the longitude/solar estimate that was mislabeling post-sunrise mornings as "pre-dawn." Fresh captures now stamp `tz_offset`/`tz` into `mobile_detections.device_info`, but that column is hidden by `public_mobile_detections`, so regenerating an *older* Listen's insight from the feed falls back to the *viewer's* offset (fine for same-tz, imperfect cross-tz). Durable fix (needs a migration + prod apply, so left for when DB access is handy): add a plain `tz_offset` column exposed in the view, and have `/api/insight` prefer it. Timestamps/display were always correct — this only ever affected the insight's "time of day" phrasing.
 
 ---
 

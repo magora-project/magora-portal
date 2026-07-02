@@ -69,13 +69,7 @@ async function getEbirdContext(lat, lon, ebirdKey, detectedSpecies) {
   } catch { return null }
 }
 
-// Rough local time-of-day for a mobile recording anywhere on Earth, from the UTC
-// timestamp + longitude (solar time ≈ UTC + lon/15 hours). Good enough for
-// "morning vs dusk" without needing the device's timezone.
-function roughLocalTimeOfDay(utcString, lon) {
-  const d = new Date(utcString)
-  const utcHour = d.getUTCHours() + d.getUTCMinutes() / 60
-  const h = (utcHour + lon / 15 + 24) % 24
+function labelForHour(h) {
   if (h >= 21 || h < 4) return 'night'
   if (h < 6)  return 'pre-dawn'
   if (h < 9)  return 'early morning'
@@ -84,6 +78,24 @@ function roughLocalTimeOfDay(utcString, lon) {
   if (h < 17) return 'afternoon'
   if (h < 19) return 'early evening'
   return 'dusk'
+}
+
+// Civil (wall-clock) local time of day from the recorder's own UTC offset. This matches
+// the clock the listener was looking at. Preferred over the longitude/solar estimate,
+// which can be 1-2 hours off from civil time (and worse under daylight saving) — that
+// skew was labeling post-sunrise mornings as "pre-dawn". tzOffsetMin is
+// Date.getTimezoneOffset() captured on the device (minutes; UTC = local + offset).
+function civilTimeOfDay(utcString, tzOffsetMin) {
+  const local = new Date(new Date(utcString).getTime() - tzOffsetMin * 60000)
+  return labelForHour(local.getUTCHours() + local.getUTCMinutes() / 60)
+}
+
+// Fallback when the device offset isn't available (older rows): approximate local time
+// from longitude (solar time ≈ UTC + lon/15 hours). Coarser, but works anywhere.
+function roughLocalTimeOfDay(utcString, lon) {
+  const d = new Date(utcString)
+  const utcHour = d.getUTCHours() + d.getUTCMinutes() / 60
+  return labelForHour((utcHour + lon / 15 + 24) % 24)
 }
 
 async function reverseGeocodeServer(lat, lon) {
@@ -103,7 +115,7 @@ async function reverseGeocodeServer(lat, lon) {
 // species heard, the listener's place metadata, and (best of all) the recording's
 // own coordinates for real eBird regional context — anywhere in the world.
 async function mobileInsight(req, res) {
-  const { species = [], nearby = null, lat, lon, detected_at, habitat_type, canopy_cover, water_present, disturbance_level, observer_notes } = req.body
+  const { species = [], nearby = null, lat, lon, detected_at, tz_offset = null, habitat_type, canopy_cover, water_present, disturbance_level, observer_notes } = req.body
   // Either birds were heard, or we have the surrounding iNaturalist web to describe.
   if (!species.length && !nearby) return res.status(400).json({ error: 'species or nearby required' })
 
@@ -116,7 +128,12 @@ async function mobileInsight(req, res) {
   ])
 
   const locationLabel = placeLabel || 'this location'
-  const timingDesc = (lon != null && detected_at) ? roughLocalTimeOfDay(detected_at, lon) : null
+  // Prefer the recorder's real wall-clock time (device UTC offset); fall back to the
+  // longitude/solar estimate only for older rows that didn't capture an offset.
+  const timingDesc = detected_at == null ? null
+    : tz_offset != null ? civilTimeOfDay(detected_at, tz_offset)
+    : lon != null ? roughLocalTimeOfDay(detected_at, lon)
+    : null
   const speciesDesc = species.slice(0, 6)
     .map(s => `${s.common_name}${s.scientific_name ? ` (${s.scientific_name})` : ''} at ${Math.round(s.confidence * 100)}%`)
     .join(', ')
