@@ -11,7 +11,13 @@
 
 ## 🔴 Now — Currently Building
 
-_Nothing in progress — pull the next task up from "Next"/"Backlog" when ready._
+- [ ] **iNaturalist integration — Step 0: Ambient nearby search** (Tier 0, auth-free)
+  - Full plan lives in the vault: `01 - Project Brain / 🌿 iNaturalist Integration`. Step 0 = "the surrounding wild": for any point, show the research-grade species iNat users have verified nearby, grouped by iconic taxon (birds/plants/insects/mammals/fungi) — the "this place is alive" moment. No auth, no schema, no OAuth; works for every Listen incl. hardware-less ones.
+  - [x] **API endpoint** `api/inat-nearby.js` — GET lat/lon/radius → calls iNat `/v1/observations/species_counts` (research-grade, non-captive), dedupes, groups by iconic taxon, returns count + common name + photo + attribution + wikipedia per species. No API key (iNat reads are unauthenticated). Coarsens the query point to ~110m for privacy + edge-cache reuse; `Cache-Control s-maxage=1d`. Custom User-Agent. Verified live (1510 species near birdnode11: 91 plants / 50 birds / 34 insects / 11 mammals…).
+  - [x] **UI surface — Listen result screen.** Added a "〰 The wider web here" section to the ListenModal `results` step: "N species verified within 5 km — not just birds," a grouped breakdown (🌿 plants · 🪶 birds · 🐞 insects · 🦌 mammals…), the top few species, and iNat attribution. Loads best-effort on results (non-blocking; capture flow never depends on it), reuses the capture's coords. Shows an empty-state ("be the first on iNaturalist") when nothing's logged nearby. New shared client `src/lib/inat.js` (`fetchNearbyLife`, `summarizeGroups`, iconic-taxon emoji/label map) so the NodePage surface can reuse it. Lint clean, build passes.
+  - [ ] **Real-device check** — confirm the section renders on an actual Listen capture in prod (needs `/api/inat-nearby` deployed to Vercel; works like the existing `/api/insight` calls).
+  - [ ] Next surface: node/place profile ("The wider web here" on NodePage), reusing `lib/inat.js`.
+  - [ ] Optional fast-follow: grid-cell/season DB cache (edge cache covers dogfood scale for now).
 
 ---
 

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { addQueuedListen } from '../lib/listenQueue'
 import { uploadViaFunction } from '../lib/storageUpload'
+import { fetchNearbyLife, summarizeGroups } from '../lib/inat'
 import {
   AMBER, BUCKET, RECORD_SECONDS, MAX_OPEN_SECONDS, DURATIONS, HABITATS, CANOPY, DISTURBANCE,
   pickAudioMime, reverseGeocode, getPosition, formatClock,
@@ -39,6 +40,10 @@ export default function ListenModal({ onClose }) {
   const [insightText, setInsightText] = useState(null)
   const [insightBusy, setInsightBusy] = useState(false)
   const [insightError, setInsightError] = useState(false)
+
+  // "The wider web here" — ambient iNaturalist nearby life (Tier 0), loaded on results
+  const [nearby, setNearby] = useState(null)
+  const [nearbyBusy, setNearbyBusy] = useState(false)
 
   const streamRef = useRef(null)
   const recorderRef = useRef(null)
@@ -227,6 +232,15 @@ export default function ListenModal({ onClose }) {
     }
     setSpecies(Array.isArray(row.species) ? row.species : [])
     setStep('results')
+    // Ambient enrichment: what else lives around this exact spot, from the iNat commons.
+    // Non-blocking and best-effort — the capture flow never depends on it.
+    if (coords) {
+      setNearbyBusy(true)
+      fetchNearbyLife(coords.lat, coords.lon).then((d) => {
+        setNearby(d)
+        setNearbyBusy(false)
+      })
+    }
   }
 
   function subscribeForResult(id) {
@@ -425,6 +439,35 @@ export default function ListenModal({ onClose }) {
               ))}
             </div>
 
+            {/* The wider web here — ambient iNaturalist context (Tier 0 / "the surrounding wild") */}
+            {(nearbyBusy || nearby) && (
+              <div style={S.web}>
+                <div style={S.webHead}>〰 The wider web here</div>
+                {nearbyBusy && !nearby ? (
+                  <div style={{ fontSize: '12px', color: C.textMuted }}>Looking around this place…</div>
+                ) : nearby && nearby.total_species > 0 ? (
+                  <>
+                    <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6, marginBottom: '10px' }}>
+                      <strong style={{ color: C.text }}>{nearby.total_species.toLocaleString()}</strong> species verified within {nearby.location.radius_km} km of here — not just birds.
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                      {summarizeGroups(nearby.groups).map((g) => (
+                        <span key={g.iconic} style={S.webChip}>{g.emoji} {g.count} {g.label}</span>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {nearby.taxa.slice(0, 6).map((t) => (
+                        <span key={t.id} style={S.webTaxon} title={t.name}>{t.common || t.name}</span>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: '10px', color: C.textMuted, marginTop: '10px' }}>{nearby.attribution}</div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '12px', color: C.textMuted }}>No research-grade observations logged near here yet — you could be the first on iNaturalist.</div>
+                )}
+              </div>
+            )}
+
             <div style={S.details}>
               <div style={{ ...S.summary, marginBottom: '12px' }}>Tell us about this place (optional)</div>
               <Chips label="Habitat" options={HABITATS} value={habitat} onPick={setHabitat} />
@@ -501,6 +544,10 @@ const S = {
   pulse: { fontSize: '40px', color: AMBER.light, animation: 'pulse 1.4s ease-in-out infinite', marginBottom: '6px' },
   speciesRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '10px 12px' },
   details: { background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' },
+  web: { background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' },
+  webHead: { fontSize: '11px', fontWeight: 700, color: AMBER.light, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' },
+  webChip: { fontSize: '12px', fontWeight: 600, color: C.textSub, background: C.bg, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '4px 10px' },
+  webTaxon: { fontSize: '11px', color: C.textMuted, background: 'transparent', border: `1px solid ${C.border}`, borderRadius: '12px', padding: '3px 9px' },
   summary: { cursor: 'pointer', color: C.textSub, fontSize: '13px', fontWeight: 700 },
   metaLabel: { display: 'block', fontSize: '11px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' },
   textarea: { width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', color: C.text, padding: '8px 10px', fontFamily: "'DM Sans', sans-serif", fontSize: '13px', resize: 'vertical' },
