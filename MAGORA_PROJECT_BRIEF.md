@@ -159,11 +159,13 @@ Reference table, auto-seeded on detection INSERT via `auto_seed_species()` trigg
 
 | Path | Page | What it does |
 |---|---|---|
-| `/` | MapPage | Leaflet map, bird detections (all nodes), ACI feed, 30s refresh |
+| `/` | MapPage | Leaflet map + live feed (node detections + mobile Listens/sessions), 30s refresh |
 | `/node/:id` | NodePage | Node profile — info tiles, ACI sparkline, filtered detections + log |
-| `/dashboard` | Dashboard | Analytics — ACI by time of day, top species, node list |
+| `/species/:name` | SpeciesPage | Species profile — Wikipedia, GBIF range map, where it's been heard |
+| `/journal/:handle` | JournalPage | Listener field journal — profile, life list, Listens + sessions (your own at `/journal/me`) |
 | `/register` | RegisterNode | 5-step wizard to onboard a new node |
 | `/about` | AboutPage | Project info |
+| `/donate` | DonatePage | Participation-first donate page |
 
 ### Key source files
 
@@ -176,7 +178,8 @@ src/
   pages/
     MapPage.jsx                   Home — map + live feed
     NodePage.jsx                  Node profile page
-    Dashboard.jsx                 Analytics
+    SpeciesPage.jsx               Species profile
+    JournalPage.jsx               Listener field journal (life list, Listens + sessions)
     RegisterNode.jsx              5-step onboarding wizard
   lib/
     supabase.js                   Supabase client (anon key)
@@ -235,9 +238,8 @@ src/
 | Feature | Notes |
 |---|---|
 | Portal user auth | Sign-in button is a stub. All reads use anon key. |
-| Realtime subscriptions | Using 30s polling. Worth switching when user auth is in place. |
-| Dashboard per-node filtering | Shows global data, not scoped to a node |
-| Error handling | Supabase errors fail silently |
+| Realtime subscriptions | Live feed uses 30s polling; ListenModal uses realtime for its own recording. |
+| Error handling | Supabase errors fail silently (MapPage has an explicit error state) |
 | Timezone per node | toMountainTime() hardcodes UTC−6 |
 
 ---

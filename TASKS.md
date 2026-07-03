@@ -68,7 +68,7 @@
   - Test provision-node Edge Function
   - Confirm detections flowing to Supabase
 
-- [ ] **Task G: Batch the listener session into one insight (cost + UX win)**
+- [x] **Task G: Batch the listener session into one insight (cost + UX win)** — SHIPPED July 2026 (Phases A–D merged to `main`, PR #3; on-device confirmed).
   - **Concept:** Instead of firing a separate insight per capture, generate ONE synthesized "what your session heard" insight per Listen session. Reads the whole soundscape as a unit rather than N disconnected per-detection blurbs — more true to the whole-ecosystem thesis, and cuts the listener insight cost by the capture-count factor (~4–5x).
   - **Product decision to confirm before building:** Does a listener doing 4 captures in one visit want 4 separate readings, or one session-level synthesis? Recommendation is one-per-session (better product AND cheaper). Confirm before building — this changes the insight data model.
   - **Where it touches:** The Listen flow results step (`ListenModal` Results state) and however insights attach to detections. Currently the insight likely attaches to a single detection row; a session-level insight needs a home — either a `session_id` grouping on `mobile_detections` with the insight on the session, or a lightweight `listen_sessions` table. Scope the data model in a design pass before writing the migration.
@@ -82,13 +82,18 @@
     - ✅ **Phase D journal** (`JournalPage.jsx`): sessions merged into the journal feed + life list + place/Listen counts + map markers; feed branches on `_kind` for the right insight write-back (session vs per-capture).
     - **Committed** on branch `task-g-listen-sessions` (stacked on `task-f-haiku-insights`). Build + lint clean; `public_listen_sessions` verified live. ⏭ **Only remaining: on-device test** of the full record → "record another spot" → post → session-card flow (mic/geo/auth), same as prior Listen phases.
 
-- [ ] **Task H: Move non-interactive insight generation to the Batch API (50% off)**
+- [x] **Task H: Move non-interactive insight generation to the Batch API (50% off)** — BUILT July 2026 (v1: node-insight batch pre-gen, branch `task-h-node-insight-batch`). ⏭ Pending deploy: `CRON_SECRET` added ✅; cron set to **daily** (`0 8 * * *`) since the Vercel plan is Hobby (hourly is Pro-only). Runs once/day; drain window widened to 3 days to match.
   - **FIRST STEP — verify, don't assume:** Check how insight generation is currently wired. Is it synchronous (user watches it load in the modal, staring at a spinner) or fire-and-store (generated server-side, displayed when ready)? The answer forks the task:
     - **If a surface is async-able** (node insights almost certainly are; listener session insights from Task G may be): route those calls through the Message Batches API for a 50% discount. Generation returns when ready rather than blocking.
     - **If a surface is genuinely synchronous** (user is actively waiting on-screen): leave it on the standard API, OR redesign to async ("we're listening — check back in a moment") if the UX tolerates it. Don't degrade a real-time experience purely to save cost; note the tradeoff and decide per-surface.
   - **Likely outcome:** Node-side and Task-G session insights → Batch API. Any remaining real-time surface → standard API, relying on Tasks E/F/I for its savings.
   - **Where to look:** Every insight generation entry point (fewer now that About reuses `ListenButton` and the Listen surface is consolidated). Classify each as sync or async, then route accordingly.
   - **Depends on:** Cleanest after G (which clarifies the listener-side sync/async question).
+  - **Built — v1: node insights (July 2026).** Verified finding: all insight generation was interactive; node insights were the only genuinely async surface (and weren't even persisted — MapPage/NodePage regenerated them full-price in local state on every viewer tap). Listener session insights stay interactive (the listener is on-screen — "don't degrade real-time"). What shipped:
+    - Migration `20260708` (applied to prod): `detections.insight` + `insight_requested_at`; `claim_node_insights(max)` (atomic claim of recent, confident, not-in-flight detections) and `set_node_detection_insight` RPCs (SECURITY DEFINER → cron runs on the anon key, no service role).
+    - `api/insight-batch.js`: a **Vercel Cron** function that drains ended batches (writes insights back, idempotent) then claims + submits a new batch, reusing `buildNodeInsightPrompt` (no prompt drift). `vercel.json` schedules it **daily** (`0 8 * * *`, Hobby-plan limit).
+    - `INSIGHT_MODEL` exported from `api/insight.js` (Haiku → batch = 50% off Haiku). MapPage/NodePage now show the stored `d.insight` and persist on-demand taps via `set_node_detection_insight`.
+    - Verified: Batch API create/retrieve/cancel smoke-tested live; RPCs + column verified live; build + lint clean. **⏭ Remaining (deploy-time, can't verify from here):** set `CRON_SECRET` in Vercel env; confirm the Vercel plan allows the hourly cron (Hobby may cap to daily); after deploy, watch a cron tick submit a batch and node cards fill in with stored insights (~<1h later). Follow-on: smarter detection selection / dedup ties into Task I (situation cache).
 
 - [ ] **Task I: Situation-keyed semantic cache — STUB, spec after E/F land + 1 week of cost data**
   - **Intent:** The structural cost-bender. Cache insights keyed on the *ecological situation* — a hash of {coarsened geo band, season, time-of-day bucket, dominant species set, ACI band} — not on the individual detection row. A robin at dawn in a Montana spring becomes the same cached insight whether it's birdnode11 or a listener two valleys over. This lets listeners benefit from node-generated cache entries and each other's, structurally defeating the "roving listeners cache poorly" problem (per-user caching can't help mobile users; per-situation caching can).
@@ -101,7 +106,7 @@
 
 ## 🧹 Doc Hygiene
 
-- [ ] **Fix stale `MAGORA_PROJECT_BRIEF.md`** — it still references the removed `/dashboard` route and deleted `Dashboard.jsx` (retired in the July 2–3 session). Update to reflect the Journal tab (`/journal/me`) replacement so the in-repo brief doesn't rot.
+- [x] **Fix stale `MAGORA_PROJECT_BRIEF.md`** (July 2026) — dropped the removed `/dashboard` route + `Dashboard.jsx` (route table, file tree, and the obsolete "Dashboard per-node filtering" limitation), and brought the route table/file tree current (added `/species`, `/journal`, `/donate`, SpeciesPage, JournalPage; noted Listens + sessions). Left an unrelated stale row flagged for later: "Portal user auth — Sign-in button is a stub" is now false (email OTP + Google sign-in shipped).
 
 ---
 
