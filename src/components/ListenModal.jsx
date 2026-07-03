@@ -8,6 +8,9 @@ import {
   AMBER, BUCKET, RECORD_SECONDS, MAX_OPEN_SECONDS, DURATIONS, HABITATS, CANOPY, DISTURBANCE,
   pickAudioMime, reverseGeocode, getPosition, formatClock,
 } from '../lib/listen'
+import {
+  createSession, publishSession, discardSession, aggregateSpecies, centroid, buildSessionInsightPayload,
+} from '../lib/listenSession'
 
 const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
@@ -26,7 +29,9 @@ export default function ListenModal({ onClose }) {
   const [locError, setLocError] = useState(null)
   const [durationSecs, setDurationSecs] = useState(RECORD_SECONDS) // null = open-ended
   const [elapsed, setElapsed] = useState(0)
-  const [species, setSpecies] = useState([])
+  // Every completed capture in this outing: { id, species, lat, lon }. The session
+  // reads them as one community (aggregateSpecies) for display + the insight.
+  const [captures, setCaptures] = useState([])
   const [errorMsg, setErrorMsg] = useState(null)
   const [queuedOffline, setQueuedOffline] = useState(false)
 
@@ -55,7 +60,8 @@ export default function ListenModal({ onClose }) {
   const countdownRef = useRef(null)
   const channelRef = useRef(null)
   const timeoutRef = useRef(null)
-  const detectionIdRef = useRef(null)
+  const sessionIdRef = useRef(null)     // the outing; created lazily on the first capture
+  const nearbyLoadedRef = useRef(false) // load the iNat "wider web" once per session
 
   // ── Cleanup everything (recorder, audio graph, realtime, timers) ────────────
   const teardown = useCallback(() => {
@@ -179,7 +185,6 @@ export default function ListenModal({ onClose }) {
 
     const { ext } = pickAudioMime()
     const id = crypto.randomUUID()
-    detectionIdRef.current = id
     const path = `${user.id}/${id}.${ext}`
 
     try {
@@ -205,6 +210,11 @@ export default function ListenModal({ onClose }) {
       // Storage uploads fail token validation on this project's Storage version.
       await uploadViaFunction({ bucket: BUCKET, filename: `${id}.${ext}`, file: blob })
 
+      // Open the outing's session on the first capture; later captures reuse it.
+      if (!sessionIdRef.current) {
+        sessionIdRef.current = await createSession({ userId: user.id, coords })
+      }
+
       const ins = await supabase.from('mobile_detections').insert({
         id,
         user_id: user.id,
@@ -213,6 +223,7 @@ export default function ListenModal({ onClose }) {
         status: 'pending',
         audio_path: path,
         device_info: { ua: navigator.userAgent },
+        session_id: sessionIdRef.current,
       })
       if (ins.error) throw ins.error
 
@@ -227,15 +238,28 @@ export default function ListenModal({ onClose }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null }
     if (row.status === 'failed') {
-      setErrorMsg('We couldn’t identify anything in that recording. Try again somewhere quieter.')
-      setStep('error')
+      // A failed capture shouldn't sink the whole outing: if earlier captures
+      // landed, fall back to the session; if it was the first, show the error.
+      if (captures.length > 0) { setStep('results') }
+      else {
+        setErrorMsg('We couldn’t identify anything in that recording. Try again somewhere quieter.')
+        setStep('error')
+      }
       return
     }
-    setSpecies(Array.isArray(row.species) ? row.species : [])
+    // Add this capture to the outing. A new capture invalidates any insight already
+    // generated over the smaller set, so clear it to regenerate over everything.
+    setCaptures(prev => [...prev, {
+      id: row.id,
+      species: Array.isArray(row.species) ? row.species : [],
+      lat: row.lat, lon: row.lon,
+    }])
+    setInsightText(null)
+    setInsightError(false)
     setStep('results')
-    // Ambient enrichment: what else lives around this exact spot, from the iNat commons.
-    // Non-blocking and best-effort — the capture flow never depends on it.
-    if (coords) {
+    // Ambient enrichment (iNat "wider web"), loaded once per session, best-effort.
+    if (coords && !nearbyLoadedRef.current) {
+      nearbyLoadedRef.current = true
       setNearbyBusy(true)
       fetchNearbyLife(coords.lat, coords.lon).then((d) => {
         setNearby(d)
@@ -265,9 +289,9 @@ export default function ListenModal({ onClose }) {
     }, RESULT_TIMEOUT_MS)
   }
 
-  // Ecological insight for the WHOLE capture: all species heard + the place
-  // metadata and notes the listener just entered. Generated here (not on the card)
-  // so it can use the private notes; the synthesized text is what gets stored.
+  // Ecological insight for the WHOLE session: the community heard across every
+  // capture + the place metadata and notes. Generated here (not on the card) so it
+  // can use the private notes; the synthesized text is stored on the session.
   async function generateInsight() {
     setInsightBusy(true)
     setInsightError(false)
@@ -275,27 +299,12 @@ export default function ListenModal({ onClose }) {
       const res = await fetch('/api/insight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mobile: true,
-          species,
-          lat: coords?.lat,
-          lon: coords?.lon,
-          detected_at: new Date().toISOString(),
-          tz_offset: new Date().getTimezoneOffset(), // device wall-clock offset (min)
-          habitat_type: habitat?.toLowerCase() ?? null,
-          canopy_cover: canopy?.toLowerCase() ?? null,
-          water_present: water === null ? null : water === 'Yes',
-          disturbance_level: disturbance?.toLowerCase() ?? null,
-          observer_notes: notes.trim() || null,
-          // The surrounding multi-taxa web from iNat, so the insight can reason across
-          // the whole ecosystem (plants/insects/fungi), not just the birds we heard.
-          nearby: nearby ? {
-            total_species: nearby.total_species,
-            radius_km: nearby.location?.radius_km,
-            groups: summarizeGroups(nearby.groups).map((g) => ({ label: g.label, count: g.count })),
-            top: nearby.taxa.slice(0, 20).map((t) => ({ common: t.common, name: t.name, iconic: t.iconic })),
-          } : null,
-        }),
+        body: JSON.stringify(buildSessionInsightPayload({
+          captures,
+          center: centroid(captures),
+          metadata: { habitat, canopy, water, disturbance, notes },
+          nearby,
+        })),
       })
       if (!res.ok) throw new Error()
       const data = await res.json()
@@ -307,18 +316,25 @@ export default function ListenModal({ onClose }) {
     }
   }
 
-  // ── Step 4: publish (with optional metadata + insight) or discard ───────────
+  // Record another spot in the same outing: keep the session + its captures, drop
+  // the stale insight, and go back for a fresh location for the next capture.
+  function recordAnotherSpot() {
+    setInsightText(null)
+    setInsightError(false)
+    setElapsed(0)
+    setStep('ready')
+    requestLocation()
+  }
+
+  // ── Step 4: publish the whole session (metadata + insight) or discard it ─────
   async function publishListen() {
+    if (!sessionIdRef.current) { onClose(); return }
     setSavingMeta(true)
-    await supabase.from('mobile_detections').update({
-      habitat_type: habitat?.toLowerCase() ?? null,
-      canopy_cover: canopy?.toLowerCase() ?? null,
-      water_present: water === null ? null : water === 'Yes',
-      disturbance_level: disturbance?.toLowerCase() ?? null,
-      observer_notes: notes.trim() || null,
+    await publishSession(sessionIdRef.current, {
+      center: centroid(captures),
+      metadata: { habitat, canopy, water, disturbance, notes },
       insight: insightText,
-      published: true,
-    }).eq('id', detectionIdRef.current)
+    })
     setSavingMeta(false)
     onClose()
     // Natural moment to nudge for a journal handle: they just posted their first
@@ -328,12 +344,13 @@ export default function ListenModal({ onClose }) {
 
   async function discardListen() {
     setSavingMeta(true)
-    await supabase.from('mobile_detections').delete().eq('id', detectionIdRef.current)
+    if (sessionIdRef.current) await discardSession(sessionIdRef.current)
     setSavingMeta(false)
     onClose()
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
+  const heard = aggregateSpecies(captures) // every species this outing has heard, as one community
   return (
     <div onClick={onClose} style={S.overlay}>
       <div onClick={e => e.stopPropagation()} style={S.sheet}>
@@ -346,9 +363,11 @@ export default function ListenModal({ onClose }) {
 
         {step === 'ready' && (
           <>
-            <h2 style={S.h2}>Every place is speaking.</h2>
+            <h2 style={S.h2}>{captures.length > 0 ? 'Record another spot' : 'Every place is speaking.'}</h2>
             <p style={S.sub}>
-              Record 15 seconds of the world around you. We’ll listen for the birds, then you decide whether to post it to the map.
+              {captures.length > 0
+                ? `Spot ${captures.length + 1} of this session. Move to a new spot and capture it, or review and post what you’ve gathered so far.`
+                : 'Record 15 seconds of the world around you. We’ll listen for the birds, then you decide whether to post it to the map.'}
             </p>
             <div style={S.locBox}>
               {locError
@@ -387,6 +406,11 @@ export default function ListenModal({ onClose }) {
               <button onClick={requestLocation} style={S.amberBtn(false)}>Try location again</button>
             ) : (
               <button disabled style={S.amberBtn(true)}>Waiting for location…</button>
+            )}
+            {captures.length > 0 && (
+              <button onClick={() => setStep('results')} style={S.ghostBtn}>
+                Review &amp; post ({captures.length} {captures.length === 1 ? 'spot' : 'spots'})
+              </button>
             )}
           </>
         )}
@@ -431,14 +455,17 @@ export default function ListenModal({ onClose }) {
 
         {step === 'results' && (
           <>
-            <h2 style={S.h2}>{species.length ? 'Here’s what we heard' : 'No birds this time'}</h2>
+            <h2 style={S.h2}>{heard.length ? 'Here’s what we heard' : 'No birds this time'}</h2>
+            {captures.length > 1 && (
+              <p style={{ ...S.metaLabel, marginBottom: '8px' }}>Across {captures.length} spots this session</p>
+            )}
             <p style={S.sub}>
-              {species.length === 0
+              {heard.length === 0
                 ? 'No confident bird IDs in that clip. Nothing’s been posted — discard it, or post it as a Listen anyway.'
                 : 'Nothing’s posted yet. Add a little about the place if you like, then post it to the map — or discard it.'}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', margin: '6px 0 16px' }}>
-              {species.map((s, i) => (
+              {heard.map((s, i) => (
                 <div key={i} style={S.speciesRow}>
                   <div>
                     <div style={{ color: C.text, fontWeight: 700, fontSize: '14px' }}>{s.common_name}</div>
@@ -458,7 +485,7 @@ export default function ListenModal({ onClose }) {
                 ) : nearby && nearby.total_species > 0 ? (
                   <>
                     <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6, marginBottom: '8px' }}>
-                      {species.length > 0
+                      {heard.length > 0
                         ? 'Beyond the birds we just heard, here is the wider web of life around you: '
                         : 'Here is the web of life around you: '}
                       <strong style={{ color: C.text }}>{nearby.total_species.toLocaleString()}</strong> wild species that people have photographed and verified within {nearby.location.radius_km} km, through the community-science project{' '}
@@ -466,11 +493,11 @@ export default function ListenModal({ onClose }) {
                     </div>
 
                     {/* Tie the surrounding web back to what the mic actually heard */}
-                    {species.length > 0 && (() => {
-                      const n = corroboratedCount(species, nearby)
+                    {heard.length > 0 && (() => {
+                      const n = corroboratedCount(heard, nearby)
                       return n > 0 ? (
                         <div style={S.webCorroboration}>
-                          ✓ {n} of the {species.length} {species.length === 1 ? 'bird' : 'birds'} you heard {n === 1 ? 'is' : 'are'} verified here on iNaturalist too.
+                          ✓ {n} of the {heard.length} {heard.length === 1 ? 'bird' : 'birds'} you heard {n === 1 ? 'is' : 'are'} verified here on iNaturalist too.
                         </div>
                       ) : null
                     })()}
@@ -530,14 +557,17 @@ export default function ListenModal({ onClose }) {
               <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.65, borderLeft: `3px solid ${AMBER.base}`, paddingLeft: '12px', margin: '4px 0 16px' }}>
                 {insightText}
               </div>
-            ) : (species.length > 0 || (nearby && nearby.total_species > 0)) && (
+            ) : (heard.length > 0 || (nearby && nearby.total_species > 0)) && (
               <button onClick={generateInsight} disabled={insightBusy} style={{ ...S.ghostBtn, marginTop: 0, marginBottom: '16px', color: AMBER.light, borderColor: AMBER.dark }}>
                 {insightBusy ? '🔍 Reading the soundscape…' : insightError ? 'Try again' : "What's the ecosystem saying?"}
               </button>
             )}
 
+            <button onClick={recordAnotherSpot} disabled={savingMeta} style={{ ...S.ghostBtn, marginTop: 0, marginBottom: '10px', color: AMBER.light, borderColor: AMBER.dark }}>
+              ＋ Record another spot
+            </button>
             <button onClick={publishListen} disabled={savingMeta} style={S.amberBtn(savingMeta)}>
-              {savingMeta ? 'Posting…' : 'Post to the map'}
+              {savingMeta ? 'Posting…' : captures.length > 1 ? 'Post session to the map' : 'Post to the map'}
             </button>
             <button onClick={discardListen} disabled={savingMeta} style={S.ghostBtn}>
               Discard

@@ -56,11 +56,13 @@ function MobileDetectionCard({ d, insight, onGenerate }) {
     <div style={S.card}>
       <div style={S.header}>
         <span style={S.badge}>〰 Listen</span>
-        <span style={{ color: C.textMuted, fontSize: '12px' }}>{relativeTime(d.detected_at)}</span>
+        <span style={{ color: C.textMuted, fontSize: '12px' }}>{relativeTime(d.detected_at || d.started_at)}</span>
       </div>
 
       <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '10px' }}>
-        A field recording from someone in the network
+        {d.capture_count > 1
+          ? `A field session from someone in the network, ${d.capture_count} spots`
+          : 'A field recording from someone in the network'}
       </div>
       {listenerHandle && (
         <div style={{ marginBottom: '10px', fontSize: '12px' }}>

@@ -43,3 +43,38 @@ export function useEcosystemInsight() {
 
   return { insights, requestInsight }
 }
+
+// Session variant: the ecosystem insight for a whole Listen session (a
+// public_listen_sessions row). Same generate-once / write-back behavior as above,
+// but keyed on the session and cached via set_session_insight. The session's
+// `species` is already aggregated across its captures by the view.
+export function useSessionInsight() {
+  const [insights, setInsights] = useState({})
+
+  async function requestInsight(s) {
+    setInsights(prev => ({ ...prev, [s.id]: { loading: true } }))
+    try {
+      const conf = (s.species || []).filter(x => x.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(x.common_name))
+      const res = await fetch('/api/insight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mobile: true, detection_id: s.id, species: conf,
+          lat: s.lat, lon: s.lon, detected_at: s.started_at,
+          tz_offset: new Date().getTimezoneOffset(),
+          habitat_type: s.habitat_type, canopy_cover: s.canopy_cover,
+          water_present: s.water_present, disturbance_level: s.disturbance_level,
+        }),
+      })
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setInsights(prev => ({ ...prev, [s.id]: { text: data.insight } }))
+      supabase.rpc('set_session_insight', { session_id: s.id, insight_text: data.insight })
+        .then(({ error }) => { if (error) console.warn('set_session_insight failed:', error) })
+    } catch {
+      setInsights(prev => ({ ...prev, [s.id]: { error: true } }))
+    }
+  }
+
+  return { insights, requestInsight }
+}
