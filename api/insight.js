@@ -1,4 +1,30 @@
 /* global process */
+// Model for ecosystem-insight generation. Kept in one place (Task F) so the
+// high-volume insight path and any future low-volume report path can use
+// different tiers with a single edit. Haiku 4.5 for insights: the July 2026
+// side-by-side eval found it holds Sonnet's voice/framing at ~half the cost
+// (see TASKS.md Task F). generateInsight strips em-dashes, which Haiku ignores.
+const INSIGHT_MODEL = 'claude-haiku-4-5-20251001'
+
+// Turn a fully-assembled prompt into an insight. Prompt-building and the model
+// call are kept separate so the Task-F eval harness
+// (scripts/eval-insight-models.mjs) can run the exact production prompt through
+// different model tiers without duplicating any prompt text. Returns
+// { text } on success or { error } (raw Claude error body) on failure.
+export async function generateInsight(prompt, model = INSIGHT_MODEL) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model, max_tokens: 450, messages: [{ role: 'user', content: prompt }] }),
+  })
+  if (!response.ok) return { error: await response.text() }
+  const text = (await response.json()).content[0].text
+  // House style is commas and periods, never em-dashes (matches the app-wide
+  // em-dash cleanup). The prompt asks for this, but Haiku ignores it, so enforce
+  // it here regardless of model: replace em-dashes used as punctuation.
+  return { text: text.replace(/\s*—\s*/g, ', ') }
+}
+
 // Vercel serverless function (Node runtime).
 // Derive time-of-day description from UTC timestamp + Mountain Time offset.
 // Never relies on the Pi's stored time_category which can be wrong due to
@@ -114,10 +140,10 @@ async function reverseGeocodeServer(lat, lon) {
 // Insight for a phone "Listen": no node/ACI/longitudinal history, but we have the
 // species heard, the listener's place metadata, and (best of all) the recording's
 // own coordinates for real eBird regional context — anywhere in the world.
-async function mobileInsight(req, res) {
-  const { species = [], nearby = null, lat, lon, detected_at, tz_offset = null, habitat_type, canopy_cover, water_present, disturbance_level, observer_notes } = req.body
+export async function buildMobileInsightPrompt(body) {
+  const { species = [], nearby = null, lat, lon, detected_at, tz_offset = null, habitat_type, canopy_cover, water_present, disturbance_level, observer_notes } = body
   // Either birds were heard, or we have the surrounding iNaturalist web to describe.
-  if (!species.length && !nearby) return res.status(400).json({ error: 'species or nearby required' })
+  if (!species.length && !nearby) return { error: 'species or nearby required' }
 
   const ebirdKey = process.env.EBIRD_API_KEY
   const top = species[0] || null
@@ -175,6 +201,7 @@ async function mobileInsight(req, res) {
     (metaDesc || notesDesc) && 'Weave in what the listener told you about the place and their notes, where relevant',
     heardBirds && 'Infer what these birds are likely doing at this time of day and season',
     ebirdDesc && 'Use the regional picture to judge whether this is a typical or a notable mix for the area',
+    'Stay grounded in the details given, do not editorialize or claim anything you cannot support from them',
     'Sound like real field curiosity, never a field guide entry',
     'Never open with a species name or "This recording"',
   ].filter(Boolean).map(b => `- ${b}`).join('\n')
@@ -192,23 +219,21 @@ ${nearbyDesc ? `\nTHE SURROUNDING WEB (iNaturalist, research-grade nearby)\n${ne
 Write 3 to 4 sentences that turn this into a genuine ecological story about this place and moment. Your response must:
 ${mustBullets}`
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 450, messages: [{ role: 'user', content: prompt }] }),
-  })
-  if (!response.ok) {
-    console.error('Claude error (mobile):', await response.text())
-    return res.status(502).json({ error: 'Claude API error' })
-  }
-  return res.status(200).json({ insight: (await response.json()).content[0].text })
+  return { prompt }
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
+async function mobileInsight(req, res) {
+  const built = await buildMobileInsightPrompt(req.body)
+  if (built.error) return res.status(400).json({ error: built.error })
+  const out = await generateInsight(built.prompt)
+  if (out.error) {
+    console.error('Claude error (mobile):', out.error)
+    return res.status(502).json({ error: 'Claude API error' })
+  }
+  return res.status(200).json({ insight: out.text })
+}
 
-  if (req.body.mobile) return mobileInsight(req, res)
-
+export async function buildNodeInsightPrompt(body) {
   const {
     detection_id,
     species_name: fallbackSpecies,
@@ -216,10 +241,10 @@ export default async function handler(req, res) {
     confidence: fallbackConf,
     location: fallbackLocation,
     is_dawn_chorus: fallbackDawn,
-  } = req.body
+  } = body
 
   if (!detection_id && !fallbackSpecies) {
-    return res.status(400).json({ error: 'detection_id or species_name required' })
+    return { error: 'detection_id or species_name required', status: 400 }
   }
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL
@@ -377,28 +402,23 @@ Write 3–4 sentences that synthesize these layers into a genuine ecological sto
 - Connect it to at least one concrete plant, insect, soil, or structural habitat relationship relevant to this location
 - Assess whether this detection is expected, surprising, or ecologically significant — and briefly say why
 - Weave in one thread from the pattern being built at this node over time
+- Stay grounded in the data given, do not editorialize or make claims you cannot support from it
 - Sound like genuine curiosity and field observation, never a field guide entry
 - Never open with the species name or "This detection"`
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 450,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  })
+  return { prompt }
+}
 
-  if (!response.ok) {
-    console.error('Claude error:', await response.text())
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' })
+  if (req.body.mobile) return mobileInsight(req, res)
+
+  const built = await buildNodeInsightPrompt(req.body)
+  if (built.error) return res.status(built.status || 400).json({ error: built.error })
+  const out = await generateInsight(built.prompt)
+  if (out.error) {
+    console.error('Claude error:', out.error)
     return res.status(502).json({ error: 'Claude API error' })
   }
-
-  const data = await response.json()
-  return res.status(200).json({ insight: data.content[0].text })
+  return res.status(200).json({ insight: out.text })
 }
