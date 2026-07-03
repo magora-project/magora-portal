@@ -12,8 +12,13 @@
 import { buildNodeInsightPrompt, INSIGHT_MODEL } from './insight.js'
 
 const BATCHES_URL = 'https://api.anthropic.com/v1/messages/batches'
-const MAX_PER_RUN = 20        // detections submitted per run
-const RECENT_MS = 3 * 3600 * 1000 // only drain batches created in the last ~3h
+const MAX_PER_RUN = 20              // detections submitted per run
+// The cron runs daily (Hobby plan), and each run drains the batch the *previous*
+// run submitted (~24h earlier), so this window must comfortably exceed the cron
+// interval. 3 days also catches a slow batch (Anthropic allows up to 24h). Re-
+// draining an already-written batch is a no-op (set_node_detection_insight only
+// writes when null), so a generous window is safe.
+const RECENT_MS = 3 * 24 * 3600 * 1000
 
 const anthropicHeaders = () => ({
   'content-type': 'application/json',
