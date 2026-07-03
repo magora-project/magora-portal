@@ -62,7 +62,9 @@ export default function MapPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!user) { setFollowedIds([]); return }
-    supabase.from('node_follows').select('node_id')
+    // Journal follows (Task D): RLS returns only the viewer's own rows, so this
+    // is the set of nodes whose journal activity belongs in the Following feed.
+    supabase.from('journal_follows').select('node_id')
       .then(({ data }) => setFollowedIds((data || []).map(r => r.node_id)))
   }, [user])
 

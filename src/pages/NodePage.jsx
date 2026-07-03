@@ -5,6 +5,8 @@ import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { parseNodeLocation } from '../lib/geo'
 import { fetchNearbyLife, summarizeGroups, inatTaxonUrl, commonNamesVerified } from '../lib/inat'
+import { getListenerAvatarUrl } from '../lib/listener'
+import { followJournal, unfollowJournal, getFollowerCount, getPublicFollowers, useJournalFollowStatus } from '../lib/journalFollows'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 
 const C = {
@@ -60,15 +62,16 @@ export default function NodePage() {
   const [wikiData, setWikiData] = useState({})
   const [insights, setInsights] = useState({})
   const [speciesNames, setSpeciesNames] = useState([])
-  const [following, setFollowing] = useState(false)
+  const { following, setFollowing } = useJournalFollowStatus(id)
   const [followerCount, setFollowerCount] = useState(0)
   const [followBusy, setFollowBusy] = useState(false)
+  const [followers, setFollowers] = useState([]) // consented (opted-in) public followers
   const [shareState, setShareState] = useState(null) // null | 'copied' | 'error'
   const [nearby, setNearby] = useState(null) // ambient iNaturalist "wider web here"
   const [nearbyBusy, setNearbyBusy] = useState(false)
   const [expandedGroup, setExpandedGroup] = useState(null)
   const fetchedWiki = useRef(new Set())
-  const { user, openSignIn } = useAuth()
+  const { user, openSignIn, listener, promptHandleClaim } = useAuth()
 
   async function fetchData() {
     const [{ data: nodeData }, { data: dData }, { data: aciData }] = await Promise.all([
@@ -105,19 +108,20 @@ export default function NodePage() {
       .then(({ data }) => setSpeciesNames((data || []).map(d => d.species_name)))
   }, [id])
 
-  // Public follower count (security-definer RPC — no follower identities exposed)
+  // Public follower count (security-definer RPC — no follower identities exposed).
+  // Following state itself comes from useJournalFollowStatus(id) above.
   useEffect(() => {
     if (!id) return
-    supabase.rpc('node_follower_count', { n: id }).then(({ data }) => setFollowerCount(data ?? 0))
+    getFollowerCount(id).then(setFollowerCount)
   }, [id])
 
-  // Is the signed-in user following this place?
+  // Consented public follower list — opted-in Listeners only (view is filtered to
+  // follows_public = true and exposes no auth identifiers).
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!id || !user) { setFollowing(false); return }
-    supabase.from('node_follows').select('node_id').eq('node_id', id).eq('user_id', user.id).maybeSingle()
-      .then(({ data }) => setFollowing(!!data))
-  }, [id, user])
+    if (!id) { setFollowers([]); return }
+    getPublicFollowers(id).then(setFollowers)
+  }, [id])
 
   // Ambient "wider web here" — research-grade iNaturalist life around the node (Tier 0).
   // Keyed on node id (not the object) so the 30s refresh doesn't refetch iNat each tick.
@@ -134,15 +138,25 @@ export default function NodePage() {
 
   async function toggleFollow() {
     if (!user) { openSignIn(); return }
+    // Following a Journal is an act by a Listener identity, so a handle-less user
+    // must claim a handle first (the follower_id FK requires a listeners row).
+    if (!listener?.handle) { promptHandleClaim(); return }
     setFollowBusy(true)
-    if (following) {
-      const { error } = await supabase.from('node_follows').delete().eq('node_id', id)
-      if (!error) { setFollowing(false); setFollowerCount(c => Math.max(0, c - 1)) }
-    } else {
-      const { error } = await supabase.from('node_follows').insert({ node_id: id })
-      if (!error) { setFollowing(true); setFollowerCount(c => c + 1) }
+    try {
+      if (following) {
+        await unfollowJournal(id)
+        setFollowing(false); setFollowerCount(c => Math.max(0, c - 1))
+      } else {
+        await followJournal(id)
+        setFollowing(true); setFollowerCount(c => c + 1)
+      }
+      // The viewer may now appear on (or drop off) the consented list, if opted in.
+      getPublicFollowers(id).then(setFollowers)
+    } catch (e) {
+      console.warn('journal follow toggle failed:', e)
+    } finally {
+      setFollowBusy(false)
     }
-    setFollowBusy(false)
   }
 
   useEffect(() => {
@@ -319,6 +333,7 @@ export default function NodePage() {
         <button
           onClick={toggleFollow}
           disabled={followBusy}
+          aria-label="Follow Their Journal"
           style={{
             flex: 1, padding: '11px', borderRadius: '10px', cursor: followBusy ? 'default' : 'pointer',
             fontSize: '14px', fontWeight: '700', fontFamily: "'DM Sans', sans-serif",
@@ -328,7 +343,7 @@ export default function NodePage() {
             opacity: followBusy ? 0.7 : 1,
           }}
         >
-          {following ? '✓ Following' : '+ Follow'}
+          {following ? '✓ Following Journal' : '+ Follow Their Journal'}
         </button>
         <button
           onClick={handleShareProfile}
@@ -357,9 +372,42 @@ export default function NodePage() {
           )}
         </button>
       </div>
-      <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '20px' }}>
+      <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: followers.length > 0 ? '10px' : '20px' }}>
         {followerCount} {followerCount === 1 ? 'follower' : 'followers'}
       </div>
+
+      {/* Consented follower list — only Listeners who opted their follows public.
+          Followers who didn't opt in are counted above but never shown here (nor
+          is any auth identifier: display name / handle / avatar only). */}
+      {followers.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '20px' }}>
+          {followers.map(f => (
+            <Link
+              key={f.listener_id}
+              to={`/journal/${f.handle}`}
+              title={f.display_name || `@${f.handle}`}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '7px', textDecoration: 'none',
+                background: C.card, border: `1px solid ${C.border}`, borderRadius: '999px',
+                padding: '4px 10px 4px 4px',
+              }}
+            >
+              <span style={{
+                width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0, overflow: 'hidden',
+                background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '12px', color: C.textMuted,
+              }}>
+                {getListenerAvatarUrl(f.avatar_path)
+                  ? <img src={getListenerAvatarUrl(f.avatar_path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : (f.display_name?.[0] || f.handle?.[0] || 'L')}
+              </span>
+              <span style={{ fontSize: '12px', fontWeight: '600', color: C.textSub, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {f.display_name || `@${f.handle}`}
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* Profile stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>

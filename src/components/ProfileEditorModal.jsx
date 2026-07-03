@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { updateListener, uploadListenerAvatar } from '../lib/listener'
+import { setFollowsPublic } from '../lib/journalFollows'
 
 const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
@@ -19,6 +20,26 @@ export default function ProfileEditorModal({ onClose }) {
   const [avatar, setAvatar] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  // Follow-visibility consent — default OFF (the DB column defaults to false), so
+  // opting in is always a deliberate act. Saved immediately on toggle.
+  const [followsPublic, setFollowsPublicState] = useState(!!listener?.follows_public)
+  const [visBusy, setVisBusy] = useState(false)
+
+  async function toggleFollowsPublic() {
+    const next = !followsPublic
+    setVisBusy(true)
+    setFollowsPublicState(next) // optimistic
+    try {
+      await setFollowsPublic(next)
+      await refreshListener()
+    } catch (err) {
+      console.warn('Follow-visibility save failed:', err)
+      setFollowsPublicState(!next) // revert
+      setError(err.message || 'Unable to update follow visibility right now.')
+    } finally {
+      setVisBusy(false)
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -80,6 +101,30 @@ export default function ProfileEditorModal({ onClose }) {
             Profile avatar
             <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setAvatar(e.target.files?.[0] || null)} style={S.fileInput} />
           </label>
+          {/* Follow-visibility consent. Default OFF and shown as such, so making
+              your follows public is always a deliberate opt-in. */}
+          <div style={S.toggleRow}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: C.text }}>Show the nodes I follow to others</div>
+              <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px', lineHeight: 1.5 }}>
+                {followsPublic
+                  ? 'On — your name can appear in a node’s follower list.'
+                  : 'Off — your follows stay private. Only a node’s total follower count includes you.'}
+              </div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={followsPublic}
+              aria-label="Show the nodes I follow to others"
+              onClick={toggleFollowsPublic}
+              disabled={visBusy}
+              style={S.switch(followsPublic, visBusy)}
+            >
+              <span style={S.switchKnob(followsPublic)} />
+            </button>
+          </div>
+
           {error && <div style={S.error}>{error}</div>}
           <button type="submit" disabled={saving} style={S.primaryButton(saving)}>
             {saving ? 'Saving…' : 'Save profile'}
@@ -110,6 +155,20 @@ const S = {
     padding: '12px 14px', fontSize: '14px', width: '100%', boxSizing: 'border-box',
   },
   fileInput: { color: C.textMuted, fontSize: '13px', marginTop: '6px' },
+  toggleRow: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px',
+    background: '#0f2918', border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px',
+  },
+  switch: (on, busy) => ({
+    flexShrink: 0, width: '46px', height: '26px', borderRadius: '999px', position: 'relative',
+    cursor: busy ? 'default' : 'pointer', padding: 0, opacity: busy ? 0.7 : 1,
+    background: on ? C.accent : C.border, border: `1px solid ${on ? C.accent : C.border}`,
+    transition: 'background 0.15s ease',
+  }),
+  switchKnob: (on) => ({
+    position: 'absolute', top: '2px', left: on ? '22px' : '2px', width: '20px', height: '20px',
+    borderRadius: '50%', background: '#fff', transition: 'left 0.15s ease',
+  }),
   error: { color: '#fb7a6a', fontSize: '13px', background: '#3e1f16', borderRadius: '12px', padding: '10px' },
   primaryButton: (busy) => ({
     background: busy ? '#1a3a28' : C.accentLight, color: C.bg,
