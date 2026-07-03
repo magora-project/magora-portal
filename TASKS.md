@@ -30,6 +30,28 @@
 
 - [ ] **Durable timezone fix — expose recorder offset in the public view.** The insight's time-of-day now uses the device UTC offset (civil/wall-clock time) instead of the longitude/solar estimate that was mislabeling post-sunrise mornings as "pre-dawn." Fresh captures now stamp `tz_offset`/`tz` into `mobile_detections.device_info`, but that column is hidden by `public_mobile_detections`, so regenerating an *older* Listen's insight from the feed falls back to the *viewer's* offset (fine for same-tz, imperfect cross-tz). Durable fix (needs a migration + prod apply, so left for when DB access is handy): add a plain `tz_offset` column exposed in the view, and have `/api/insight` prefer it. Timestamps/display were always correct — this only ever affected the insight's "time of day" phrasing.
 
+- [x] **Task E: Prompt-cache the static insight prefix — INVESTIGATED, NOT VIABLE (July 2026)**
+  - **Finding:** Prompt caching can't help this prompt. Anthropic only caches a prefix once it clears a per-model minimum: **2048 tokens on Sonnet 4.6** (the current insight model), **4096 tokens on Haiku 4.5** (the Task F target). The entire `api/insight.js` prompt — static instructions *and* variable data combined — is only a few hundred tokens (the static instruction block is ~250 tokens). It's far below even the lowest 1024-token floor, so a `cache_control` breakpoint would silently never register a hit (`cache_creation_input_tokens: 0` forever). Prompt caching pays off for large stable prefixes (multi-thousand-token system prompts, few-shot blocks, retrieved docs); this short mostly-variable prompt is the opposite shape.
+  - **Conflict with Task F:** switching to Haiku (Task F) *raises* the cache minimum to 4096, making E even less reachable. The two tasks were in tension.
+  - **Original premise (didn't hold):** the task assumed "the static prefix is the majority of input tokens." In reality the prompt is small enough that there's nothing worth caching. Savings on the insight path come from **Task F** (Haiku, ~halves cost) and the future **G/H/I** (session batching, Batch API, situation cache), not from caching.
+  - **No code shipped for E** (implementing it would be dead markers). Closed as investigated.
+
+- [x] **Task F: Route per-capture insights to Haiku; reserve Sonnet for reports** (DONE July 2026)
+  - **Problem:** Insights are high-volume and formulaic; reports (future) are low-volume and high-value. Running short insight blurbs on a Sonnet-tier model overpays for a task where the quality delta is small.
+  - **Fix:** Point the insight generation call at `claude-haiku-4-5-20251001` (or current Haiku alias). Leave any phenological-report generation on Sonnet 5 when that gets built. This roughly halves the dominant cost line.
+  - **Eval gate (do this before committing):** Generate ~20–30 insights on BOTH Haiku and Sonnet from the same detection payloads. Compare side by side for: (1) voice/tone consistency, (2) ecological accuracy, (3) whether the IEK-first framing survives. If Haiku holds up → switch. If Haiku wobbles on the sensitive framing → keep Sonnet for insights and lean on Tasks E + I for savings instead. Record the decision + a few sample outputs in the build log.
+  - **Where to look:** The model identifier in the insight API call. Ideally lift it to a single config constant (e.g. `INSIGHT_MODEL`) so the insight/report split is one place to change, not scattered.
+  - **Progress (July 2026):**
+    - ✅ Model lifted to a single `INSIGHT_MODEL` constant at the top of `api/insight.js`; both branches reference it, no hardcoded model strings remain. Still `claude-sonnet-4-6`.
+    - ✅ Refactored `insight.js` so prompt-building is separated from the model call: exported `buildMobileInsightPrompt`, `buildNodeInsightPrompt`, and `generateInsight(prompt, model)`. Public endpoint contract + behavior unchanged (verified: syntax, lint, and a smoke test of both builders).
+    - ✅ Eval harness built: `scripts/eval-insight-models.mjs`. Reuses the real prompt builders (zero drift), pulls recent real mobile + node detections from Supabase, builds each prompt once, generates it with every candidate model, and writes a side-by-side `scripts/insight-eval-<ts>.md` with a scoring checklist + tally. Run: `node scripts/eval-insight-models.mjs` (auto-loads `.env.local`/`.env`; needs `ANTHROPIC_API_KEY` + `VITE_SUPABASE_*`; `EVAL_N` sets samples per type, default 12).
+  - **Decision (July 3 2026): switched to Haiku.** Ran the harness on 12 mobile + 12 node real detections (48 generations; output at `scripts/insight-eval-2026-07-03T14-33-39.md`). Haiku held Sonnet's voice and whole-ecosystem framing on essentially every pair. Only two divergences, both addressed:
+    - Haiku ignores the "no em-dashes" rule (~8/12 node outputs) → `generateInsight` now strips em-dashes (`replace(/\s*—\s*/g, ', ')`) for **any** model, so the house style holds regardless. Verified on a live Haiku call (806 chars, zero em-dashes).
+    - Occasional mild over-reach (e.g. editorializing Pine Siskins as climate "canaries") → added a "stay grounded in the data given, do not editorialize" bullet to both the mobile and node prompt instructions.
+    - ✅ `INSIGHT_MODEL` flipped to `claude-haiku-4-5-20251001`. Reports path (future) stays on Sonnet 5 when built — the insight/report split is this one constant. Verified: syntax, lint, live generation.
+  - **Sample outputs** (same detection, both models) live in the eval file above; keep it as the decision record. Note: the eval's Haiku samples predate the em-dash sanitizer, so they still show raw em-dashes — production output no longer does.
+  - **No migration. No UX change** (assuming eval passes).
+
 ---
 
 ## 🔵 Backlog — Prioritized
@@ -45,6 +67,34 @@
   - Run magora-firstrun.sh from bootfs config
   - Test provision-node Edge Function
   - Confirm detections flowing to Supabase
+
+- [ ] **Task G: Batch the listener session into one insight (cost + UX win)**
+  - **Concept:** Instead of firing a separate insight per capture, generate ONE synthesized "what your session heard" insight per Listen session. Reads the whole soundscape as a unit rather than N disconnected per-detection blurbs — more true to the whole-ecosystem thesis, and cuts the listener insight cost by the capture-count factor (~4–5x).
+  - **Product decision to confirm before building:** Does a listener doing 4 captures in one visit want 4 separate readings, or one session-level synthesis? Recommendation is one-per-session (better product AND cheaper). Confirm before building — this changes the insight data model.
+  - **Where it touches:** The Listen flow results step (`ListenModal` Results state) and however insights attach to detections. Currently the insight likely attaches to a single detection row; a session-level insight needs a home — either a `session_id` grouping on `mobile_detections` with the insight on the session, or a lightweight `listen_sessions` table. Scope the data model in a design pass before writing the migration.
+  - **Interacts with Task A:** A caches per-detection-row. G shifts the cache granularity to per-session for listeners. Make sure they compose — the session insight is the cached artifact for a listener session; the per-row cache still serves node detections.
+  - **Needs its own scoped session.** Do not bundle with H or I.
+
+- [ ] **Task H: Move non-interactive insight generation to the Batch API (50% off)**
+  - **FIRST STEP — verify, don't assume:** Check how insight generation is currently wired. Is it synchronous (user watches it load in the modal, staring at a spinner) or fire-and-store (generated server-side, displayed when ready)? The answer forks the task:
+    - **If a surface is async-able** (node insights almost certainly are; listener session insights from Task G may be): route those calls through the Message Batches API for a 50% discount. Generation returns when ready rather than blocking.
+    - **If a surface is genuinely synchronous** (user is actively waiting on-screen): leave it on the standard API, OR redesign to async ("we're listening — check back in a moment") if the UX tolerates it. Don't degrade a real-time experience purely to save cost; note the tradeoff and decide per-surface.
+  - **Likely outcome:** Node-side and Task-G session insights → Batch API. Any remaining real-time surface → standard API, relying on Tasks E/F/I for its savings.
+  - **Where to look:** Every insight generation entry point (fewer now that About reuses `ListenButton` and the Listen surface is consolidated). Classify each as sync or async, then route accordingly.
+  - **Depends on:** Cleanest after G (which clarifies the listener-side sync/async question).
+
+- [ ] **Task I: Situation-keyed semantic cache — STUB, spec after E/F land + 1 week of cost data**
+  - **Intent:** The structural cost-bender. Cache insights keyed on the *ecological situation* — a hash of {coarsened geo band, season, time-of-day bucket, dominant species set, ACI band} — not on the individual detection row. A robin at dawn in a Montana spring becomes the same cached insight whether it's birdnode11 or a listener two valleys over. This lets listeners benefit from node-generated cache entries and each other's, structurally defeating the "roving listeners cache poorly" problem (per-user caching can't help mobile users; per-situation caching can).
+  - **Why stub, not spec:** The exact hash granularity (how coarse the geo band, how many species define a "situation", how wide the ACI bucket) depends on the real repeat-rate in the data. Once E + F ship, one week of `usage` data shows how much cost is genuine novelty vs. repeat situations — spec the hash against that reality rather than guessing. Matches "confirm state before writing build specs."
+  - **When speccing (later), the spec must cover:** `situation_insights` table schema + the hash/key function; the pre-generation lookup (hash → check table → hit serves stored, miss generates + stores); how it LAYERS OVER Task A's per-row cache (situation cache is checked first; per-row is the fallback/legacy path); a staleness policy (do situation insights expire seasonally? get regenerated on drift?); and coarsening that preserves privacy (geo band must be ≥ the ~110m listener coarsening already applied).
+  - **Optional future extension (note only):** precompute top-N common situations per region overnight at Batch rates, so most live captures serve from a warm library and the API only fires on genuine long-tail novelty.
+  - **Do not build yet.** This is a placeholder to hold the intent in the queue.
+
+---
+
+## 🧹 Doc Hygiene
+
+- [ ] **Fix stale `MAGORA_PROJECT_BRIEF.md`** — it still references the removed `/dashboard` route and deleted `Dashboard.jsx` (retired in the July 2–3 session). Update to reflect the Journal tab (`/journal/me`) replacement so the in-repo brief doesn't rot.
 
 ---
 
