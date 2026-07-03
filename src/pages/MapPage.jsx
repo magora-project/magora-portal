@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { useAuth } from '../lib/auth'
-import { useEcosystemInsight } from '../lib/useEcosystemInsight'
+import { useEcosystemInsight, useSessionInsight } from '../lib/useEcosystemInsight'
 import { parseNodeLocation } from '../lib/geo'
 import { subscribeQueuedListens } from '../lib/listenQueue'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
@@ -39,6 +39,7 @@ export default function MapPage() {
   const [aciLogs, setAciLogs] = useState([])
   const [detections, setDetections] = useState([])
   const [mobileDetections, setMobileDetections] = useState([])
+  const [sessions, setSessions] = useState([])
   const [nodes, setNodes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -48,6 +49,7 @@ export default function MapPage() {
   // with the field journal via useEcosystemInsight. Kept separate from the node
   // `insights` map above, which the node DetectionCards use.
   const mobileInsight = useEcosystemInsight()
+  const sessionInsight = useSessionInsight()
   const [todaySpeciesCount, setTodaySpeciesCount] = useState(null)
   const [todayDetections, setTodayDetections] = useState([])
   const [queuedListens, setQueuedListens] = useState([])
@@ -92,7 +94,7 @@ export default function MapPage() {
     todayStart.setUTCHours(0, 0, 0, 0)
 
     try {
-      const [nodesRes, detRes, aciRes, todayRes, mobileRes] = await Promise.all([
+      const [nodesRes, detRes, aciRes, todayRes, mobileRes, sessionsRes] = await Promise.all([
         supabase.from('nodes').select('*').eq('is_active', true),
         supabase.from('detections')
           .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
@@ -101,6 +103,7 @@ export default function MapPage() {
         supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
         supabase.from('detections').select('species_name').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString()),
         supabase.from('public_mobile_detections').select('*').order('detected_at', { ascending: false }).limit(50),
+        supabase.from('public_listen_sessions').select('*').order('started_at', { ascending: false }).limit(50),
       ])
 
       // supabase-js resolves with { data, error } even on API failures — surface those too
@@ -110,6 +113,7 @@ export default function MapPage() {
       setNodes(nodesRes.data || [])
       setDetections(detRes.data || [])
       setMobileDetections(mobileRes.data || [])
+      setSessions(sessionsRes.data || [])
       setAciLogs(aciRes.data || [])
       setTodayDetections(todayRes.data || [])
       setTodaySpeciesCount(new Set((todayRes.data || []).map(d => d.species_name).filter(n => n && !isHiddenSpecies(n))).size)
@@ -203,6 +207,14 @@ export default function MapPage() {
   const mobileFeed = mobileDetections.filter(m =>
     (m.species || []).some(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name)))
 
+  // Listen sessions with at least one confident, non-hidden ID. One card per outing
+  // (public_listen_sessions aggregates species across the session's captures).
+  const sessionFeed = sessions.filter(s =>
+    (s.species || []).some(x => x.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(x.common_name)))
+
+  // Amber map dots cover both legacy per-capture Listens and new session centroids.
+  const listenMarkers = [...mobileFeed, ...sessionFeed]
+
   const queuedFeed = queuedListens.map(item => ({
     type: 'queued',
     ts: item.queued_at || item.detected_at,
@@ -212,6 +224,7 @@ export default function MapPage() {
 
   // Following-tab Listens: those posted by Listeners the user follows.
   const followedMobile = mobileFeed.filter(m => m.listener_handle && followedHandleSet.has(m.listener_handle))
+  const followedSessions = sessionFeed.filter(s => s.listener_handle && followedHandleSet.has(s.listener_handle))
 
   // Unified, time-sorted feed. On Global, all Listens show; on Following, only
   // Listens from followed people (alongside followed places). Local queued listens
@@ -221,11 +234,13 @@ export default function MapPage() {
         ...queuedFeed,
         ...dedupedDetections.map(d => ({ type: 'node', ts: d.detected_at, key: `n-${d.id}`, d })),
         ...followedMobile.map(m => ({ type: 'mobile', ts: m.detected_at, key: `m-${m.id}`, m })),
+        ...followedSessions.map(s => ({ type: 'session', ts: s.started_at, key: `s-${s.id}`, s })),
       ]
     : [
         ...queuedFeed,
         ...dedupedDetections.map(d => ({ type: 'node', ts: d.detected_at, key: `n-${d.id}`, d })),
         ...mobileFeed.map(m => ({ type: 'mobile', ts: m.detected_at, key: `m-${m.id}`, m })),
+        ...sessionFeed.map(s => ({ type: 'session', ts: s.started_at, key: `s-${s.id}`, s })),
       ]
   ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
 
@@ -253,8 +268,12 @@ export default function MapPage() {
     const mobilePts = mobileDetections
       .filter(m => (m.species || []).some(s => s.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(s.common_name)))
       .map(m => [m.lat, m.lon])
-    return [...nodePts, ...mobilePts]
-  }, [nodes, mobileDetections])
+    const sessionPts = sessions
+      .filter(s => s.lat != null && s.lon != null
+        && (s.species || []).some(x => x.confidence >= MIN_CONFIDENCE && !isHiddenSpecies(x.common_name)))
+      .map(s => [s.lat, s.lon])
+    return [...nodePts, ...mobilePts, ...sessionPts]
+  }, [nodes, mobileDetections, sessions])
 
   return (
     <div>
@@ -344,7 +363,7 @@ export default function MapPage() {
                   </Tooltip>
                 </CircleMarker>
               ))}
-              {mobileFeed.map(m => (
+              {listenMarkers.map(m => (
                 <CircleMarker
                   key={`mob-${m.id}`}
                   center={[m.lat, m.lon]}
@@ -406,7 +425,12 @@ export default function MapPage() {
           ) : feedItems.length > 0 ? (
             <div className="detection-grid">
               {feedItems.map(item => (
-                item.type === 'mobile' ? (
+                item.type === 'session' ? (
+                  <MobileDetectionCard
+                    key={item.key} d={item.s}
+                    insight={sessionInsight.insights[item.s.id]} onGenerate={() => sessionInsight.requestInsight(item.s)}
+                  />
+                ) : item.type === 'mobile' ? (
                   <MobileDetectionCard
                     key={item.key} d={item.m}
                     insight={mobileInsight.insights[item.m.id]} onGenerate={() => mobileInsight.requestInsight(item.m)}
