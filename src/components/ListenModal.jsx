@@ -222,7 +222,9 @@ export default function ListenModal({ onClose }) {
         lon: coords.lon,
         status: 'pending',
         audio_path: path,
-        device_info: { ua: navigator.userAgent },
+        // Stamp the recorder's wall-clock offset so a later insight regeneration
+        // uses the recorder's local time, not a viewer's (surfaced via the view).
+        device_info: { ua: navigator.userAgent, tz_offset: new Date().getTimezoneOffset(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
         session_id: sessionIdRef.current,
       })
       if (ins.error) throw ins.error

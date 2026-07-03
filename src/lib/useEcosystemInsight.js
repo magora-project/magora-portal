@@ -22,7 +22,7 @@ export function useEcosystemInsight() {
           lat: m.lat, lon: m.lon, detected_at: m.detected_at,
           // Prefer the recorder's stored offset; else the viewer's (same tz in the common
           // case). Falls back server-side to the longitude estimate if neither is present.
-          tz_offset: m.device_info?.tz_offset ?? new Date().getTimezoneOffset(),
+          tz_offset: m.tz_offset ?? new Date().getTimezoneOffset(),
           habitat_type: m.habitat_type, canopy_cover: m.canopy_cover,
           water_present: m.water_present, disturbance_level: m.disturbance_level,
         }),

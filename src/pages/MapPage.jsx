@@ -90,8 +90,10 @@ export default function MapPage() {
   }, [user])
 
   async function fetchData() {
+    // Local midnight, not UTC — UTC midnight is ~5-6pm Mountain, which made the
+    // "species today" count roll over in the afternoon.
     const todayStart = new Date()
-    todayStart.setUTCHours(0, 0, 0, 0)
+    todayStart.setHours(0, 0, 0, 0)
 
     try {
       const [nodesRes, detRes, aciRes, todayRes, mobileRes, sessionsRes] = await Promise.all([

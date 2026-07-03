@@ -151,7 +151,7 @@ export default function JournalPage() {
       // to pick the right insight write-back (session vs per-capture).
       const [mobRes, sessRes] = await Promise.all([
         supabase.from('public_mobile_detections')
-          .select('id, detected_at, lat, lon, species, habitat_type, canopy_cover, water_present, disturbance_level, insight')
+          .select('id, detected_at, lat, lon, species, habitat_type, canopy_cover, water_present, disturbance_level, insight, tz_offset')
           .eq('listener_handle', profile.handle)
           .order('detected_at', { ascending: false }).limit(100),
         supabase.from('public_listen_sessions')
