@@ -176,6 +176,10 @@ export default function MapPage() {
       if (!res.ok) throw new Error()
       const data = await res.json()
       setInsights(prev => ({ ...prev, [d.id]: { text: data.insight } }))
+      // Persist so the next viewer reads the stored insight instead of regenerating
+      // (Task H). Idempotent RPC (writes only when null); best-effort.
+      supabase.rpc('set_node_detection_insight', { detection_id: d.id, insight_text: data.insight })
+        .then(({ error }) => { if (error) console.warn('set_node_detection_insight failed:', error) })
     } catch {
       setInsights(prev => ({ ...prev, [d.id]: { error: true } }))
     }
@@ -452,7 +456,7 @@ export default function MapPage() {
                   <DetectionCard
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
                     count={speciesCountToday[item.d.species_name || item.d.raw_label] || 1}
-                    insight={insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
+                    insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
                   />
                 )
               ))}

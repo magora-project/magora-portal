@@ -89,6 +89,11 @@
   - **Likely outcome:** Node-side and Task-G session insights → Batch API. Any remaining real-time surface → standard API, relying on Tasks E/F/I for its savings.
   - **Where to look:** Every insight generation entry point (fewer now that About reuses `ListenButton` and the Listen surface is consolidated). Classify each as sync or async, then route accordingly.
   - **Depends on:** Cleanest after G (which clarifies the listener-side sync/async question).
+  - **Built — v1: node insights (July 2026).** Verified finding: all insight generation was interactive; node insights were the only genuinely async surface (and weren't even persisted — MapPage/NodePage regenerated them full-price in local state on every viewer tap). Listener session insights stay interactive (the listener is on-screen — "don't degrade real-time"). What shipped:
+    - Migration `20260708` (applied to prod): `detections.insight` + `insight_requested_at`; `claim_node_insights(max)` (atomic claim of recent, confident, not-in-flight detections) and `set_node_detection_insight` RPCs (SECURITY DEFINER → cron runs on the anon key, no service role).
+    - `api/insight-batch.js`: a **Vercel Cron** function that drains ended batches (writes insights back, idempotent) then claims + submits a new batch, reusing `buildNodeInsightPrompt` (no prompt drift). `vercel.json` schedules it hourly.
+    - `INSIGHT_MODEL` exported from `api/insight.js` (Haiku → batch = 50% off Haiku). MapPage/NodePage now show the stored `d.insight` and persist on-demand taps via `set_node_detection_insight`.
+    - Verified: Batch API create/retrieve/cancel smoke-tested live; RPCs + column verified live; build + lint clean. **⏭ Remaining (deploy-time, can't verify from here):** set `CRON_SECRET` in Vercel env; confirm the Vercel plan allows the hourly cron (Hobby may cap to daily); after deploy, watch a cron tick submit a batch and node cards fill in with stored insights (~<1h later). Follow-on: smarter detection selection / dedup ties into Task I (situation cache).
 
 - [ ] **Task I: Situation-keyed semantic cache — STUB, spec after E/F land + 1 week of cost data**
   - **Intent:** The structural cost-bender. Cache insights keyed on the *ecological situation* — a hash of {coarsened geo band, season, time-of-day bucket, dominant species set, ACI band} — not on the individual detection row. A robin at dawn in a Montana spring becomes the same cached insight whether it's birdnode11 or a listener two valleys over. This lets listeners benefit from node-generated cache entries and each other's, structurally defeating the "roving listeners cache poorly" problem (per-user caching can't help mobile users; per-situation caching can).
@@ -101,7 +106,7 @@
 
 ## 🧹 Doc Hygiene
 
-- [ ] **Fix stale `MAGORA_PROJECT_BRIEF.md`** — it still references the removed `/dashboard` route and deleted `Dashboard.jsx` (retired in the July 2–3 session). Update to reflect the Journal tab (`/journal/me`) replacement so the in-repo brief doesn't rot.
+- [x] **Fix stale `MAGORA_PROJECT_BRIEF.md`** (July 2026) — dropped the removed `/dashboard` route + `Dashboard.jsx` (route table, file tree, and the obsolete "Dashboard per-node filtering" limitation), and brought the route table/file tree current (added `/species`, `/journal`, `/donate`, SpeciesPage, JournalPage; noted Listens + sessions). Left an unrelated stale row flagged for later: "Portal user auth — Sign-in button is a stub" is now false (email OTP + Google sign-in shipped).
 
 ---
 

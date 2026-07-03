@@ -4,7 +4,7 @@
 // different tiers with a single edit. Haiku 4.5 for insights: the July 2026
 // side-by-side eval found it holds Sonnet's voice/framing at ~half the cost
 // (see TASKS.md Task F). generateInsight strips em-dashes, which Haiku ignores.
-const INSIGHT_MODEL = 'claude-haiku-4-5-20251001'
+export const INSIGHT_MODEL = 'claude-haiku-4-5-20251001'
 
 // Turn a fully-assembled prompt into an insight. Prompt-building and the model
 // call are kept separate so the Task-F eval harness
