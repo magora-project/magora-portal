@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { useAuth } from '../lib/auth'
-import { useEcosystemInsight } from '../lib/useEcosystemInsight'
+import { useEcosystemInsight, useSessionInsight } from '../lib/useEcosystemInsight'
 import MobileDetectionCard from '../components/MobileDetectionCard'
 import {
   validateHandle,
@@ -73,6 +73,7 @@ export default function JournalPage() {
   const [followerCount, setFollowerCount] = useState(0)
   const [followBusy, setFollowBusy] = useState(false)
   const mobileInsight = useEcosystemInsight()
+  const sessionInsight = useSessionInsight()
 
   // Section anchors so the Life list / Places / Listens stat buttons can scroll
   // straight to their content (the journal is one page, like the live feed).
@@ -143,19 +144,30 @@ export default function JournalPage() {
         return
       }
       setLoading(true)
-      const { data, error } = await supabase
-        .from('public_mobile_detections')
-        .select('id, detected_at, lat, lon, species, habitat_type, canopy_cover, water_present, disturbance_level, insight')
-        .eq('listener_handle', profile.handle)
-        .order('detected_at', { ascending: false })
-        .limit(100)
+      // A listener's journal shows both legacy per-capture Listens and new Listen
+      // sessions. Sessions are normalized (started_at -> detected_at, tagged
+      // _kind) and merged into `entries`, so the life list, place/Listen counts,
+      // and map markers all include them; only the feed render branches on _kind
+      // to pick the right insight write-back (session vs per-capture).
+      const [mobRes, sessRes] = await Promise.all([
+        supabase.from('public_mobile_detections')
+          .select('id, detected_at, lat, lon, species, habitat_type, canopy_cover, water_present, disturbance_level, insight')
+          .eq('listener_handle', profile.handle)
+          .order('detected_at', { ascending: false }).limit(100),
+        supabase.from('public_listen_sessions')
+          .select('id, started_at, lat, lon, species, habitat_type, canopy_cover, water_present, disturbance_level, insight, capture_count')
+          .eq('listener_handle', profile.handle)
+          .order('started_at', { ascending: false }).limit(100),
+      ])
 
-      if (error) {
-        console.warn('Journal entries failed:', error)
+      if (mobRes.error || sessRes.error) {
+        console.warn('Journal entries failed:', mobRes.error || sessRes.error)
         setError('Unable to load your Listens right now.')
         setEntries([])
       } else {
-        setEntries(data || [])
+        const mob = (mobRes.data || []).map(m => ({ ...m, _kind: 'mobile' }))
+        const sess = (sessRes.data || []).map(s => ({ ...s, _kind: 'session', detected_at: s.started_at }))
+        setEntries([...mob, ...sess].sort((a, b) => new Date(b.detected_at) - new Date(a.detected_at)))
       }
       setLoading(false)
     }
@@ -541,14 +553,17 @@ export default function JournalPage() {
         <h2 style={S.sectionLabel}>Listens</h2>
         {entries.length > 0 ? (
           <div className="detection-grid">
-            {entries.map((entry) => (
-              <MobileDetectionCard
-                key={entry.id}
-                d={entry}
-                insight={mobileInsight.insights[entry.id]}
-                onGenerate={() => mobileInsight.requestInsight(entry)}
-              />
-            ))}
+            {entries.map((entry) => {
+              const ins = entry._kind === 'session' ? sessionInsight : mobileInsight
+              return (
+                <MobileDetectionCard
+                  key={entry.id}
+                  d={entry}
+                  insight={ins.insights[entry.id]}
+                  onGenerate={() => ins.requestInsight(entry)}
+                />
+              )
+            })}
           </div>
         ) : (
           <div style={{ color: C.textMuted, padding: '24px', border: `1px solid ${C.border}`, borderRadius: '16px' }}>
