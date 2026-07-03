@@ -68,7 +68,7 @@
   - Test provision-node Edge Function
   - Confirm detections flowing to Supabase
 
-- [ ] **Task G: Batch the listener session into one insight (cost + UX win)**
+- [x] **Task G: Batch the listener session into one insight (cost + UX win)** — SHIPPED July 2026 (Phases A–D merged to `main`, PR #3; on-device confirmed).
   - **Concept:** Instead of firing a separate insight per capture, generate ONE synthesized "what your session heard" insight per Listen session. Reads the whole soundscape as a unit rather than N disconnected per-detection blurbs — more true to the whole-ecosystem thesis, and cuts the listener insight cost by the capture-count factor (~4–5x).
   - **Product decision to confirm before building:** Does a listener doing 4 captures in one visit want 4 separate readings, or one session-level synthesis? Recommendation is one-per-session (better product AND cheaper). Confirm before building — this changes the insight data model.
   - **Where it touches:** The Listen flow results step (`ListenModal` Results state) and however insights attach to detections. Currently the insight likely attaches to a single detection row; a session-level insight needs a home — either a `session_id` grouping on `mobile_detections` with the insight on the session, or a lightweight `listen_sessions` table. Scope the data model in a design pass before writing the migration.
@@ -82,7 +82,7 @@
     - ✅ **Phase D journal** (`JournalPage.jsx`): sessions merged into the journal feed + life list + place/Listen counts + map markers; feed branches on `_kind` for the right insight write-back (session vs per-capture).
     - **Committed** on branch `task-g-listen-sessions` (stacked on `task-f-haiku-insights`). Build + lint clean; `public_listen_sessions` verified live. ⏭ **Only remaining: on-device test** of the full record → "record another spot" → post → session-card flow (mic/geo/auth), same as prior Listen phases.
 
-- [ ] **Task H: Move non-interactive insight generation to the Batch API (50% off)**
+- [x] **Task H: Move non-interactive insight generation to the Batch API (50% off)** — BUILT July 2026 (v1: node-insight batch pre-gen, branch `task-h-node-insight-batch`). ⏭ Pending deploy config before it runs: set `CRON_SECRET` in Vercel + confirm the plan allows the hourly cron.
   - **FIRST STEP — verify, don't assume:** Check how insight generation is currently wired. Is it synchronous (user watches it load in the modal, staring at a spinner) or fire-and-store (generated server-side, displayed when ready)? The answer forks the task:
     - **If a surface is async-able** (node insights almost certainly are; listener session insights from Task G may be): route those calls through the Message Batches API for a 50% discount. Generation returns when ready rather than blocking.
     - **If a surface is genuinely synchronous** (user is actively waiting on-screen): leave it on the standard API, OR redesign to async ("we're listening — check back in a moment") if the UX tolerates it. Don't degrade a real-time experience purely to save cost; note the tradeoff and decide per-surface.
