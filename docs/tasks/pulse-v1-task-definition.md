@@ -119,7 +119,7 @@ survey_gap_question:  { relationship_strength: 0.5, phenology_alignment: 0.3, da
 ```
 // interactive; check-before-generate (read cache first, mirror insight-cache pattern)
 pulseOnDemand(node_id: string, window?: Window): Promise<PulsePayload | null>
-  → returns top-ranked stored pulse if fresh, else generate → score → store → return top.
+  → fresh = a stored pulse for the same (node_id, resolved window) generated within PULSE_ONDEMAND_TTL (default 6h, config constant); if fresh return it, else generate → score → store → return top. v1.1 refinement: invalidate early when new detections have landed in the window since generation.
 
 // batch; cron-driven
 pulseBatch(node_id: string, window: Window, cadence: PulseCadence): Promise<PulsePayload[]>
