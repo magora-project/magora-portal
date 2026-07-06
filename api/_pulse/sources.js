@@ -72,9 +72,9 @@ export async function nodeSpeciesSet(nodeId) {
 
 // ── species (seeded: family, order, conservation; guild is null-seeded) ───────
 /**
- * Species profile. Reads the conservation field defensively (schema uses iucn_status;
- * an older column name is conservation_status) — whichever is present. Guild/diet
- * columns exist but are null-seeded, so callers must treat them as optional.
+ * Species profile. Conservation status is read from iucn_status (the actual column on
+ * species; there is no conservation_status column). Guild/diet columns exist but are
+ * null-seeded, so callers must treat them as optional.
  */
 export async function speciesProfile(speciesName) {
   const s = await pgFetch(`species?common_name=eq.${enc(speciesName)}&select=*`)
@@ -84,7 +84,7 @@ export async function speciesProfile(speciesName) {
     scientific_name: s.scientific_name || null,
     family: s.family || null,
     order_name: s.order_name || null,
-    conservation_status: s.iucn_status ?? s.conservation_status ?? null,
+    conservation_status: s.iucn_status ?? null,
     guild: s.guild ?? null, // null-seeded in v1; optional in evidence, never used in scoring
   }
 }
