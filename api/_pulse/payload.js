@@ -65,6 +65,61 @@ export const PULSE_KINDS = /** @type {PulseKind[]} */ ([
   'absence',
 ])
 
+/**
+ * @typedef {"detection_card"|"listen_result"|"journal_entry"|"node_report"} PulseSurface
+ */
+
+/**
+ * Response-only surface routing (v1.1, D5). NOT stored — computed per response over the
+ * window's ranked pulses and attached to the response only (no DB column, no schema, no
+ * upsert change). Single-cardinality surfaces hold one pulse_id (or null); node_report
+ * holds a ranked list of pulse_ids.
+ * @typedef {Object} PulseSelection
+ * @property {{ detection_card?: string|null, listen_result?: string|null, journal_entry?: string|null, node_report?: string[] }} per_surface
+ */
+
+/**
+ * On-demand response (v1.1): the top pulse (unchanged) plus response-only routing.
+ * Callers that ignore `selection` see the same top-1 payload as before.
+ * @typedef {Object} PulseOnDemandResult
+ * @property {PulsePayload|null} pulse
+ * @property {PulseSelection} selection
+ */
+
+/** The four render surfaces Pulse can route a chosen pattern to. */
+export const SURFACES = /** @type {PulseSurface[]} */ ([
+  'detection_card', 'listen_result', 'journal_entry', 'node_report',
+])
+
+/** Default surface for an on-demand request that doesn't name one. */
+export const DEFAULT_SURFACE = 'detection_card'
+
+// Kinds a single-question / reflective surface accepts. soundscape_shift is excluded (it
+// routes to node_report only); absence is excluded (gated — never eligible anywhere).
+const SINGLE_QUESTION_KINDS = ['novel_detection', 'activity_spike', 'survey_gap_question']
+// node_report is a ranked list over all non-gated kinds.
+const REPORT_KINDS = ['novel_detection', 'activity_spike', 'soundscape_shift', 'survey_gap_question']
+
+/**
+ * Static surface -> affordance map: cardinality + the eligible-kind set. Eligibility is a
+ * kind gate; the degradation guard (grounded-only survey_gap on single surfaces) lives in
+ * select.js. `absence` is in no set, so it is never eligible on any surface.
+ */
+export const SURFACE_AFFORDANCE = {
+  detection_card: { cardinality: 'single', kinds: SINGLE_QUESTION_KINDS },
+  listen_result:  { cardinality: 'single', kinds: SINGLE_QUESTION_KINDS },
+  journal_entry:  { cardinality: 'single', kinds: SINGLE_QUESTION_KINDS },
+  node_report:    { cardinality: 'list',   kinds: REPORT_KINDS },
+}
+
+/**
+ * A survey_gap_question reaches a single-question surface only when its grounded
+ * `data_absence` sub-score clears this bar (habitat-gap / iNat ground-truth = 1.0). Below
+ * it, the pulse's score would be carried by the neutral-0.5 relationship_strength /
+ * phenology_alignment placeholders — which must never put it on a card. See select.js.
+ */
+export const GROUNDED_DATA_ABSENCE_MIN = 0.5
+
 /** The weights_version whose rows in public.pulse_weights we score against. */
 export const WEIGHTS_VERSION = 'v1'
 

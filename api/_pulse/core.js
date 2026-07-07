@@ -1,25 +1,27 @@
-// Pulse Agent v1 — the two entry points over one shared pure core.
+// Pulse Agent v1 — the two entry points over one shared pure core (+ v1.1 D5 routing).
 //
-//   runCore(nodeId, window)                 pure-ish: generateCandidates -> scorePulses
-//   pulseOnDemand(nodeId, window?)          interactive; check cache first (freshness TTL)
-//   pulseBatch(nodeId, window, cadence)     cron; generate -> store all -> notify-to-Slack
+//   runCore(nodeId, window)                        pure-ish: generateCandidates -> scorePulses
+//   pulseOnDemand(nodeId, window?, surface?)       interactive; cache-first (freshness TTL)
+//   pulseBatch(nodeId, window, cadence)            cron; generate -> store all -> notify
 //
-// Both modes call runCore and store through the same idempotent upsert. The payload shape
-// is identical across modes; only the caching/notify wrapper differs. Window is always a
-// parameter — the core never bakes one in.
+// Both modes call runCore and store through the same idempotent upsert. Storage is
+// unchanged (one-pulse-per-row). v1.1 adds a response-only `selection.per_surface`:
+// surface(s) are threaded in as a scoring-core parameter (mirrors `window`, D4) and a
+// pure assignment pass (select.js) routes the ranked pulses. On-demand returns
+// `{ pulse, selection }` (pulse = the same top-1 as before); batch returns
+// `{ pulses, selection }` (pulses = the same ranked list). Callers that ignore
+// `selection` see unchanged top-1 / ranked-list behavior.
 
-import { WEIGHTS_VERSION, PULSE_ONDEMAND_TTL_MS } from './payload.js'
-import { loadWeights, findFreshPulse, storePulse } from './db.js'
+import { WEIGHTS_VERSION, PULSE_ONDEMAND_TTL_MS, SURFACES, DEFAULT_SURFACE } from './payload.js'
+import { loadWeights, fetchPulsesForWindow, storePulse } from './db.js'
 import { generateCandidates } from './generate.js'
 import { scorePulses } from './score.js'
+import { assignSurfaces } from './select.js'
 import { postOperatorAlert, summarizeRun } from './notify.js'
 
 /**
  * Shared pure core: generate candidates for the window and rank them with the versioned
- * weights. Returns scored payload drafts (node_id/window/generated_at/pulse_id are
- * attached at store time), ranked by score desc. No writes, no side-effects.
- * @param {string} nodeId
- * @param {import('./payload.js').Window} window
+ * weights. Returns scored payload drafts ranked by score desc. No writes, no side-effects.
  */
 export async function runCore(nodeId, window) {
   const [candidates, weights] = await Promise.all([
@@ -30,11 +32,9 @@ export async function runCore(nodeId, window) {
 }
 
 /**
- * Resolve a window. When none is supplied (on-demand), default to the current UTC
- * calendar day so repeated requests within the day share the same window key (a stable
- * key is what makes the freshness TTL reusable). Explicit windows are used as-is.
- * @param {Partial<import('./payload.js').Window>} [window]
- * @param {import('./payload.js').PulseCadence} [defaultCadence]
+ * Resolve a window. On-demand default is the current UTC calendar day so repeated requests
+ * within the day share the same window key (stable key = reusable freshness TTL). Explicit
+ * windows are used as-is.
  */
 export function resolveWindow(window, defaultCadence = 'on_demand') {
   if (window?.start && window?.end) {
@@ -47,36 +47,44 @@ export function resolveWindow(window, defaultCadence = 'on_demand') {
 }
 
 /**
- * Interactive entry point (§6). Check the cache first: return the top-ranked stored pulse
- * for this resolved window if it was generated within PULSE_ONDEMAND_TTL. Otherwise
- * generate -> score -> store -> return the top pulse. Returns null when there is nothing
- * to say (no candidates).
+ * Interactive entry point. Cache-first: if the stored pulses for this resolved window are
+ * fresh (top generated within PULSE_ONDEMAND_TTL, 6h) reuse them, else generate -> score
+ * -> store. Returns the top pulse (unchanged) plus response-only `selection` scoped to the
+ * requested surface (per_surface carries only that key).
  * @param {string} nodeId
  * @param {Partial<import('./payload.js').Window>} [window]
- * @returns {Promise<import('./payload.js').PulsePayload | null>}
+ * @param {import('./payload.js').PulseSurface} [surface]
+ * @returns {Promise<import('./payload.js').PulseOnDemandResult>}
  */
-export async function pulseOnDemand(nodeId, window) {
+export async function pulseOnDemand(nodeId, window, surface = DEFAULT_SURFACE) {
   const resolved = resolveWindow(window, 'on_demand')
 
-  const fresh = await findFreshPulse(nodeId, resolved, PULSE_ONDEMAND_TTL_MS)
-  if (fresh) return fresh
+  // Read the whole window's stored set once; decide freshness on the top row (6h TTL).
+  const cached = await fetchPulsesForWindow(nodeId, resolved)
+  const fresh =
+    cached.length > 0 &&
+    Date.now() - new Date(cached[0].generated_at).getTime() <= PULSE_ONDEMAND_TTL_MS
 
-  const scored = await runCore(nodeId, resolved)
-  if (!scored.length) return null
+  let ranked
+  if (fresh) {
+    ranked = cached
+  } else {
+    const scored = await runCore(nodeId, resolved)
+    if (scored.length === 0) {
+      return { pulse: null, selection: assignSurfaces([], [surface]) }
+    }
+    ranked = (await Promise.all(scored.map((p) => storePulse(nodeId, resolved, p))))
+      .sort((a, b) => b.score - a.score)
+  }
 
-  // Store the full ranked set so a later view of the same window is a cache hit, then
-  // return the top pulse for the single-question slot.
-  const stored = await Promise.all(scored.map((p) => storePulse(nodeId, resolved, p)))
-  return stored.sort((a, b) => b.score - a.score)[0]
+  return { pulse: ranked[0] ?? null, selection: assignSurfaces(ranked, [surface]) }
 }
 
 /**
- * Batch entry point (§6). Generate -> score -> store (idempotent on the unique key) ->
- * notify-to-Slack (operator side-effect). Returns the stored payloads, ranked.
- * @param {string} nodeId
- * @param {import('./payload.js').Window} window
- * @param {import('./payload.js').PulseCadence} cadence
- * @returns {Promise<import('./payload.js').PulsePayload[]>}
+ * Batch entry point (cron). Generate -> score -> store (idempotent) -> notify-to-Slack
+ * (operator side-effect). Returns the ranked pulses (unchanged) plus response-only
+ * `selection` populated across all four surfaces.
+ * @returns {Promise<{ pulses: import('./payload.js').PulsePayload[], selection: import('./payload.js').PulseSelection }>}
  */
 export async function pulseBatch(nodeId, window, cadence) {
   const resolved = resolveWindow({ ...window, cadence }, cadence || 'daily')
@@ -85,8 +93,8 @@ export async function pulseBatch(nodeId, window, cadence) {
   const stored = await Promise.all(scored.map((p) => storePulse(nodeId, resolved, p)))
   const ranked = stored.sort((a, b) => b.score - a.score)
 
-  // Operator monitoring side-effect only — never a node-voice publication.
+  // Operator monitoring side-effect only — never a node-voice publication. Unchanged.
   await postOperatorAlert(summarizeRun(nodeId, resolved.cadence, ranked))
 
-  return ranked
+  return { pulses: ranked, selection: assignSurfaces(ranked, SURFACES) }
 }

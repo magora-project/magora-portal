@@ -38,8 +38,10 @@ export default async function handler(req, res) {
 
     const runs = []
     for (const nodeId of nodeIds) {
-      const payloads = await pulseBatch(nodeId, window, 'daily')
-      runs.push({ node_id: nodeId, pulses: payloads.length, top: payloads[0]?.kind ?? null })
+      // v1.1: pulseBatch returns { pulses, selection }; selection.per_surface (all four
+      // surfaces) is response-only. Stored-pulse + Slack behavior unchanged.
+      const { pulses, selection } = await pulseBatch(nodeId, window, 'daily')
+      runs.push({ node_id: nodeId, pulses: pulses.length, top: pulses[0]?.kind ?? null, selection })
     }
 
     return res.status(200).json({ ok: true, window, nodes: nodeIds.length, runs })

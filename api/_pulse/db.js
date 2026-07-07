@@ -89,6 +89,24 @@ export async function findFreshPulse(nodeId, window, ttlMs) {
 }
 
 /**
+ * All stored pulses for exactly this (node_id, window, cadence), ranked by score desc.
+ * pulseOnDemand runs surface selection over the whole window's ranked set (findFreshPulse
+ * only decides freshness on the top row). Read-only; returns [] if none.
+ * @returns {Promise<import('./payload.js').PulsePayload[]>}
+ */
+export async function fetchPulsesForWindow(nodeId, window) {
+  const rows = await pgFetch(
+    `pulses?node_id=eq.${nodeId}` +
+      `&window_start=eq.${encodeURIComponent(window.start)}` +
+      `&window_end=eq.${encodeURIComponent(window.end)}` +
+      `&cadence=eq.${encodeURIComponent(window.cadence)}` +
+      `&select=*&order=score.desc`,
+    true,
+  )
+  return rows.map(rowToPayload)
+}
+
+/**
  * Persist one scored payload via the idempotent upsert RPC. Returns the stored payload.
  * @param {string} nodeId
  * @param {import('./payload.js').Window} window
