@@ -95,7 +95,9 @@ export async function findFreshPulse(nodeId, window, ttlMs) {
  * @param {import('./payload.js').PulsePayload} payload
  */
 export async function storePulse(nodeId, window, payload) {
-  const [row] = await sbRpc('upsert_pulse', {
+  // upsert_pulse is declared `returns public.pulses` (a single composite row), so
+  // PostgREST returns a JSON object, not an array — do not destructure it as one.
+  const row = await sbRpc('upsert_pulse', {
     p_node_id: nodeId,
     p_kind: payload.kind,
     p_window_start: window.start,
@@ -108,7 +110,7 @@ export async function storePulse(nodeId, window, payload) {
     p_survey_gap: payload.survey_gap ?? null,
     p_evidence: payload.evidence,
   })
-  return rowToPayload(row)
+  return rowToPayload(Array.isArray(row) ? row[0] : row)
 }
 
 /** Map a stored pulses row into the canonical PulsePayload shape. */
