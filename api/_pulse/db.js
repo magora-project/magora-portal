@@ -109,8 +109,18 @@ export async function storePulse(nodeId, window, payload) {
     p_subject: payload.subject,
     p_survey_gap: payload.survey_gap ?? null,
     p_evidence: payload.evidence,
+    p_subject_key: subjectKey(payload.subject),
   })
   return rowToPayload(Array.isArray(row) ? row[0] : row)
+}
+
+/**
+ * Deterministic idempotency discriminator so multiple same-kind pulses (distinct
+ * species / metrics / habitat fields) coexist in one window instead of overwriting each
+ * other. Metric-based kinds key on the metric; species-based kinds key on the species.
+ */
+export function subjectKey(subject) {
+  return subject?.metric ?? subject?.species?.[0] ?? ''
 }
 
 /** Map a stored pulses row into the canonical PulsePayload shape. */
