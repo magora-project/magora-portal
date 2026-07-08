@@ -32,7 +32,8 @@ from gen_guild_sql import data as CURATED  # curated rows: name, guild, migrator
 
 CSV_PATH = os.path.join(os.path.dirname(HERE), "data", "avonet2_ebird.csv")
 URL = os.environ.get("VITE_SUPABASE_URL")
-KEY = os.environ.get("VITE_SUPABASE_ANON_KEY")
+KEY = os.environ.get("VITE_SUPABASE_ANON_KEY")            # reads (public)
+SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")  # writes: apply_species_trait is service_role-only
 AVONET_PROV = "AVONET2_eBird (Tobias et al. 2022, Ecology Letters) CC-BY 4.0"
 CURATED_PROV = "curated: scripts/gen_guild_sql.py (Colorado/montane regional judgment)"
 
@@ -132,7 +133,11 @@ def apply():
     species = load_species()
     by_code, by_sci = load_avonet(sci_to_code)
     rows = build_rows(species, by_code, by_sci)
-    h = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": "application/json"}
+    if not SERVICE_KEY:
+        sys.exit("missing SUPABASE_SERVICE_ROLE_KEY (apply_species_trait is service_role-only)")
+    # Writes go through the service role: apply_species_trait is an unconditional upsert,
+    # restricted to service_role (not anon) so the trait substrate has no public write path.
+    h = {"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}", "Content-Type": "application/json"}
 
     ok = fail = 0
     for r in rows:

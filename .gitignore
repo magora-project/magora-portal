@@ -29,3 +29,7 @@ dist-ssr
 
 # Supabase CLI scratch state
 supabase/.temp
+
+# Claude Code local state + Python bytecode
+.claude/
+scripts/__pycache__/

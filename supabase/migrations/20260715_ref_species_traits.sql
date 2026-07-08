@@ -98,6 +98,14 @@ begin
 end;
 $$;
 
+-- apply_species_trait is an UNCONDITIONAL upsert (must stay so — re-runnable ETL), so it
+-- cannot use the anon write-once model the set_*_insight RPCs rely on. Anon + unconditional
+-- overwrite on the trait substrate would be a public corruption vector into data the agents
+-- voice authoritatively (EIA §8). Close the caller to service_role only; the ETL runs with
+-- the service role key. (The anon READ policy on ref_species_traits stays — CC-BY trait data.)
+revoke execute on function public.apply_species_trait(
+  uuid, text, text, text, text, text, boolean, smallint, text, text, text
+) from anon, authenticated, public;
 grant execute on function public.apply_species_trait(
   uuid, text, text, text, text, text, boolean, smallint, text, text, text
-) to anon, authenticated;
+) to service_role;
