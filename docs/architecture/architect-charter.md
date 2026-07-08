@@ -37,7 +37,7 @@ React 19 + Vite PWA on Vercel (`app.themagoraproject.com`). Supabase (PostgreSQL
 - `node_follows` — **DEAD.** Superseded, left non-destructively pending confirmation nothing external reads it; to be dropped. **Never spec against it.**
 - `listener_follows` — separate person-follow concern.
 - Insight-cache RPCs (all SECURITY DEFINER, shipped): `set_detection_insight`, `set_node_detection_insight`, `set_session_insight`. Stored insight is checked before any Claude call.
-- Migrations current through **20260710**.
+- Migrations current through **20260713** (narrative render-cache: `narrative` / `narrative_voice` / `narrated_at` on `pulses` + `set_pulse_narrative` SECURITY DEFINER RPC, applied to prod).
 
 ## Current task queue — CLEAR
 
@@ -60,12 +60,16 @@ All of Tasks A–D are **shipped**. Do not re-scope them.
 
 Pulse is the **Notice + Wonder** engine of the ecological agent team: reads a place's data over a window, surfaces + ranks patterns, emits a **canonical voice-agnostic payload**. Narrative Agent renders it in a voice later. Question-selection is Pulse's core output (a ranking problem, not a rendering one). v1 = **run → store → notify-to-Slack**; node-feed posting deferred to v2 (`pulses.posted_to_feed` reserved).
 
-Session decisions D1–D4 (resolved — full rationale in `Pulse-Agent-Spec.md`):
+Session decisions D1–D5 (resolved — full rationale in `Pulse-Agent-Spec.md`):
 
 - **D1 (weights):** hand-set per-cadence weight defaults + tuning-todo. Weights live in a **versioned config surface**, not inlined constants; payload records per-component sub-scores + `weights_version` for retrospective tuning.
 - **D2 (absence):** `survey_gap_question` is a **first-class v1 pulse kind** (grounded tier). Soundscape quieting is **routed to a question** in v1, not emitted as a decline claim. `absence`-as-claim is **schema-present but gated OFF**; enabling it requires ALL of: an external baseline (eBird / phenology model), a minimum baseline threshold, coverage-continuity (node verifiably online across the comparison window), and **node-offline detection existing**. Node-offline detection is therefore a hard dependency of absence, not optional cleanup.
 - **D3 (fluency):** coarse-progressive signal (journal depth / project-bound / OAuth-connected). **Internal calibration input only** — never a surfaced or comparative person-metric (place over people). Versioned method; swap to `taxa_breadth` when iNat Stage 3 write-loop ships.
-- **D4 (run modes):** two thin entry points — on-demand-at-expand (interactive, check-before-generate) and batch/cron (reports) — over **one pure scoring core**: `(place, window, weights) → canonical payload`. Window is always a parameter, never baked into the core.
+- **D4 (run modes):** two thin entry points — on-demand-at-expand (interactive, check-before-generate) and batch/cron (reports) — over **one pure scoring core**: `(place, window, weights) → canonical payload`. Window is always a parameter, never baked into the core. **On-demand half RESOLVED (2026-07-07):** Narrative consumes `pulseOnDemand` (check-before-generate, 6h TTL) from the NodePage "Pulse" panel. Pulse **batch still un-cronned** (no rendered reader yet — the `node_report` surface + report-model voices are deferred).
+- **D5 (surface routing):** Pulse↔Narrative boundary resolved — **Pulse owns per-surface selection** (small v1.1, before Narrative). `selection.per_surface` is a **response-only** assignment with surface as a **scoring-core parameter** (mirrors `window`, D4); no migration. Narrative does not route — routing is allocation-by-score (ranking), so it stays in Pulse. Guards: `absence` never eligible; `survey_gap_question` reaches single-question card surfaces only via grounded `data_absence`, never the degraded relational/phenology placeholders; routing does not depend on `cold_start` (confirmed not emitted). Fluency (D3) + guild enrichment stay deferred.
+
+- **Pulse Agent v1.1 (per-surface selection)** — SHIPPED (2026-07-07). Response-only `selection.per_surface`; merged to `main`, live-verified on Magic Lantern (on-demand single-surface + batch all-four, idempotent). No migration.
+- **Narrative Agent v1** — SHIPPED (2026-07-07, prod `2883bc7`, `feat/narrative-agent-v1` merged to `main`). **Pulse's first consumer** (Pulse is no longer un-read): renders the §5a `PulsePayload` into first-person node-voice prose ending on one question, on-demand via the NodePage "Pulse" panel, cached on the pulse (migration `20260713`).
 
 ## Multi-agent direction
 
@@ -106,9 +110,12 @@ The knowledge substrate that survey-gap questions and later absence baselines de
 
 Obsidian vault synced to Google Drive — canonical documentation store. Top-level folder ID `1mPMZvEvnmN4-rAVLRu-KHhipctgu0vJD`; Project / Technical / Log / Field Notes subfolders are direct children. Navigation pattern: resolve folder ID via `fullText contains 'Magora'`, then enumerate by `parentId`.
 
+**Key vault docs:** `Pulse-Agent-Spec` (design + as-built, D1–D5), `Narrative-Agent-Spec` (design + as-built, D-N1–D-N3), `Ecological-Intelligence-Architecture`; build logs `Build-Log-July2026-Pulse-Agent-v1`, `Build-Log-July2026-Pulse-Agent-v1.1-per-surface-selection`, `Build-Log-July2026-Narrative-Agent-v1`.
+
 **Primary documentation gap:** the Ecological Intelligence Architecture spec (stub exists; substrate content identified this session, not yet written up).
 
 ## Field items (track separately, not part of Pulse)
 
 - birdnode11 offline — needs a power cable.
 - **Suggested task: node-offline detection** — two silent power-outage incidents so far. Now a hard dependency of the gated `absence` pulse kind, so queue it explicitly in TASKS.md rather than treating it as optional.
+- **Queued (low priority): Narrative invalid `node_id` → 500 + leaked DB error.** `/api/narrative-ondemand` with a nonexistent `node_id` tries to store a pulse and surfaces the FK constraint error inside a 500; needs graceful handling + a non-leaky error. Not a real-user path (the NodePage panel only sends real node ids).
