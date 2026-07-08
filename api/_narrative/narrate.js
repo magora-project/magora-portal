@@ -75,9 +75,35 @@ Write 1 to 3 short sentences in my own voice. Rules:
 - Do not claim to know WHY unless the facts say so. Wonder, do not assert.
 - Speak as the place, about the place. No people, no names, no field-guide tone, no alarm.
 - Plain prose, commas and periods, never em-dashes.
-- End on EXACTLY ONE question, with nothing after it.`
+- End on EXACTLY ONE question. The last sentence MUST be a direct question addressed to the reader and MUST end with a question mark. Do not end on a statement, and put nothing after the question.`
 
   return { prompt }
+}
+
+// Grounded fallback question, built ONLY from payload facts. Used to guarantee the
+// "ends on one question" contract when the model returns a wondering statement with no
+// question mark. Never introduces a fact not already in the payload.
+export function fallbackQuestion(payload) {
+  const subj = payload.subject || {}
+  const species = Array.isArray(subj.species) && subj.species.length ? subj.species[0] : null
+  switch (payload.kind) {
+    case 'novel_detection':
+      return species ? `Have you noticed ${species} here?` : `Have you noticed it here?`
+    case 'activity_spike':
+      return `Is something drawing them in right now?`
+    case 'soundscape_shift':
+      return `What has shifted here?`
+    case 'survey_gap_question': {
+      const qf = (payload.survey_gap?.question_focus || '').trim()
+      if (qf.endsWith('?')) {
+        const i = qf.lastIndexOf('. ') // keep just the trailing question if there's lead-in prose
+        return i >= 0 ? qf.slice(i + 2) : qf
+      }
+      return `Can you help fill this in?`
+    }
+    default:
+      return `Is it worth a closer look?`
+  }
 }
 
 /**
@@ -105,5 +131,9 @@ export async function narrate(payload, voice = 'node') {
   if (built.skip) return null
   const out = await generateInsight(built.prompt, INSIGHT_MODEL) // Haiku; strips em-dashes + honors the grounded/no-editorializing guards
   if (out.error) return { error: out.error }
-  return { text: enforceSingleQuestion(out.text), voice }
+  let text = enforceSingleQuestion(out.text)
+  // Guarantee the contract: if the model ended on a statement (no '?'), append a
+  // payload-grounded question so it always ends on exactly one question.
+  if (!text.trim().endsWith('?')) text = enforceSingleQuestion(`${text} ${fallbackQuestion(payload)}`)
+  return { text, voice }
 }
