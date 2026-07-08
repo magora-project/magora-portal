@@ -21,7 +21,7 @@ export async function detectionsInWindow(nodeId, window) {
   const rows = await pgFetch(
     `detections?node_id=eq.${nodeId}` +
       `&detected_at=gte.${enc(window.start)}&detected_at=lt.${enc(window.end)}` +
-      `&select=species_name,scientific_name,confidence,detected_at&order=detected_at.asc&limit=2000`,
+      `&select=species_name,confidence,detected_at&order=detected_at.asc&limit=2000`,
     true,
   )
   const bySpecies = new Map()
@@ -31,7 +31,6 @@ export async function detectionsInWindow(nodeId, window) {
     if (!cur) {
       bySpecies.set(r.species_name, {
         species_name: r.species_name,
-        scientific_name: r.scientific_name || null,
         first_seen: r.detected_at,
         last_seen: r.detected_at,
         count: 1,
