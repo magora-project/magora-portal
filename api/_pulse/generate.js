@@ -16,7 +16,7 @@ import { PULSE_CONFIG, PULSE_ABSENCE_ENABLED } from './payload.js'
 import {
   detectionsInWindow, hasPriorDetection, networkDetectionCount, speciesProfile,
   detectionCount, aciMean, nodeHabitat, nodeCoords, nodeSpeciesSet, inatAmbient,
-  relationshipSource, phenologySource,
+  relationshipSource, phenologySource, traitSource,
 } from './sources.js'
 
 const clamp01 = (n) => Math.max(0, Math.min(1, n))
@@ -67,13 +67,25 @@ async function genNovelDetections(nodeId, window, detected) {
         speciesProfile(d.species_name),
         networkDetectionCount(d.species_name),
       ])
+      // Authoritative trait layer (ref_species_traits). Null before the trait ETL lands
+      // or on a miss (non-bird / unmatched) -> the degraded proxy stands (additive).
+      const traits = await traitSource.getTraits(profile?.id)
 
-      // DEGRADED rarity: conservation status + network detection frequency. Does NOT read
-      // the (null-seeded) guild column. Tuning-todo: fold in guild/diet rarity once the
-      // guild-enrichment migration lands.
       const freqScore = clamp01(1 - netCount / N.novelFrequencyFullN) // rarer network-wide -> higher
       const consScore = conservationScore(profile?.conservation_status)
-      const rarity = clamp01(0.6 * freqScore + 0.4 * consScore)
+      const traitScore = traitSignificance(traits) // null when no grounded traits present
+
+      // When grounded traits exist, fold the AVONET diet/stratum axes + (curated) guild /
+      // indicator_status / sensitivity_flag into rarity; otherwise the conservation+frequency
+      // proxy stands unchanged. No blended-guild derivation.
+      let rarity, rarityBasis
+      if (traitScore != null) {
+        rarity = clamp01(0.4 * freqScore + 0.25 * consScore + 0.35 * traitScore)
+        rarityBasis = `traits (${traits.trait_source}): trophic_niche/primary_lifestyle + curated guild/indicator_status/sensitivity_flag + conservation + network frequency`
+      } else {
+        rarity = clamp01(0.6 * freqScore + 0.4 * consScore)
+        rarityBasis = 'degraded: conservation_status + network detection frequency (no trait row)'
+      }
 
       // recency: first-seen nearer the window end scores higher.
       const recency = clamp01(1 - (winEnd - new Date(d.first_seen).getTime()) / winMs)
@@ -89,10 +101,11 @@ async function genNovelDetections(nodeId, window, detected) {
           detection_count_in_window: d.count,
           conservation_status: profile?.conservation_status ?? null,
           network_detection_count: netCount,
-          // guild is optional — only present when seeded (null-seeded in v1, so usually omitted)
-          ...(profile?.guild ? { guild: profile.guild } : {}),
-          rarity_basis: 'degraded: conservation_status + network detection frequency (guild null-seeded)',
-          rarity_tuning_todo: 'activate guild/diet rarity when guild-enrichment migration lands',
+          ...(traits?.trophic_niche ? { trophic_niche: traits.trophic_niche } : {}),      // AVONET diet
+          ...(traits?.primary_lifestyle ? { primary_lifestyle: traits.primary_lifestyle } : {}), // AVONET stratum
+          ...(traits?.guild ? { guild: traits.guild, guild_source: 'curated' } : {}),     // curated-only
+          ...(traits?.provenance ? { trait_provenance: traits.provenance } : {}),
+          rarity_basis: rarityBasis,
         },
       }
     }),
@@ -265,6 +278,37 @@ function conservationScore(status) {
   if (['en', 'endangered'].includes(s)) return 0.8
   if (['cr', 'critically endangered'].includes(s)) return 1.0
   return 0.2
+}
+
+// Ecological-significance score in [0,1] from grounded trait fields (ref_species_traits),
+// AXIS SPLIT: AVONET trophic_niche (diet) + primary_lifestyle (stratum) for all birds,
+// plus curated indicator_status / sensitivity_flag / guild where present. No blended guild.
+// The strongest present signal wins; returns null when no traits present so the caller
+// falls back to the conservation+frequency proxy (additive).
+function traitSignificance(t) {
+  if (!t || (!t.trophic_niche && !t.primary_lifestyle && !t.guild && !t.indicator_status && !t.sensitivity_flag)) {
+    return null
+  }
+  let s = 0
+  if (t.sensitivity_flag) s = Math.max(s, 0.8)
+  const INDICATOR = { // curated-only
+    old_growth_indicator: 0.9, climate_sensitive: 0.8, habitat_specialist: 0.7,
+    disturbance_indicator: 0.3, habitat_generalist: 0.2, none: 0.2,
+  }
+  if (t.indicator_status && INDICATOR[t.indicator_status] != null) s = Math.max(s, INDICATOR[t.indicator_status])
+  const CURATED_GUILD = { // curated magora guilds only
+    nectarivore: 0.7, bark_prober: 0.6, raptor: 0.6, aerial_insectivore: 0.5, frugivore: 0.5,
+    aquatic: 0.5, foliage_gleaner: 0.4, ground_forager: 0.35, granivore: 0.35, omnivore: 0.25,
+  }
+  if (t.guild && CURATED_GUILD[t.guild] != null) s = Math.max(s, CURATED_GUILD[t.guild])
+  const NICHE = { // AVONET Trophic.Niche (diet) — specialist diets score higher
+    Nectarivore: 0.6, Vertivore: 0.6, 'Aquatic predator': 0.5, Scavenger: 0.5, Frugivore: 0.5,
+    'Herbivore aquatic': 0.4, Invertivore: 0.4, 'Herbivore terrestrial': 0.35, Granivore: 0.35, Omnivore: 0.25,
+  }
+  if (t.trophic_niche && NICHE[t.trophic_niche] != null) s = Math.max(s, NICHE[t.trophic_niche])
+  const LIFESTYLE = { Aerial: 0.4, Aquatic: 0.4 } // AVONET Primary.Lifestyle (stratum)
+  if (t.primary_lifestyle && LIFESTYLE[t.primary_lifestyle] != null) s = Math.max(s, LIFESTYLE[t.primary_lifestyle])
+  return clamp01(s)
 }
 
 // The stubbed seams return null ("unknown") -> neutral sub-score. This is where the rich
