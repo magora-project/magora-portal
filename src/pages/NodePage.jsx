@@ -7,6 +7,7 @@ import { parseNodeLocation } from '../lib/geo'
 import { fetchNearbyLife, summarizeGroups, inatTaxonUrl, commonNamesVerified } from '../lib/inat'
 import { getListenerAvatarUrl } from '../lib/listener'
 import { followJournal, unfollowJournal, getFollowerCount, getPublicFollowers, useJournalFollowStatus } from '../lib/journalFollows'
+import { usePulseNarrative } from '../lib/narrative'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 
 const C = {
@@ -70,6 +71,8 @@ export default function NodePage() {
   const [nearby, setNearby] = useState(null) // ambient iNaturalist "wider web here"
   const [nearbyBusy, setNearbyBusy] = useState(false)
   const [expandedGroup, setExpandedGroup] = useState(null)
+  const [pulseOpen, setPulseOpen] = useState(false) // NodePage "Pulse" panel (Narrative Agent v1)
+  const pulseNarr = usePulseNarrative(id)
   const fetchedWiki = useRef(new Set())
   const { user, openSignIn, listener, promptHandleClaim } = useAuth()
 
@@ -428,6 +431,28 @@ export default function NodePage() {
       <div style={{ ...card, marginBottom: '14px' }}>
         <div style={cardLabel}>About this place</div>
         <p style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.7 }}>{bio}</p>
+      </div>
+
+      {/* Pulse — this place in its own voice (Narrative Agent v1). One collapsible panel,
+          one question; check-before-generate (the endpoint caches the voiced text). */}
+      <div style={{ ...card, marginBottom: '14px' }}>
+        <div style={cardLabel}>Pulse</div>
+        {!pulseOpen ? (
+          <button
+            onClick={() => { setPulseOpen(true); pulseNarr.load() }}
+            style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: '10px', color: C.accentLight, cursor: 'pointer', fontSize: '13px', fontWeight: '600', padding: '9px 14px' }}
+          >
+            What is this place noticing?
+          </button>
+        ) : pulseNarr.status === 'loading' ? (
+          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Listening…</p>
+        ) : pulseNarr.status === 'ready' ? (
+          <p style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.7, margin: 0, fontStyle: 'italic' }}>{pulseNarr.text}</p>
+        ) : pulseNarr.status === 'empty' ? (
+          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Quiet here for now, nothing new to note.</p>
+        ) : (
+          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Could not reach this place just now.</p>
+        )}
       </div>
 
       {/* Most recorded here */}
