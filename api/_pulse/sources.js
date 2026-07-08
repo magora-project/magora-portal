@@ -80,12 +80,15 @@ export async function speciesProfile(speciesName) {
   const s = await pgFetch(`species?common_name=eq.${enc(speciesName)}&select=*`)
   if (!s) return null
   return {
+    id: s.id,
     common_name: s.common_name,
     scientific_name: s.scientific_name || null,
     family: s.family || null,
     order_name: s.order_name || null,
     conservation_status: s.iucn_status ?? null,
-    guild: s.guild ?? null, // null-seeded in v1; optional in evidence, never used in scoring
+    // Projected derived cache (guild written by the trait ETL). Authoritative source is
+    // ref_species_traits via traitSource; this is the convenience projection.
+    guild: s.guild ?? null,
   }
 }
 
@@ -168,5 +171,25 @@ export const phenologySource = {
   // Stubbed (USA-NPN AGDD/Spring Index cached layer not built): always null -> neutral.
   async alignment() {
     return null
+  },
+}
+
+/**
+ * traitSource — provenance-aware read of the authoritative ref_species_traits layer
+ * (EIA §6), parallel to relationshipSource / phenologySource. Unlike those two (still
+ * stubbed), this one is backed by real data once the trait ETL runs. Returns the trait row
+ * (guild + curated regional fields + provenance) or null on a miss. Before migration 20260715
+ * lands, or for a non-bird / unmatched species, the query yields nothing and this returns
+ * null, so callers fall back to the degraded proxy (additive). ref_species_traits is server
+ * reference data — never exposed to the client (the species.* projection feeds the UI).
+ */
+export const traitSource = {
+  async getTraits(speciesId) {
+    if (!speciesId) return null
+    const row = await pgFetch(
+      `ref_species_traits?species_id=eq.${speciesId}` +
+        `&select=guild,trophic_niche,primary_lifestyle,migratory_status,indicator_status,sensitivity_flag,trait_source,provenance`,
+    )
+    return row || null
   },
 }

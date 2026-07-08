@@ -124,6 +124,13 @@ export default function AboutPage() {
         </Card>
       </div>
 
+      {/* Data sources & attribution */}
+      <p style={{ marginTop: '32px', fontSize: '12px', lineHeight: 1.7, color: '#7a9b88', opacity: 0.85 }}>
+        Data sources: species observations from the iNaturalist community and eBird;
+        bird trait data (foraging guild) from AVONET (Tobias et al. 2022, <em>Ecology Letters</em>),
+        licensed CC-BY 4.0.
+      </p>
+
     </div>
   )
 }
