@@ -444,14 +444,41 @@ export default function NodePage() {
           >
             What is this place noticing?
           </button>
-        ) : pulseNarr.status === 'loading' ? (
-          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Listening…</p>
-        ) : pulseNarr.status === 'ready' ? (
-          <p style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.7, margin: 0, fontStyle: 'italic' }}>{pulseNarr.text}</p>
-        ) : pulseNarr.status === 'empty' ? (
-          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Quiet here for now, nothing new to note.</p>
         ) : (
-          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Could not reach this place just now.</p>
+          <>
+            {/* Voice selector — same facts, different register. One question, one panel. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+              {pulseNarr.voices.map((v) => {
+                const active = pulseNarr.voice === v.id
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => pulseNarr.selectVoice(v.id)}
+                    disabled={pulseNarr.status === 'loading'}
+                    style={{
+                      background: active ? C.accent : 'none',
+                      border: `1px solid ${active ? C.accent : C.border}`,
+                      borderRadius: '999px',
+                      color: active ? C.text : C.textMuted,
+                      cursor: pulseNarr.status === 'loading' ? 'default' : 'pointer',
+                      fontSize: '12px', fontWeight: '600', padding: '5px 12px',
+                    }}
+                  >
+                    {v.label}
+                  </button>
+                )
+              })}
+            </div>
+            {pulseNarr.status === 'loading' ? (
+              <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Listening…</p>
+            ) : pulseNarr.status === 'ready' ? (
+              <p style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.7, margin: 0, fontStyle: 'italic' }}>{pulseNarr.text}</p>
+            ) : pulseNarr.status === 'empty' ? (
+              <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Quiet here for now, nothing new to note.</p>
+            ) : (
+              <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Could not reach this place just now.</p>
+            )}
+          </>
         )}
       </div>
 
