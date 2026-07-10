@@ -20,6 +20,15 @@ function resolveModel(token) {
   }
 }
 
+// Canonicalize a numeric figure to a SINGLE presented form, embedded as literal text in the
+// grounded scaffold. Numbers are facts: single-sourcing the presentation here (not per voice)
+// means every voice receives the identical string and cannot re-round or reword the value
+// (the "2.618× vs two and a half times" leak). Ratios/multipliers -> one decimal; smaller
+// magnitudes (deltas) -> two. Applied to every numeric figure the scaffold emits.
+function fig(x, dp = 1) {
+  return Number(x).toFixed(dp)
+}
+
 // Extract ONLY the grounded facts the payload actually carries, per kind. Never derives a
 // species/place/relationship that isn't in the payload. `absence` returns null (gated).
 function groundedFacts(payload) {
@@ -41,14 +50,14 @@ function groundedFacts(payload) {
       return {
         lines: [
           `bird activity here has risen above my recent baseline`,
-          ev.ratio ? `roughly ${ev.ratio} times the usual detection rate for me` : null,
+          ev.ratio ? `${fig(ev.ratio, 1)}× the usual detection rate for me` : null,
         ].filter(Boolean),
       }
     case 'soundscape_shift':
       return {
         lines: [
           `my soundscape has ${ev.direction === 'down' ? 'grown quieter' : 'grown busier'} than my recent baseline`,
-          ev.delta != null ? `a change in acoustic complexity of ${ev.delta}` : null,
+          ev.delta != null ? `a change in acoustic complexity of ${fig(ev.delta, 2)}` : null,
         ].filter(Boolean),
       }
     case 'survey_gap_question':
@@ -95,6 +104,7 @@ ${voice.styleDirectives}`
   // Segment 3 — invariant instructions (applied identically for every voice).
   const invariants = `Write 1 to 3 short sentences. These rules hold for EVERY voice:
 - Use ONLY the facts above. Never introduce a species, place, relationship, number, or cause that is not stated above.
+- Use every figure exactly as written in the facts above. Do not round, rescale, approximate, or restate any number in words that changes its value (e.g., do not turn "2.6×" into "two and a half times").
 - Do not claim to know WHY unless the facts say so. Wonder, do not assert.
 - Never present a possible relationship, reason, or connection as an established fact; frame any such thread as open wondering.
 - Speak as the place, about the place. Introduce no people or names that are not in the facts above.
