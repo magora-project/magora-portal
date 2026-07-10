@@ -11,17 +11,17 @@
 
 ## 🔴 Now — Currently Building
 
-- _Nothing actively in progress. Pulse Agent v1 and iNaturalist Step 0 both shipped July 2026 (see Done). Next up: **Node Offline Detection** (Next). Housekeeping: reconcile Pulse's `feat/pulse-agent-v1` branch → `main` (prod is running it out-of-band)._
+- _Nothing actively in progress. Pulse Agent v1, iNaturalist Step 0, and **Node Offline Detection v1** all shipped July 2026 (see Next/Done). birdnode11 recovered (back online). Follow-ups: set `SLACK_WEBHOOK_URL` to light up ops alerts (node + Pulse); before Pulse's `absence` un-gates, harden `record_node_status` to `service_role`. Housekeeping: reconcile Pulse's `feat/pulse-agent-v1` branch → `main` (prod is running it out-of-band)._
 
 ---
 
 ## 🟡 Next — Confirmed, In Order
 
-- [ ] **Node Offline Detection** (elevated — birdnode11 has been dark ~67h as of July 7, and this is the hard prerequisite for un-gating Pulse's `absence` kind)
-  - **Problem:** Nothing surfaces a node going silent. birdnode11 has had two silent power-outage incidents so far; the network can't tell an offline node from a quiet one.
-  - **Fix:** Detect when a node has produced no detections / `aci_logs` / heartbeat beyond a per-node expected-interval threshold (config). Alert operators via Slack (operator side-effect, NOT a node-voice publication). Expose queryable node online/offline status; Pulse's coverage-continuity check reads it.
-  - **Out of scope v1:** predictive failure, auto-recovery, node-feed surfacing.
-  - **Dependency:** Pulse's gated `absence` kind consumes this coverage-continuity signal; until it ships, `PULSE_ABSENCE_ENABLED` stays false.
+- [x] **Node Offline Detection v1 — SHIPPED July 2026** (commit `8bf067f`, prod deploy `dpl_EUiq7Buh…` READY; cron `/api/node-status-check` @ `0 9 * * *`)
+  - **What shipped:** heartbeat-derived per-node liveness from `aci_logs` (verified detection-independent on prod). Detector compares the gap since a node's last `aci_log` to `K ×` the node's own median cadence (never hardcoded); on a state change it records a transition to `node_status_events` and fires a one-per-transition `[node ops]` Slack alert (operator side-effect, never a node-voice publication). Also `nodes.last_seen_at` + the `nodeOnlineThroughout()` coverage-continuity accessor. Migration `20260717`; module `api/_node_status/`. Baselines seeded (birdnode11 + Magic Lantern online; Casa Colibri skipped, no heartbeat history).
+  - **Slack deferred:** `SLACK_WEBHOOK_URL` unset → alerts silent (notify.js no-ops safely, verified); detection/logging unaffected. Setting the one env var lights up both node-ops and Pulse-ops alerts.
+  - **birdnode11 recovered** — back online (~24s cadence); the "dark / needs a power cable" field item is **closed**. Detector reports it online.
+  - **Absence still gated:** this delivered coverage-continuity (one of `absence`'s four preconditions); `PULSE_ABSENCE_ENABLED` + the `upsert_pulse` absence gate untouched. **New D2 precondition added:** harden `record_node_status` from anon → `service_role` before `absence` consumes coverage-continuity (corruption-vector parallel to `apply_species_trait`).
 
 - [x] **Durable timezone fix — expose recorder offset in the public view.** (DONE July 2026: migration `20260709` exposes `tz_offset` in `public_mobile_detections`; `ListenModal` now stamps it into `device_info` at capture (online path only stored `{ua}` before); `useEcosystemInsight` + `JournalPage` read it. Bonus fix: MapPage's "species today" counter used **UTC** midnight — which is ~5-6pm Mountain, so it rolled over mid-afternoon — now **local** midnight. Sessions have the same latent cross-tz regeneration gap; left as a follow-up.) The insight's time-of-day now uses the device UTC offset (civil/wall-clock time) instead of the longitude/solar estimate that was mislabeling post-sunrise mornings as "pre-dawn." Fresh captures now stamp `tz_offset`/`tz` into `mobile_detections.device_info`, but that column is hidden by `public_mobile_detections`, so regenerating an *older* Listen's insight from the feed falls back to the *viewer's* offset (fine for same-tz, imperfect cross-tz). Durable fix (needs a migration + prod apply, so left for when DB access is handy): add a plain `tz_offset` column exposed in the view, and have `/api/insight` prefer it. Timestamps/display were always correct — this only ever affected the insight's "time of day" phrasing.
 
