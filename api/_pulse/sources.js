@@ -9,7 +9,7 @@ const enc = encodeURIComponent
 
 // ── Node basics ──────────────────────────────────────────────────────────────
 export async function nodeCoords(nodeId) {
-  const node = await pgFetch(`nodes?id=eq.${nodeId}&select=id,name,location,elevation_m`)
+  const node = await pgFetch(`nodes?id=eq.${nodeId}&select=id,name,location,elevation_m,elevation_unit`)
   const coords = node?.location?.coordinates // GeoJSON [lon, lat]
   if (!coords) return { node, lat: null, lon: null }
   return { node, lat: coords[1], lon: coords[0] }

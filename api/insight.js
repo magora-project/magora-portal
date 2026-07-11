@@ -350,7 +350,7 @@ export async function buildNodeInsightPrompt(body) {
   ].filter(Boolean).join(' ') : null
 
   const habitatDesc = [
-    node?.elevation_m && `Elevation: ${node.elevation_m}m`,
+    node?.elevation_m && `Elevation: ${node.elevation_m} ${node.elevation_unit || 'ft'}`,
     habitat?.vegetation_structure && `Vegetation structure: ${habitat.vegetation_structure.replace(/_/g, ' ')}`,
     habitat?.dominant_vegetation && `Dominant plants: ${habitat.dominant_vegetation}`,
     habitat?.water_proximity && `Water proximity: ${habitat.water_proximity.replace(/_/g, ' ')}`,

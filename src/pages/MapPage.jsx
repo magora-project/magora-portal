@@ -366,7 +366,7 @@ export default function MapPage() {
                   <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
                     <strong style={{ fontSize: '14px' }}>{node.name}</strong><br />
                     <span style={{ fontSize: '12px', color: '#555' }}>
-                      {node.habitat_type}{node.elevation_m ? ` · ${node.elevation_m}m` : ''} · tap to view
+                      {node.habitat_type}{node.elevation_m ? ` · ${node.elevation_m} ${node.elevation_unit || 'ft'}` : ''} · tap to view
                     </span>
                   </Tooltip>
                 </CircleMarker>

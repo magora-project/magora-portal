@@ -221,7 +221,7 @@ export default function SpeciesPage() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>{node.name}</div>
                   <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '1px' }}>
-                    {node.habitat_type ? node.habitat_type.replace(/-/g, ' ') : ''}{node.elevation_m ? ` · ${node.elevation_m}m` : ''}
+                    {node.habitat_type ? node.habitat_type.replace(/-/g, ' ') : ''}{node.elevation_m ? ` · ${node.elevation_m} ${node.elevation_unit || 'ft'}` : ''}
                   </div>
                 </div>
                 <div style={{ fontSize: '13px', fontWeight: '700', color: C.accentLight, flexShrink: 0 }}>×{count}</div>

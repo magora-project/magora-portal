@@ -262,8 +262,11 @@ export default function NodePage() {
     ? new Date(node.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     : null
 
+  // elevation_m is stored as-entered; elevation_unit records whether that value is ft or m.
+  const elevUnit = node.elevation_unit || 'ft'
+
   const bio = node.bio || node.description ||
-    `${node.name} listens continuously over ${habitat || 'this landscape'}${node.elevation_m ? ` at ${node.elevation_m} m` : ''}. Every bird and insect that calls here adds to a long-running record of what lives in this place, and what is changing.`
+    `${node.name} listens continuously over ${habitat || 'this landscape'}${node.elevation_m ? ` at ${node.elevation_m} ${elevUnit}` : ''}. Every bird and insect that calls here adds to a long-running record of what lives in this place, and what is changing.`
 
   async function handleShareProfile() {
     const url = window.location.href
@@ -326,7 +329,7 @@ export default function NodePage() {
       <div style={{ marginBottom: '14px' }}>
         <div style={{ fontSize: '26px', fontWeight: '800', color: C.text, lineHeight: 1.1 }}>{node.name}</div>
         <div style={{ fontSize: '13px', color: C.textMuted, marginTop: '5px' }}>
-          {habitatEmoji} {habitat}{node.elevation_m ? ` · ${node.elevation_m} m` : ''}
+          {habitatEmoji} {habitat}{node.elevation_m ? ` · ${node.elevation_m} ${elevUnit}` : ''}
           {stewardHandle ? ` · stewarded by @${stewardHandle}` : ''}
         </div>
       </div>
@@ -531,7 +534,7 @@ export default function NodePage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
         {[
           { label: 'Coordinates', value: coords ? `${coords.lat.toFixed(4)}°, ${coords.lon.toFixed(4)}°` : '—' },
-          { label: 'Elevation', value: node.elevation_m ? `⛰️ ${node.elevation_m} m` : '—' },
+          { label: 'Elevation', value: node.elevation_m ? `⛰️ ${node.elevation_m} ${elevUnit}` : '—' },
           { label: 'Hardware', value: HARDWARE_LABEL[node.hardware_type] || node.hardware_type || '—' },
           { label: 'Deployed', value: listeningSince || '—' },
         ].map(({ label, value }) => (

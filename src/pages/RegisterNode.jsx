@@ -28,7 +28,7 @@ export default function RegisterNode() {
   const [hardware, setHardware] = useState('rpi-zero-2w')
   const [form, setForm] = useState({
     nodeName: '', wifi_ssid: '', wifi_password: '',
-    lat: '', lon: '', elevation: '', habitat: 'montane-scrub',
+    lat: '', lon: '', elevation: '', elevation_unit: 'ft', habitat: 'montane-scrub',
   })
   const [nodeId, setNodeId]       = useState(null)
   const [nodeEmail, setNodeEmail] = useState(null)
@@ -89,6 +89,7 @@ export default function RegisterNode() {
             lat: parseFloat(form.lat),
             lon: parseFloat(form.lon),
             elevation_m: parseFloat(form.elevation) || null,
+            elevation_unit: form.elevation_unit,
             habitat_type: form.habitat,
             species_whitelist: whitelist || undefined,
             // Links the node to the signed-in steward so it appears on their
@@ -272,7 +273,15 @@ export default function RegisterNode() {
             <div style={field}><label style={label}>Longitude</label><input style={inp} placeholder="-104.82" value={form.lon} onChange={e => update('lon', e.target.value)} /></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div style={field}><label style={label}>Elevation (m)</label><input style={inp} placeholder="2400" value={form.elevation} onChange={e => update('elevation', e.target.value)} /></div>
+            <div style={field}><label style={label}>Elevation</label>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input style={{ ...inp, flex: 1 }} placeholder="6300" value={form.elevation} onChange={e => update('elevation', e.target.value)} />
+                <select style={{ ...inp, width: '68px', flex: 'none' }} value={form.elevation_unit} onChange={e => update('elevation_unit', e.target.value)}>
+                  <option value="ft">ft</option>
+                  <option value="m">m</option>
+                </select>
+              </div>
+            </div>
             <div style={field}><label style={label}>Habitat type</label>
               <select style={inp} value={form.habitat} onChange={e => update('habitat', e.target.value)}>
                 {HABITAT_OPTIONS.map(h => <option key={h} value={h}>{h}</option>)}
