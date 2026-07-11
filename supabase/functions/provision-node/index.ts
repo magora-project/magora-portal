@@ -32,12 +32,13 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid JSON body" }, 400)
   }
 
-  const { name, hardware_type, lat, lon, elevation_m, habitat_type, species_whitelist, owner_id } = body as {
+  const { name, hardware_type, lat, lon, elevation_m, elevation_unit, habitat_type, species_whitelist, owner_id } = body as {
     name: string
     hardware_type: string
     lat: number
     lon: number
     elevation_m?: number
+    elevation_unit?: string
     habitat_type: string
     species_whitelist?: string[]
     owner_id?: string
@@ -86,6 +87,8 @@ Deno.serve(async (req) => {
     hardware_type,
     location: `POINT(${lon} ${lat})`,
     elevation_m: elevation_m ?? null,
+    // Elevation is stored as-entered; unit records ft vs m (defaults to ft, the fleet convention).
+    elevation_unit: elevation_unit === "m" ? "m" : "ft",
     habitat_type,
     is_active: true,
     species_whitelist: species_whitelist && species_whitelist.length > 0 ? species_whitelist : null,
