@@ -6,6 +6,12 @@
 // (see TASKS.md Task F). generateInsight strips em-dashes, which Haiku ignores.
 export const INSIGHT_MODEL = 'claude-haiku-4-5-20251001'
 
+// Range gate (20260720): keep quarantined range false-positives (a penguin, a Rook at Casa
+// Colibri) out of the narrative — both the detection being explained and the co-occurring /
+// diversity context it's set against. Null-safe → fail-open: unchecked / plausible / null all
+// pass; only range_status = 'quarantined' is withheld. Append with `&` to a detections query.
+const RANGE_OK = 'or=(range_status.is.null,range_status.neq.quarantined)'
+
 // Turn a fully-assembled prompt into an insight. Prompt-building and the model
 // call are kept separate so the Task-F eval harness
 // (scripts/eval-insight-models.mjs) can run the exact production prompt through
@@ -253,7 +259,7 @@ export async function buildNodeInsightPrompt(body) {
 
   // --- Core fetch ---
   const detection = detection_id
-    ? await dbFetch(supabaseUrl, apiKey, `detections?id=eq.${detection_id}&select=*`)
+    ? await dbFetch(supabaseUrl, apiKey, `detections?id=eq.${detection_id}&${RANGE_OK}&select=*`)
     : null
 
   const speciesName = detection?.species_name || fallbackSpecies
@@ -281,7 +287,7 @@ export async function buildNodeInsightPrompt(body) {
       const lo = new Date(t - 15 * 60000).toISOString()
       const hi = new Date(t + 15 * 60000).toISOString()
       const rows = await dbFetch(supabaseUrl, apiKey,
-        `detections?node_id=eq.${nodeId}&detected_at=gte.${lo}&detected_at=lte.${hi}&species_name=neq.${encodeURIComponent(speciesName)}&select=species_name&limit=10`,
+        `detections?node_id=eq.${nodeId}&detected_at=gte.${lo}&detected_at=lte.${hi}&species_name=neq.${encodeURIComponent(speciesName)}&${RANGE_OK}&select=species_name&limit=10`,
         true)
       return [...new Set(rows.map(r => r.species_name).filter(Boolean))]
     })() : Promise.resolve([]),
@@ -291,12 +297,12 @@ export async function buildNodeInsightPrompt(body) {
       const twoWeeks = new Date(Date.now() - 14 * 86400000).toISOString()
       const [recent, first, allRecent] = await Promise.all([
         dbFetch(supabaseUrl, apiKey,
-          `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&detected_at=gte.${twoWeeks}&select=detected_at&limit=200`,
+          `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&detected_at=gte.${twoWeeks}&${RANGE_OK}&select=detected_at&limit=200`,
           true),
         dbFetch(supabaseUrl, apiKey,
-          `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&select=detected_at&order=detected_at.asc&limit=1`),
+          `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&${RANGE_OK}&select=detected_at&order=detected_at.asc&limit=1`),
         dbFetch(supabaseUrl, apiKey,
-          `detections?node_id=eq.${nodeId}&detected_at=gte.${twoWeeks}&select=species_name&limit=500`,
+          `detections?node_id=eq.${nodeId}&detected_at=gte.${twoWeeks}&${RANGE_OK}&select=species_name&limit=500`,
           true),
       ])
       const uniqueSpecies = new Set(allRecent.map(d => d.species_name).filter(Boolean)).size
