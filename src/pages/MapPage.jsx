@@ -103,9 +103,12 @@ export default function MapPage() {
         supabase.from('detections')
           .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
           .gte('confidence', MIN_CONFIDENCE)
+          // Range gate: keep quarantined range false-positives off the live feed (null-safe → fail-open).
+          .or('range_status.is.null,range_status.neq.quarantined')
           .order('detected_at', { ascending: false }).limit(50),
         supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
-        supabase.from('detections').select('species_name').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString()),
+        supabase.from('detections').select('species_name').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString())
+          .or('range_status.is.null,range_status.neq.quarantined'),
         supabase.from('public_mobile_detections').select('*').order('detected_at', { ascending: false }).limit(50),
         supabase.from('public_listen_sessions').select('*').order('started_at', { ascending: false }).limit(50),
       ])
