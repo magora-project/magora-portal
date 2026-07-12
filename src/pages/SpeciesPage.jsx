@@ -47,9 +47,6 @@ export default function SpeciesPage() {
         .select('node_id, detected_at, season, raw_label, confidence')
         .eq('species_name', species)
         .gte('confidence', MIN_CONFIDENCE)
-        // Range gate: drop quarantined rows from the species aggregate (null-safe → fail-open;
-        // unchecked/plausible/null pass). A range false-positive shouldn't inflate a species' record.
-        .or('range_status.is.null,range_status.neq.quarantined')
         .order('detected_at', { ascending: false })
         .limit(5000)
 

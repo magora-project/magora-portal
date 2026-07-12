@@ -83,9 +83,6 @@ export default function NodePage() {
         .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
         .eq('node_id', id)
         .gte('confidence', MIN_CONFIDENCE)
-        // Range gate: hide quarantined detections (a penguin, a Rook at Casa Colibri).
-        // Null-safe → fail-open: unchecked / plausible / null all pass (range_status IS DISTINCT FROM 'quarantined').
-        .or('range_status.is.null,range_status.neq.quarantined')
         .order('detected_at', { ascending: false })
         .limit(30),
       supabase.from('aci_logs')
@@ -110,10 +107,7 @@ export default function NodePage() {
 
   // All-time species names for the place's profile stats (lightweight — one column, fetched once per node)
   useEffect(() => {
-    // Range gate: exclude quarantined rows from the all-time "most recorded here" / species stats
-    // (null-safe → fail-open; unchecked/plausible/null pass).
-    supabase.from('detections').select('species_name').eq('node_id', id).gte('confidence', MIN_CONFIDENCE)
-      .or('range_status.is.null,range_status.neq.quarantined').limit(5000)
+    supabase.from('detections').select('species_name').eq('node_id', id).gte('confidence', MIN_CONFIDENCE).limit(5000)
       .then(({ data }) => setSpeciesNames((data || []).map(d => d.species_name)))
   }, [id])
 

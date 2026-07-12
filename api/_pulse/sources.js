@@ -7,13 +7,6 @@ import { PULSE_CONFIG } from './payload.js'
 
 const enc = encodeURIComponent
 
-// Range gate (20260720): a quarantined detection (a penguin, a Rook at Casa Colibri) must
-// never drive a pulse — exclude it from EVERY detections read that feeds candidate generation
-// or scoring. Null-safe → fail-open, matching the gate's own convention: unchecked / plausible
-// / null all pass; only range_status = 'quarantined' is withheld (range_status IS DISTINCT FROM
-// 'quarantined'). Append with `&` to an existing detections query string.
-const RANGE_OK = 'or=(range_status.is.null,range_status.neq.quarantined)'
-
 // ── Node basics ──────────────────────────────────────────────────────────────
 export async function nodeCoords(nodeId) {
   const node = await pgFetch(`nodes?id=eq.${nodeId}&select=id,name,location,elevation_m,elevation_unit`)
@@ -28,7 +21,6 @@ export async function detectionsInWindow(nodeId, window) {
   const rows = await pgFetch(
     `detections?node_id=eq.${nodeId}` +
       `&detected_at=gte.${enc(window.start)}&detected_at=lt.${enc(window.end)}` +
-      `&${RANGE_OK}` +
       `&select=species_name,confidence,detected_at&order=detected_at.asc&limit=2000`,
     true,
   )
@@ -56,24 +48,24 @@ export async function detectionsInWindow(nodeId, window) {
 /** True if this species was ever detected at the node before `before`. */
 export async function hasPriorDetection(nodeId, speciesName, before) {
   const n = await pgCount(
-    `detections?node_id=eq.${nodeId}&species_name=eq.${enc(speciesName)}&detected_at=lt.${enc(before)}&${RANGE_OK}`,
+    `detections?node_id=eq.${nodeId}&species_name=eq.${enc(speciesName)}&detected_at=lt.${enc(before)}`,
   )
   return n > 0
 }
 
 /** Network-wide detection count for a species (rarity proxy for the degraded scorer). */
 export async function networkDetectionCount(speciesName) {
-  return pgCount(`detections?species_name=eq.${enc(speciesName)}&${RANGE_OK}`)
+  return pgCount(`detections?species_name=eq.${enc(speciesName)}`)
 }
 
 /** Count detections at the node in [from, to). */
 export async function detectionCount(nodeId, from, to) {
-  return pgCount(`detections?node_id=eq.${nodeId}&detected_at=gte.${enc(from)}&detected_at=lt.${enc(to)}&${RANGE_OK}`)
+  return pgCount(`detections?node_id=eq.${nodeId}&detected_at=gte.${enc(from)}&detected_at=lt.${enc(to)}`)
 }
 
 /** All species names ever detected at the node (for iNat ground-truth gap detection). */
 export async function nodeSpeciesSet(nodeId) {
-  const rows = await pgFetch(`detections?node_id=eq.${nodeId}&${RANGE_OK}&select=species_name&limit=5000`, true)
+  const rows = await pgFetch(`detections?node_id=eq.${nodeId}&select=species_name&limit=5000`, true)
   return new Set(rows.map((r) => r.species_name).filter(Boolean))
 }
 
