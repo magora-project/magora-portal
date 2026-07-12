@@ -23,6 +23,16 @@ const EBIRD_DIST_KM = 50
 const EBIRD_BACK_DAYS = 30
 const SOURCE = 'ebird:obs_geo_recent'
 
+// GLOBAL-FIRST COVERAGE GUARD (EIA §8: an unimplemented region goes quiet, never wrong).
+// The `species` table is currently North-America-biased. In a region where it maps only a
+// small fraction of what eBird reports, the resulting allowlist is INCOMPLETE, and an
+// incomplete allowlist would wrongly QUARANTINE legitimate local species. So we refuse to
+// build a cell whose coverage is too low — it stays allowlist-free, and is_plausible()
+// fail-opens (unchecked) there instead of over-quarantining. Well-covered cells map ~55–90%;
+// poorly-covered (e.g. tropical) cells map <10%. These thresholds cleanly separate them.
+const MIN_CELL_SPECIES = 25     // absolute floor of mapped species to trust a cell
+const MIN_CELL_COVERAGE = 0.4   // mapped / eBird-reported ratio floor
+
 // Cell key — MUST mirror public.range_cell_key(lat, lon) exactly.
 export function cellKey(lat, lon) {
   if (lat == null || lon == null) return null
@@ -120,6 +130,11 @@ export async function buildAllowlist({ ebirdKey } = {}) {
       if (id) ids.add(id); else unmapped++
     }
     if (ids.size === 0) { report.skipped.push({ cell: ck, reason: 'no species mapped', ebird: obs.length }); continue }
+    // Coverage guard — refuse to build an incomplete cell (would over-quarantine). Fail-open.
+    if (ids.size < MIN_CELL_SPECIES || ids.size / obs.length < MIN_CELL_COVERAGE) {
+      report.skipped.push({ cell: ck, reason: 'low coverage', ebird: obs.length, mapped: ids.size })
+      continue
+    }
     const written = await sbRpc('replace_range_cell', {
       p_cell_key: ck, p_week: 0, p_species_ids: [...ids], p_source: SOURCE,
     })
