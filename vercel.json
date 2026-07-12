@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/insight-batch", "schedule": "0 8 * * *" },
-    { "path": "/api/node-status-check", "schedule": "0 9 * * *" }
+    { "path": "/api/node-status-check", "schedule": "0 9 * * *" },
+    { "path": "/api/range-allowlist-build", "schedule": "0 6 1 * *" }
   ]
 }
