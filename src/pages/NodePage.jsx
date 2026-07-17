@@ -8,6 +8,7 @@ import { fetchNearbyLife, summarizeGroups, inatTaxonUrl, commonNamesVerified } f
 import { getListenerAvatarUrl } from '../lib/listener'
 import { followJournal, unfollowJournal, getFollowerCount, getPublicFollowers, useJournalFollowStatus } from '../lib/journalFollows'
 import { usePulseNarrative } from '../lib/narrative'
+import { useNodeReport } from '../lib/report'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 
 const C = {
@@ -73,6 +74,8 @@ export default function NodePage() {
   const [expandedGroup, setExpandedGroup] = useState(null)
   const [pulseOpen, setPulseOpen] = useState(false) // NodePage "Pulse" panel (Narrative Agent v1)
   const pulseNarr = usePulseNarrative(id)
+  const [reportOpen, setReportOpen] = useState(false) // "Today at this place" report card (Report v1)
+  const nodeReport = useNodeReport(id)
   const fetchedWiki = useRef(new Set())
   const { user, openSignIn, listener, promptHandleClaim } = useAuth()
 
@@ -488,6 +491,39 @@ export default function NodePage() {
               <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Could not reach this place just now.</p>
             )}
           </>
+        )}
+      </div>
+
+      {/* Today at this place — the node's own daily report (Node Phenology Report v1). Collapsible;
+          check-before-generate (the endpoint builds + narrates + caches). Node voice, ends on an
+          open wondering. A permalink to the full read-only report lives below the prose. */}
+      <div style={{ ...card, marginBottom: '14px' }}>
+        <div style={cardLabel}>Today at this place</div>
+        {!reportOpen ? (
+          <button
+            onClick={() => { setReportOpen(true); nodeReport.load() }}
+            style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: '10px', color: C.accentLight, cursor: 'pointer', fontSize: '13px', fontWeight: '600', padding: '9px 14px' }}
+          >
+            What has this place been noticing today?
+          </button>
+        ) : nodeReport.status === 'loading' ? (
+          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Gathering the day…</p>
+        ) : nodeReport.status === 'ready' ? (
+          <>
+            {nodeReport.text.split(/\n\n+/).map((para, i) => (
+              <p key={i} style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.75, margin: i === 0 ? 0 : '12px 0 0', fontStyle: 'italic' }}>{para}</p>
+            ))}
+            <Link
+              to={`/node/${id}/report/${nodeReport.periodKey}`}
+              style={{ display: 'inline-block', marginTop: '14px', fontSize: '12px', fontWeight: '600', color: C.accentLight, textDecoration: 'none' }}
+            >
+              Read today’s report →
+            </Link>
+          </>
+        ) : nodeReport.status === 'empty' ? (
+          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>A quiet day so far, nothing to report yet.</p>
+        ) : (
+          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Could not reach this place just now.</p>
         )}
       </div>
 

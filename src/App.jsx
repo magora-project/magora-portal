@@ -5,6 +5,7 @@ import MapPage from './pages/MapPage'
 import RegisterNode from './pages/RegisterNode'
 import AboutPage from './pages/AboutPage'
 import NodePage from './pages/NodePage'
+import NodeReportPage from './pages/NodeReportPage'
 import SpeciesPage from './pages/SpeciesPage'
 import DonatePage from './pages/DonatePage'
 import JournalPage from './pages/JournalPage'
@@ -28,6 +29,7 @@ function App() {
             <Routes>
               <Route path="/" element={<MapPage />} />
               <Route path="/node/:id" element={<NodePage />} />
+              <Route path="/node/:id/report/:date" element={<NodeReportPage />} />
               <Route path="/species/:name" element={<SpeciesPage />} />
               <Route path="/journal/:handle" element={<JournalPage />} />
               <Route path="/register" element={<RegisterNode />} />
