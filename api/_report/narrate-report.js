@@ -32,6 +32,9 @@ export const REPORT_VOICES = Object.freeze(['node'])
 
 export const REPORT_VOICES_VERSION = 'report-v1'
 
+// How many human/machine noise types to name in the human-activity context line.
+const REPORT_ANTHRO_NAMED = 3
+
 // Resolve a voice's model SELECTOR token to a concrete model id. The node report routes to Sonnet;
 // 'haiku' resolves to the insight tier as a clean fallback.
 function resolveReportModel(token) {
@@ -187,6 +190,18 @@ export function groundedReportFacts(payload) {
     lines.push(`${gathered} ${snd.peak_window.label}`)
   }
 
+  // Human activity — anthropophony (engines, human noise) as AMBIENT CONTEXT, not a voice. Grounded
+  // only in the human_activity field. Never counted among the species, never named as a voice of
+  // the place; the framing marks it as passing human presence in the soundscape.
+  const ha = payload.human_activity
+  if (ha && ha.count > 0) {
+    const types = (ha.types || []).map((t) => t.label).slice(0, REPORT_ANTHRO_NAMED).join(', ')
+    lines.push(
+      `under the voices there was also human presence, not a voice of mine but sound passing through: ` +
+        `${ha.count} detection${ha.count === 1 ? '' : 's'} of human or machine noise${types ? ` (${types})` : ''}`,
+    )
+  }
+
   return lines
 }
 
@@ -230,6 +245,7 @@ ${voice.styleDirectives}`
 - Use every figure exactly as written in the facts above. Do not round, rescale, approximate, or restate any number in words that changes its value.
 - Do not claim to know WHY anything happened unless the facts say so. Wonder, do not assert. Never present a possible relationship, reason, or connection as an established fact.
 - Speak as the place, in the first person, about yourself. Introduce no people, no names, and no reader instructions that are not in the facts above.
+- If the facts mention human or machine noise (human presence), treat it ONLY as passing ambient background in your soundscape. Never name it as one of your voices, never count it among your species, never let it carry the report.
 - Plain prose, commas and periods, never em-dashes.
 - End on an OPEN WONDERING: a final sentence that genuinely does not know, that opens outward toward what might be unfolding here rather than summing up. It must arise from the facts above. Do not end on a verdict, a conclusion, or a tidy moral, and do not staple a question onto a conclusion. A single genuine wondering, and nothing after it.`
 

@@ -22,6 +22,7 @@ import { pgFetch, rowToPayload } from '../_pulse/db.js'
 import { nodeCoords, aciMean, hasPriorDetection } from '../_pulse/sources.js'
 import { assignSurfaces } from '../_pulse/select.js'
 import { PULSE_CONFIG } from '../_pulse/payload.js'
+import { classifyLabel, isVoice } from './labels.js'
 
 const enc = encodeURIComponent
 
@@ -38,6 +39,7 @@ const MIN_CONFIDENCE = 0.3
 const REPORT_TOP_SPECIES = 6
 const REPORT_MAX_PULSES = 4
 const REPORT_MAX_MOVEMENTS = 6 // arrivals / departures shown per seasonal report
+const REPORT_ANTHRO_TYPES = 4 // human/machine noise types surfaced in the human_activity context
 
 /**
  * @typedef {"daily"|"seasonal"|"annual"|string} ReportCadence
@@ -67,6 +69,7 @@ const REPORT_MAX_MOVEMENTS = 6 // arrivals / departures shown per seasonal repor
  * @property {{ species_name:string, first_seen:string }[]} new_species
  * @property {object[]} notable_pulses
  * @property {object} soundscape
+ * @property {{ count:number, distinct_types:number, types:{label:string,count:number}[] }} human_activity  anthropophony context — never a voice
  * @property {object} phenology
  * @property {{ has_detections:boolean, has_aci:boolean, degraded:boolean }} coverage
  */
@@ -219,6 +222,39 @@ async function detectionRows(nodeId, window) {
   return all
 }
 
+// Classify every distinct label in the window into bird | biophony | anthropophony (labels.js).
+// One batched species-taxonomy read (in.()), chunked to stay under URL limits; labels with no
+// species row are classified from the name alone (curated anthropophony set, else biophony).
+async function classifyWindowSpecies(names) {
+  const uniq = [...new Set(names)]
+  const byName = new Map()
+  const CHUNK = 100
+  for (let i = 0; i < uniq.length; i += CHUNK) {
+    const inList = uniq.slice(i, i + CHUNK).map((n) => `"${String(n).replace(/["\\]/g, '')}"`).join(',')
+    const spRows = await pgFetch(
+      `species?common_name=in.(${enc(inList)})&select=common_name,scientific_name,ebird_code,taxon_class,order_name,family`,
+      true,
+    )
+    for (const r of spRows) byName.set(r.common_name, r)
+  }
+  const map = new Map()
+  for (const n of uniq) map.set(n, classifyLabel(byName.get(n) || { common_name: n }))
+  return map
+}
+
+// Aggregate anthropophony rows into the human-activity context: total count + distinct noise types.
+// Never a species tally, never a voice — the report weaves this into soundscape context.
+function aggregateAnthro(rows) {
+  const byType = new Map()
+  for (const r of rows) {
+    if (!r.species_name) continue
+    byType.set(r.species_name, (byType.get(r.species_name) || 0) + 1)
+  }
+  const types = [...byType.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count)
+  const count = types.reduce((s, t) => s + t.count, 0)
+  return { count, distinct_types: types.length, types: types.slice(0, REPORT_ANTHRO_TYPES) }
+}
+
 // Aggregate raw rows into per-species stats + totals + hour-of-day histogram.
 function aggregate(rows) {
   const bySpecies = new Map()
@@ -352,20 +388,31 @@ async function edgeTrend(nodeId, window, edgeDays) {
 
 // Shared gather: the DB-grounded facts every cadence needs. new_species = first-ever on THIS node.
 async function gatherCommon(nodeId, window) {
-  const [{ node, lat, lon }, rows, pulses] = await Promise.all([
+  const [{ node, lat, lon }, rawRows, pulses] = await Promise.all([
     nodeCoords(nodeId),
     detectionRows(nodeId, window),
     notablePulses(nodeId, window),
   ])
+
+  // Label quality: partition the window's detections. bird + biophony are the place's VOICES and
+  // feed the species aggregation + tallies; anthropophony (human/machine noise) is pulled out and
+  // becomes ambient human-activity context — never a voice, never counted as a species. Insect /
+  // amphibian / mammal biophony (katydids, frogs, a coyote) stays a voice. Applies to every cadence
+  // (this is the shared builder).
+  const cls = await classifyWindowSpecies(rawRows.map((r) => r.species_name).filter(Boolean))
+  const rows = rawRows.filter((r) => isVoice(cls.get(r.species_name)))
+  const anthroRows = rawRows.filter((r) => cls.get(r.species_name) === 'anthropophony')
+  const human_activity = aggregateAnthro(anthroRows)
+
   const { bySpecies, hourCounts, total } = aggregate(rows)
   const species = [...bySpecies.values()].sort((a, b) => b.count - a.count)
   const newFlags = await Promise.all(species.map((s) => hasPriorDetection(nodeId, s.species_name, window.start)))
   const new_species = species.filter((_, i) => !newFlags[i]).map((s) => ({ species_name: s.species_name, first_seen: s.first_seen }))
-  return { node, lat, lon, rows, bySpecies, species, hourCounts, total, pulses, new_species }
+  return { node, lat, lon, rows, bySpecies, species, hourCounts, total, pulses, new_species, human_activity }
 }
 
 // Common node identity + activity + coverage assembly, shared across cadences.
-function assemble({ nodeId, window, node, lat, lon, species, total, new_species, pulses, soundscape, phenology, aciSampleCount }) {
+function assemble({ nodeId, window, node, lat, lon, species, total, new_species, pulses, soundscape, phenology, aciSampleCount, human_activity }) {
   return {
     node_id: nodeId,
     cadence: window.cadence,
@@ -389,6 +436,8 @@ function assemble({ nodeId, window, node, lat, lon, species, total, new_species,
     new_species,
     notable_pulses: pulses,
     soundscape,
+    // Anthropogenic sound (engines, human noise) reframed as context — never a species voice.
+    human_activity: human_activity || { count: 0, distinct_types: 0, types: [] },
     phenology,
     coverage: {
       has_detections: total > 0,
@@ -426,6 +475,7 @@ export async function buildDailyReport(nodeId, date) {
     nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
     species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
     aciSampleCount: windowAci.sampleCount,
+    human_activity: common.human_activity,
     soundscape: {
       mean_aci: windowAci.mean,
       baseline_mean_aci: baselineAci.mean,
@@ -489,6 +539,7 @@ export async function buildSeasonalReport(nodeId, dateOrKey) {
     nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
     species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
     aciSampleCount: soundscape.sample_count,
+    human_activity: common.human_activity,
     soundscape: { ...soundscape, peak_window: peakBand(common.hourCounts, null) },
     phenology: {
       period_key: window.period_key,
@@ -550,6 +601,7 @@ export async function buildAnnualReport(nodeId, dateOrKey) {
     nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
     species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
     aciSampleCount: soundscape.sample_count,
+    human_activity: common.human_activity,
     soundscape: { ...soundscape, peak_window: peakBand(common.hourCounts, null) },
     phenology: {
       period_key: window.period_key,
