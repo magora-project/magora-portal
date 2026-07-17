@@ -29,7 +29,7 @@ const SOURCE = 'ebird:obs_geo_recent'
 // bird never enters the allowlist (→ false-quarantine). These curated overrides map the eBird
 // obs back to our species. Extend as new splits surface in the unmapped audit log. (Verified
 // July 2026 against eBird near birdnode11 / cell 90:-222.)
-const SPLIT_ALIASES = {
+export const SPLIT_ALIASES = {
   eawvir1: 'Warbling Vireo',        // Eastern Warbling Vireo (Vireo gilvus)
   wewvir2: 'Warbling Vireo',        // Western Warbling Vireo (Vireo swainsoni) — the local bird
   yelwar1: 'Yellow Warbler',        // Northern Yellow Warbler (Setophaga aestiva) — the widespread bird
