@@ -52,18 +52,43 @@ function fig(x, dp = 1) {
   return Number(x).toFixed(dp)
 }
 
-// A readable date from a period_key ('YYYY-MM-DD') without pulling a tz library. Used only as
-// framing text; it introduces no ecological fact.
+// A readable date from a daily period_key ('YYYY-MM-DD') without pulling a tz library. Framing
+// text only; introduces no ecological fact.
 function prettyDate(periodKey) {
   const d = new Date(`${periodKey}T00:00:00.000Z`)
   if (Number.isNaN(d.getTime())) return periodKey
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
+function prettyDayMonth(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })
+}
+
+// Cadence-aware framing vocabulary. Style/framing ONLY — carries no ecological fact. Keys the
+// wording of the identity line, the activity span ("across the day" / "this season" / "over the
+// year"), and the scaffold header, so seasonal/annual reports read in their own time-scale while
+// the payload-first grounding is unchanged.
+function cadenceFraming(payload) {
+  const period = payload.period_key
+  switch (payload.cadence) {
+    case 'seasonal': {
+      const season = payload.phenology?.season || ''
+      const year = payload.phenology?.season_year || ''
+      return { record: `my record of ${season} ${year}`.trim(), span: 'across this season', noticed: 'THIS SEASON', spanNoun: 'a season', newPhrase: 'new to my records, never detected here before this season' }
+    }
+    case 'annual':
+      return { record: `my record of the year ${payload.phenology?.year || period}`, span: 'over the year', noticed: 'THIS YEAR', spanNoun: 'a year', newPhrase: 'new to my records, never detected here before this year' }
+    default:
+      return { record: `my record of ${prettyDate(period)}`, span: 'across the day', noticed: 'TODAY', spanNoun: 'a single day', newPhrase: 'new to my records, never detected here before today' }
+  }
+}
+
 /**
- * Extract ONLY the grounded facts the ReportPayload actually carries, as scaffold lines. Never
- * derives a species/place/relationship/number that isn't in the payload. Returns a flat list of
- * fact strings; an empty (quiet) day still yields a valid, honest scaffold.
+ * Extract ONLY the grounded facts the ReportPayload actually carries, as scaffold lines, in the
+ * cadence's own time-scale. Never derives a species/place/relationship/number that isn't in the
+ * payload. Returns a flat list of fact strings; a quiet period still yields a valid, honest scaffold.
  * @param {import('./payload.js').ReportPayload} payload
  * @returns {string[]}
  */
@@ -71,6 +96,8 @@ export function groundedReportFacts(payload) {
   const lines = []
   const act = payload.activity || {}
   const snd = payload.soundscape || {}
+  const phen = payload.phenology || {}
+  const f = cadenceFraming(payload)
 
   // Identity / place framing (no ecological claim beyond what the node record holds).
   const place = payload.node?.place_label || payload.node?.name
@@ -78,16 +105,16 @@ export function groundedReportFacts(payload) {
   if (payload.node?.elevation_m != null) {
     lines.push(`I sit at ${payload.node.elevation_m} ${payload.node.elevation_unit || 'm'} of elevation`)
   }
-  lines.push(`This is my record of ${prettyDate(payload.period_key)}`)
+  lines.push(`This is ${f.record}`)
 
   // Activity.
   if (act.total_detections > 0) {
     lines.push(
-      `across the day I heard ${act.total_detections} detection${act.total_detections === 1 ? '' : 's'}, ` +
+      `${f.span} I heard ${act.total_detections} detection${act.total_detections === 1 ? '' : 's'}, ` +
         `across ${act.distinct_species} distinct species`,
     )
   } else {
-    lines.push(`across the day I recorded no confident detections`)
+    lines.push(`${f.span} I recorded no confident detections`)
   }
 
   if (Array.isArray(act.top_species) && act.top_species.length) {
@@ -100,7 +127,43 @@ export function groundedReportFacts(payload) {
   // New-for-this-node (first-ever here). A distinctive phenology fact — carried explicitly.
   if (Array.isArray(payload.new_species) && payload.new_species.length) {
     const names = payload.new_species.map((s) => s.species_name).join(', ')
-    lines.push(`new to my records, never detected here before today: ${names}`)
+    lines.push(`${f.newPhrase}: ${names}`)
+  }
+
+  // ── Seasonal phenology: arrivals / departures / week-over-week ──────────────
+  if (payload.cadence === 'seasonal') {
+    if (Array.isArray(phen.arrivals) && phen.arrivals.length) {
+      const a = phen.arrivals.map((s) => `${s.species_name} (first on ${prettyDayMonth(s.first_seen)})`).join(', ')
+      lines.push(`the earliest voices of the season: ${a}`)
+    }
+    if (Array.isArray(phen.departures) && phen.departures.length) {
+      const dparts = phen.departures.map((s) => `${s.species_name} (last on ${prettyDayMonth(s.last_seen)})`).join(', ')
+      lines.push(`the ones I last heard earliest in the season: ${dparts}`)
+    }
+    if (Array.isArray(phen.weekly) && phen.weekly.length >= 2) {
+      const first = phen.weekly[0]
+      const last = phen.weekly[phen.weekly.length - 1]
+      lines.push(
+        `across the weeks my activity moved from ${first.detections} detections in my first week to ${last.detections} in my last, ` +
+          `and my diversity from ${first.distinct_species} species to ${last.distinct_species}`,
+      )
+    }
+  }
+
+  // ── Annual phenology: seasonal transitions / milestone ──────────────────────
+  if (payload.cadence === 'annual') {
+    if (Array.isArray(phen.seasonal_breakdown) && phen.seasonal_breakdown.length) {
+      const parts = phen.seasonal_breakdown
+        .map((s) => `${s.season} held ${s.detections} detections across ${s.distinct_species} species`)
+        .join('; ')
+      lines.push(`season by season: ${parts}`)
+    }
+    if (phen.milestone?.total_species_all_time != null) {
+      lines.push(
+        `in all my time here, ${phen.milestone.total_species_all_time} distinct species have now been recorded, ` +
+          `${phen.milestone.new_species_this_year} of them first heard this year`,
+      )
+    }
   }
 
   // Notable pulses — Pulse-selected, already summarized to one grounded line each.
@@ -108,17 +171,20 @@ export function groundedReportFacts(payload) {
     if (p.summary) lines.push(p.summary)
   }
 
-  // Soundscape trend + peak activity window.
+  // Soundscape trend + peak activity band. For seasonal/annual the trend is early-edge vs late-edge
+  // ("across the period"); for daily it is vs the recent baseline.
+  const trendRef = payload.cadence === 'daily' ? 'my recent baseline' : 'the start of the period'
   if (snd.trend === 'busier' || snd.trend === 'quieter') {
     lines.push(
-      `my soundscape was ${snd.trend} than my recent baseline` +
+      `my soundscape was ${snd.trend} than ${trendRef}` +
         (snd.delta != null ? `, a change in acoustic complexity of ${fig(snd.delta, 2)}` : ''),
     )
   } else if (snd.trend === 'steady') {
-    lines.push(`my soundscape held steady against my recent baseline`)
+    lines.push(`my soundscape held steady against ${trendRef}`)
   }
   if (snd.peak_window?.label) {
-    lines.push(`my activity gathered most in ${snd.peak_window.label}`)
+    const gathered = payload.cadence === 'daily' ? 'my activity gathered most in' : 'across the period my activity gathered most in'
+    lines.push(`${gathered} ${snd.peak_window.label}`)
   }
 
   return lines
@@ -141,11 +207,15 @@ export function buildReportPrompt(payload, voice) {
   if (!facts.length || !hasSubstance) return { skip: true }
 
   const factBlock = facts.map((f) => `- ${f}`).join('\n')
+  const f = cadenceFraming(payload)
+  // Annual is the most narrative cadence (the year's arc) and leans hardest on the report model, so
+  // it gets a touch more room; daily/seasonal stay tight.
+  const paragraphs = payload.cadence === 'annual' ? '3 to 5 short paragraphs' : '2 to 4 short paragraphs'
 
   // Segment 1 — grounded scaffold (voice-independent). Place framing + the ONLY facts.
-  const scaffold = `You are a specific place in the Magora ecological network, writing your own report of a single day of your ecological activity. You are the place itself, the author of this record, not a person and not a field guide. Every place is speaking; this is you speaking about yourself.
+  const scaffold = `You are a specific place in the Magora ecological network, writing your own report of ${f.spanNoun} of your ecological activity. You are the place itself, the author of this record, not a person and not a field guide. Every place is speaking; this is you speaking about yourself.
 
-WHAT I NOTICED TODAY (these are the ONLY facts you may use):
+WHAT I NOTICED ${f.noticed} (these are the ONLY facts you may use):
 ${factBlock}`
 
   // Segment 2 — voice directives (STYLE ONLY; facts are fixed above, this only recolors HOW).
@@ -155,7 +225,7 @@ ${voice.styleDirectives}`
   // Segment 3 — invariant instructions. Grounding is identical to the pulse narrative; the length
   // and the ENDING differ: a report is multi-paragraph and closes on an open wondering (the Coyote
   // stance), not the single-question pulse form.
-  const invariants = `Write a short report of 2 to 4 short paragraphs. These rules are absolute:
+  const invariants = `Write a short report of ${paragraphs}. These rules are absolute:
 - Use ONLY the facts above. Never introduce a species, place, relationship, number, season, or cause that is not stated above.
 - Use every figure exactly as written in the facts above. Do not round, rescale, approximate, or restate any number in words that changes its value.
 - Do not claim to know WHY anything happened unless the facts say so. Wonder, do not assert. Never present a possible relationship, reason, or connection as an established fact.
@@ -170,7 +240,7 @@ ${voice.styleDirectives}`
 // building (parallel to generateInsight) so the grounding is unit-testable without a live call.
 // max_tokens is higher than the insight/narrative path — a report is multi-paragraph. Enforces the
 // house style (commas and periods, never em-dashes) regardless of model, matching generateInsight.
-export async function generateReport(prompt, model = REPORT_MODEL) {
+async function callReportModel(prompt, model) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -180,9 +250,33 @@ export async function generateReport(prompt, model = REPORT_MODEL) {
     },
     body: JSON.stringify({ model, max_tokens: 800, messages: [{ role: 'user', content: prompt }] }),
   })
-  if (!response.ok) return { error: await response.text() }
-  const text = (await response.json()).content[0].text
-  return { text: text.replace(/\s*—\s*/g, ', ') }
+  if (!response.ok) return { httpError: await response.text() }
+  // Robustly extract the text block. A messages response is normally a single text block, but an
+  // occasional call returns an empty content array or a leading non-text block; assuming
+  // content[0].text there throws and 500s the whole request. Treat "no usable text" as an empty
+  // response the caller can retry.
+  const data = await response.json()
+  const block = Array.isArray(data.content) ? (data.content.find((b) => b?.type === 'text') ?? data.content[0]) : null
+  const text = block?.text
+  if (typeof text !== 'string' || !text.trim()) return { empty: true, stop_reason: data.stop_reason ?? 'unknown' }
+  return { text }
+}
+
+export async function generateReport(prompt, model = REPORT_MODEL) {
+  // Sonnet occasionally returns an empty/non-text first block (~1 in 6 observed on the report
+  // prompt). A single retry makes that transient near-invisible; a persistent empty response or an
+  // HTTP error degrades to a clean { error } so the caller returns a handled 502 and the
+  // check-before-generate path regenerates next time (never an uncaught 500).
+  let last
+  for (let attempt = 0; attempt < 2; attempt++) {
+    last = await callReportModel(prompt, model)
+    if (last.text != null) {
+      // House style is commas and periods, never em-dashes, regardless of model (matches generateInsight).
+      return { text: last.text.replace(/\s*—\s*/g, ', ') }
+    }
+    if (last.httpError) return { error: last.httpError } // HTTP errors are likely persistent — don't retry
+  }
+  return { error: `empty model response (stop_reason: ${last.stop_reason})` }
 }
 
 /**

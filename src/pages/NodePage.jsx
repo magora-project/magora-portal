@@ -494,36 +494,66 @@ export default function NodePage() {
         )}
       </div>
 
-      {/* Today at this place — the node's own daily report (Node Phenology Report v1). Collapsible;
+      {/* This place, in its own voice — the node's own phenology report (Report v1.1). Collapsible;
           check-before-generate (the endpoint builds + narrates + caches). Node voice, ends on an
-          open wondering. A permalink to the full read-only report lives below the prose. */}
+          open wondering. Cadence selector (today / this season / this year); a permalink to the full
+          read-only report lives below the prose. */}
       <div style={{ ...card, marginBottom: '14px' }}>
-        <div style={cardLabel}>Today at this place</div>
+        <div style={cardLabel}>This place, in its own voice</div>
         {!reportOpen ? (
           <button
             onClick={() => { setReportOpen(true); nodeReport.load() }}
             style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: '10px', color: C.accentLight, cursor: 'pointer', fontSize: '13px', fontWeight: '600', padding: '9px 14px' }}
           >
-            What has this place been noticing today?
+            What has this place been noticing?
           </button>
-        ) : nodeReport.status === 'loading' ? (
-          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Gathering the day…</p>
-        ) : nodeReport.status === 'ready' ? (
-          <>
-            {nodeReport.text.split(/\n\n+/).map((para, i) => (
-              <p key={i} style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.75, margin: i === 0 ? 0 : '12px 0 0', fontStyle: 'italic' }}>{para}</p>
-            ))}
-            <Link
-              to={`/node/${id}/report/${nodeReport.periodKey}`}
-              style={{ display: 'inline-block', marginTop: '14px', fontSize: '12px', fontWeight: '600', color: C.accentLight, textDecoration: 'none' }}
-            >
-              Read today’s report →
-            </Link>
-          </>
-        ) : nodeReport.status === 'empty' ? (
-          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>A quiet day so far, nothing to report yet.</p>
         ) : (
-          <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Could not reach this place just now.</p>
+          <>
+            {/* Cadence selector — same node, different time-scale. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+              {nodeReport.cadences.map((c) => {
+                const active = nodeReport.cadence === c.id
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => nodeReport.selectCadence(c.id)}
+                    disabled={nodeReport.status === 'loading'}
+                    style={{
+                      background: active ? C.accent : 'none',
+                      border: `1px solid ${active ? C.accent : C.border}`,
+                      borderRadius: '999px',
+                      color: active ? C.text : C.textMuted,
+                      cursor: nodeReport.status === 'loading' ? 'default' : 'pointer',
+                      fontSize: '12px', fontWeight: '600', padding: '5px 12px',
+                    }}
+                  >
+                    {c.label}
+                  </button>
+                )
+              })}
+            </div>
+            {nodeReport.status === 'loading' ? (
+              <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Gathering the record…</p>
+            ) : nodeReport.status === 'ready' ? (
+              <>
+                {nodeReport.text.split(/\n\n+/).map((para, i) => (
+                  <p key={i} style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.75, margin: i === 0 ? 0 : '12px 0 0', fontStyle: 'italic' }}>{para}</p>
+                ))}
+                {nodeReport.periodKey && (
+                  <Link
+                    to={`/node/${id}/report/${nodeReport.periodKey}`}
+                    style={{ display: 'inline-block', marginTop: '14px', fontSize: '12px', fontWeight: '600', color: C.accentLight, textDecoration: 'none' }}
+                  >
+                    Read this report →
+                  </Link>
+                )}
+              </>
+            ) : nodeReport.status === 'empty' ? (
+              <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>A quiet stretch, nothing to report yet.</p>
+            ) : (
+              <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Could not reach this place just now.</p>
+            )}
+          </>
         )}
       </div>
 

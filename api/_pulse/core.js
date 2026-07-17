@@ -84,17 +84,24 @@ export async function pulseOnDemand(nodeId, window, surface = DEFAULT_SURFACE) {
  * Batch entry point (cron). Generate -> score -> store (idempotent) -> notify-to-Slack
  * (operator side-effect). Returns the ranked pulses (unchanged) plus response-only
  * `selection` populated across all four surfaces.
+ *
+ * `opts.suppressAlert` skips the per-run operator Slack post. The Report scheduler (Report v1.1)
+ * runs pulseBatch once per node per night and emits a SINGLE `[report ops]` digest for the whole
+ * run instead — one post/night regardless of node count, rather than one `[pulse ops]` post per
+ * node. Scoring/selection are unchanged; only the notify side-effect is gated.
+ * @param {{ suppressAlert?: boolean }} [opts]
  * @returns {Promise<{ pulses: import('./payload.js').PulsePayload[], selection: import('./payload.js').PulseSelection }>}
  */
-export async function pulseBatch(nodeId, window, cadence) {
+export async function pulseBatch(nodeId, window, cadence, opts = {}) {
   const resolved = resolveWindow({ ...window, cadence }, cadence || 'daily')
 
   const scored = await runCore(nodeId, resolved)
   const stored = await Promise.all(scored.map((p) => storePulse(nodeId, resolved, p)))
   const ranked = stored.sort((a, b) => b.score - a.score)
 
-  // Operator monitoring side-effect only — never a node-voice publication. Unchanged.
-  await postOperatorAlert(summarizeRun(nodeId, resolved.cadence, ranked))
+  // Operator monitoring side-effect only — never a node-voice publication. Suppressed when the
+  // Report scheduler drives the run (it emits its own single digest instead).
+  if (!opts.suppressAlert) await postOperatorAlert(summarizeRun(nodeId, resolved.cadence, ranked))
 
   return { pulses: ranked, selection: assignSurfaces(ranked, SURFACES) }
 }

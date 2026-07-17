@@ -1,8 +1,8 @@
-// Node Phenology Report v1 — canonical ReportPayload contract + daily aggregation builder.
+// Node Phenology Report — canonical ReportPayload contract + cadence aggregation builders.
 //
 // This directory is underscore-prefixed (api/_report/) so Vercel does NOT treat these modules
-// as routable serverless functions — only api/report-ondemand.js is an endpoint; it imports the
-// shared builder from here.
+// as routable serverless functions — only api/report-ondemand.js and api/report-cron.js are
+// endpoints; they import the shared builders from here.
 //
 // A Node Phenology Report gives a node a periodic FIRST-PERSON narrative of its own ecological
 // activity ("every place is speaking / the node is the author"). Like Pulse's payload, the
@@ -12,12 +12,11 @@
 //
 // Reuse, don't fork: reads go through the same PostgREST layer as Pulse (api/_pulse/db.js) and
 // honor the SAME range-gate quarantine exclusion (RANGE_OK). Notable pulses are Pulse-SELECTED
-// via the shared node_report surface affordance (assignSurfaces) and are NEVER re-ranked here —
-// selection/ranking is Pulse's job.
+// via the shared node_report surface affordance (assignSurfaces) and are NEVER re-ranked here.
 //
-// Cadence-parameterized from day one: the contract, the builder signature, and the cache are
-// keyed on `cadence` so the seasonal/annual builders (v1.1) drop in without a payload migration.
-// Daily is the only cadence IMPLEMENTED in v1.
+// CADENCES (v1.1): daily | seasonal | annual — all on the SAME contract, cache, and RPC. The
+// store is jsonb + free-text cadence/period_key, so the seasonal/annual builders add fields with
+// NO migration. Seasonal/annual are node-internal phenology only (no external baseline in v1.1).
 
 import { pgFetch, rowToPayload } from '../_pulse/db.js'
 import { nodeCoords, aciMean, hasPriorDetection } from '../_pulse/sources.js'
@@ -28,23 +27,20 @@ const enc = encodeURIComponent
 
 // Range gate (20260720): a quarantined detection (a penguin, a Rook at Casa Colibri) must never
 // enter a report — exclude it from EVERY detections read. Null-safe → fail-open, matching the
-// gate's own convention and the identical constant in api/_pulse/sources.js and api/insight.js:
-// unchecked / plausible / null all pass; only range_status = 'quarantined' is withheld.
+// gate's own convention and the identical constant in api/_pulse/sources.js and api/insight.js.
 const RANGE_OK = 'or=(range_status.is.null,range_status.neq.quarantined)'
 
 // Detection confidence floor, matching MIN_CONFIDENCE on the read-side (src/lib/supabase.js).
-// A report speaks the same detections the NodePage shows, so it honors the same floor.
 const MIN_CONFIDENCE = 0.3
 
-// How many species / pulses the payload carries into the narrative. The scaffold summarizes,
-// it does not enumerate everything; these caps keep the grounded prompt bounded.
+// How many species / pulses / arrivals the payload carries into the narrative. The scaffold
+// summarizes; these caps keep the grounded prompt bounded.
 const REPORT_TOP_SPECIES = 6
 const REPORT_MAX_PULSES = 4
+const REPORT_MAX_MOVEMENTS = 6 // arrivals / departures shown per seasonal report
 
 /**
  * @typedef {"daily"|"seasonal"|"annual"|string} ReportCadence
- *   window/aggregation profile. v1 implements "daily" only; seasonal/annual land in v1.1 on
- *   this same contract.
  */
 
 /**
@@ -52,37 +48,72 @@ const REPORT_MAX_PULSES = 4
  * @property {string} start   ISO timestamp (inclusive)
  * @property {string} end     ISO timestamp (exclusive)
  * @property {ReportCadence} cadence
- * @property {string} period_key   the cache/permalink key for this window (daily: 'YYYY-MM-DD')
+ * @property {string} period_key   the cache/permalink key (daily 'YYYY-MM-DD', seasonal 'YYYY-<season>', annual 'YYYY')
  */
 
 /**
  * The canonical, voice-agnostic Node Phenology Report payload. Every field is DB-grounded; the
- * narrator may use ONLY what is here. Stored as `node_reports.payload` (jsonb).
+ * narrator may use ONLY what is here. Stored as `node_reports.payload` (jsonb). The `phenology`
+ * block is cadence-shaped (daily: week_of_year; seasonal: weekly/arrivals/departures/season;
+ * annual: seasonal_breakdown/milestone/year) — additive, no migration.
  * @typedef {Object} ReportPayload
  * @property {string} node_id
  * @property {ReportCadence} cadence
  * @property {string} period_key
  * @property {ReportWindow} window
- * @property {string} generated_at                ISO; freshness is compared against narrated_at
+ * @property {string} generated_at
  * @property {{ id:string, name:string|null, place_label:string|null, elevation_m:number|null, elevation_unit:string|null, lat:number|null, lon:number|null }} node
- * @property {{ total_detections:number, distinct_species:number, top_species:{species_name:string,count:number,first_seen:string,last_seen:string,confidence_max:number}[] }} activity
- * @property {{ species_name:string, first_seen:string }[]} new_species   first-ever on THIS node
- * @property {{ pulse_id:string, kind:string, subject:object, evidence:object, score:number, summary:string }[]} notable_pulses  Pulse-selected (node_report surface), not re-ranked
- * @property {{ mean_aci:number|null, baseline_mean_aci:number|null, delta:number|null, trend:("busier"|"quieter"|"steady"|null), sample_count:number, peak_window:{ start:string, end:string, label:string, count:number }|null }} soundscape
- * @property {{ period_key:string, week_of_year:number, first_detection_date:string|null, last_detection_date:string|null, new_species_count:number }} phenology
+ * @property {{ total_detections:number, distinct_species:number, top_species:object[] }} activity
+ * @property {{ species_name:string, first_seen:string }[]} new_species
+ * @property {object[]} notable_pulses
+ * @property {object} soundscape
+ * @property {object} phenology
  * @property {{ has_detections:boolean, has_aci:boolean, degraded:boolean }} coverage
  */
 
-/** All cadences the contract anticipates. Only 'daily' is implemented in v1. */
+/** All cadences the contract implements. */
 export const REPORT_CADENCES = /** @type {ReportCadence[]} */ (['daily', 'seasonal', 'annual'])
 
-// ── Window resolution ────────────────────────────────────────────────────────
+// ── Meteorological, hemisphere-aware seasons ─────────────────────────────────
+// Seasons are the 3-month meteorological blocks (DJF/MAM/JJA/SON). The BLOCK is hemisphere-
+// independent; only the NAME flips across the equator. `season year` is keyed by the Jan/Feb year
+// (so DJF spanning Dec Y-1 → Feb Y is season year Y). Node latitude decides the hemisphere.
+const N_NAMES = { DJF: 'winter', MAM: 'spring', JJA: 'summer', SON: 'autumn' }
+const S_NAMES = { DJF: 'summer', MAM: 'autumn', JJA: 'winter', SON: 'spring' }
+const NAME_TO_BLOCK_N = { winter: 'DJF', spring: 'MAM', summer: 'JJA', autumn: 'SON' }
+const NAME_TO_BLOCK_S = { summer: 'DJF', autumn: 'MAM', winter: 'JJA', spring: 'SON' }
+const SEASON_NAMES = new Set(['winter', 'spring', 'summer', 'autumn'])
+
+function seasonName(block, lat) {
+  return ((lat ?? 0) < 0 ? S_NAMES : N_NAMES)[block]
+}
+
+// The meteorological block containing a date, plus its season year.
+function seasonalBlock(d) {
+  const y = d.getUTCFullYear()
+  const m = d.getUTCMonth() // 0=Jan
+  if (m === 11) return { block: 'DJF', seasonYear: y + 1 } // Dec → winter of next year
+  if (m <= 1) return { block: 'DJF', seasonYear: y } // Jan/Feb
+  if (m <= 4) return { block: 'MAM', seasonYear: y }
+  if (m <= 7) return { block: 'JJA', seasonYear: y }
+  return { block: 'SON', seasonYear: y }
+}
+
+// [start, end) UTC for a block + season year.
+function blockWindow(block, seasonYear) {
+  const y = seasonYear
+  switch (block) {
+    case 'DJF': return [Date.UTC(y - 1, 11, 1), Date.UTC(y, 2, 1)]
+    case 'MAM': return [Date.UTC(y, 2, 1), Date.UTC(y, 5, 1)]
+    case 'JJA': return [Date.UTC(y, 5, 1), Date.UTC(y, 8, 1)]
+    default: return [Date.UTC(y, 8, 1), Date.UTC(y, 11, 1)] // SON
+  }
+}
+
+// ── Window resolution (one resolver per cadence) ─────────────────────────────
 /**
- * Resolve the daily report window from a date (UTC calendar day). A dated permalink
- * (/node/:id/report/:date) and a stable cache key both require a DATE-keyed window, so the daily
- * cadence uses the UTC calendar day rather than a rolling last-24h boundary. Default = today (UTC).
- * @param {string} [date]  'YYYY-MM-DD'; defaults to the current UTC date
- * @returns {ReportWindow}
+ * Daily window from a date (UTC calendar day). period_key = the date. Default = today (UTC).
+ * @param {string} [date] 'YYYY-MM-DD'
  */
 export function resolveDailyWindow(date) {
   const period_key = date || new Date().toISOString().slice(0, 10)
@@ -92,7 +123,61 @@ export function resolveDailyWindow(date) {
   return { start: dayStart.toISOString(), end: dayEnd.toISOString(), cadence: 'daily', period_key }
 }
 
-// ISO week-of-year (1..53) — a phenology anchor the seasonal/annual builders can aggregate on.
+/**
+ * Seasonal window. Accepts either a period_key ('YYYY-<season>') or a reference date; needs the
+ * node latitude to name/resolve the season by hemisphere. period_key = 'YYYY-<season>'.
+ * @param {string} [dateOrKey]
+ * @param {number|null} lat
+ */
+export function resolveSeasonalWindow(dateOrKey, lat) {
+  let block, seasonYear, name
+  const keyMatch = typeof dateOrKey === 'string' && /^(\d{4})-(winter|spring|summer|autumn)$/.exec(dateOrKey)
+  if (keyMatch) {
+    seasonYear = Number(keyMatch[1])
+    name = keyMatch[2]
+    block = ((lat ?? 0) < 0 ? NAME_TO_BLOCK_S : NAME_TO_BLOCK_N)[name]
+  } else {
+    const ref = dateOrKey ? new Date(`${dateOrKey}T00:00:00.000Z`) : new Date()
+    if (Number.isNaN(ref.getTime())) throw new Error(`invalid seasonal key/date: ${dateOrKey}`)
+    ;({ block, seasonYear } = seasonalBlock(ref))
+    name = seasonName(block, lat)
+  }
+  const [s, e] = blockWindow(block, seasonYear)
+  return { start: new Date(s).toISOString(), end: new Date(e).toISOString(), cadence: 'seasonal', period_key: `${seasonYear}-${name}` }
+}
+
+/**
+ * Annual window. Accepts a period_key ('YYYY') or a reference date. period_key = 'YYYY'.
+ * @param {string} [dateOrKey]
+ */
+export function resolveAnnualWindow(dateOrKey) {
+  let year
+  if (typeof dateOrKey === 'string' && /^\d{4}$/.test(dateOrKey)) year = Number(dateOrKey)
+  else if (dateOrKey) {
+    const d = new Date(`${dateOrKey}T00:00:00.000Z`)
+    if (Number.isNaN(d.getTime())) throw new Error(`invalid annual key/date: ${dateOrKey}`)
+    year = d.getUTCFullYear()
+  } else year = new Date().getUTCFullYear()
+  return { start: new Date(Date.UTC(year, 0, 1)).toISOString(), end: new Date(Date.UTC(year + 1, 0, 1)).toISOString(), cadence: 'annual', period_key: String(year) }
+}
+
+/**
+ * Resolve the cache/permalink period_key for a cadence from a period_key-or-date. Pure (needs lat
+ * for seasonal). Lets the endpoint/cron cache-check BEFORE building.
+ * @param {ReportCadence} cadence
+ * @param {string} [dateOrKey]
+ * @param {number|null} [lat]
+ */
+export function resolvePeriodKey(cadence, dateOrKey, lat) {
+  switch (cadence) {
+    case 'daily': return resolveDailyWindow(dateOrKey).period_key
+    case 'seasonal': return resolveSeasonalWindow(dateOrKey, lat).period_key
+    case 'annual': return resolveAnnualWindow(dateOrKey).period_key
+    default: throw new Error(`unsupported cadence: ${cadence}`)
+  }
+}
+
+// ISO week-of-year (1..53).
 function isoWeek(d) {
   const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
   const day = t.getUTCDay() || 7
@@ -101,18 +186,21 @@ function isoWeek(d) {
   return Math.ceil(((t - yearStart) / 86400000 + 1) / 7)
 }
 
-// ── Raw detection read (grounded aggregation source) ─────────────────────────
-// One logical read over the window feeds total/distinct/species/first-last/peak-hour. RANGE_OK
-// excludes quarantined rows; the confidence floor matches the NodePage read-side.
-//
-// PAGINATED: PostgREST enforces a server-side db-max-rows cap (1000 on this project) that silently
-// truncates a GET regardless of the `limit` param — a busy day (birdnode11 sees >1000/day) would
-// otherwise undercount total_detections and drop the day's tail species. Because "numbers are
-// facts" here, we page via limit+offset until a short page returns, so the aggregation sees EVERY
-// non-quarantined detection in the window. This also unblocks v1.1, whose seasonal/annual windows
-// aggregate far more than one page. Bounded by REPORT_MAX_PAGES as a runaway guard.
+// Monday (UTC) that starts the ISO week of a date, as 'YYYY-MM-DD'. Sortable week bucket key that
+// stays correct across a year boundary (unlike the raw week number, which wraps 52→1).
+function weekStartKey(d) {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+  const day = t.getUTCDay() || 7
+  t.setUTCDate(t.getUTCDate() - (day - 1))
+  return t.toISOString().slice(0, 10)
+}
+
+// ── Raw detection read (paginated grounded aggregation source) ───────────────
+// PostgREST enforces a server-side db-max-rows cap (1000) that silently truncates a GET regardless
+// of `limit`. Because "numbers are facts", we page via limit+offset until a short page returns, so
+// the aggregation sees EVERY non-quarantined detection in the window — daily OR season/year-long.
 const REPORT_PAGE_SIZE = 1000
-const REPORT_MAX_PAGES = 60 // 60k detections/window ceiling — well beyond any real daily/seasonal day
+const REPORT_MAX_PAGES = 400 // 400k detections/window ceiling — beyond any real annual window
 
 async function detectionRows(nodeId, window) {
   const all = []
@@ -126,12 +214,12 @@ async function detectionRows(nodeId, window) {
       true,
     )
     all.push(...batch)
-    if (batch.length < REPORT_PAGE_SIZE) break // short page => last page
+    if (batch.length < REPORT_PAGE_SIZE) break
   }
   return all
 }
 
-// Aggregate raw rows into per-species stats + totals, and bucket by UTC hour for peak activity.
+// Aggregate raw rows into per-species stats + totals + hour-of-day histogram.
 function aggregate(rows) {
   const bySpecies = new Map()
   const hourCounts = new Array(24).fill(0)
@@ -159,7 +247,7 @@ function aggregate(rows) {
   return { bySpecies, hourCounts, total }
 }
 
-// Hour label from a 0..23 UTC bucket. Coarse windows, kept plain (the narrator restyles).
+// Hour label from a 0..23 UTC bucket.
 function hourLabel(h) {
   if (h >= 21 || h < 4) return 'the night'
   if (h < 7) return 'the pre-dawn and early morning'
@@ -171,8 +259,9 @@ function hourLabel(h) {
   return 'dusk'
 }
 
-// Peak 3-hour activity window from the hour histogram, as an absolute time span within the day.
-function peakWindow(hourCounts, dayStart) {
+// Peak 3-hour band from the hour histogram. For daily, a concrete span on the day (start/end ISO);
+// for seasonal/annual, a recurring time-of-day pattern (label + count only, start/end null).
+function peakBand(hourCounts, dayStart) {
   let bestStart = 0
   let bestSum = -1
   for (let h = 0; h < 24; h++) {
@@ -180,17 +269,14 @@ function peakWindow(hourCounts, dayStart) {
     if (sum > bestSum) { bestSum = sum; bestStart = h }
   }
   if (bestSum <= 0) return null
-  const startMs = dayStart.getTime() + bestStart * 3600000
-  return {
-    start: new Date(startMs).toISOString(),
-    end: new Date(startMs + 3 * 3600000).toISOString(),
-    label: hourLabel(bestStart),
-    count: bestSum,
+  if (dayStart) {
+    const startMs = dayStart.getTime() + bestStart * 3600000
+    return { start: new Date(startMs).toISOString(), end: new Date(startMs + 3 * 3600000).toISOString(), label: hourLabel(bestStart), count: bestSum }
   }
+  return { start: null, end: null, label: hourLabel(bestStart), count: bestSum }
 }
 
-// A one-line, payload-derived summary of a notable pulse — the ONLY thing the narrator learns
-// about it. Built from confirmed payload fields only (never re-derives a species/stat).
+// One-line, payload-derived summary of a notable pulse.
 function pulseSummary(p) {
   const species = Array.isArray(p.subject?.species) && p.subject.species.length ? p.subject.species[0] : null
   const ev = p.evidence || {}
@@ -198,9 +284,7 @@ function pulseSummary(p) {
     case 'novel_detection':
       return species ? `${species} was detected here for the first time in my records` : `a species new to my records was detected here`
     case 'activity_spike':
-      return ev.ratio != null
-        ? `bird activity rose to ${Number(ev.ratio).toFixed(1)} times my recent baseline`
-        : `bird activity rose above my recent baseline`
+      return ev.ratio != null ? `bird activity rose to ${Number(ev.ratio).toFixed(1)} times my recent baseline` : `bird activity rose above my recent baseline`
     case 'soundscape_shift':
       return `my soundscape ${ev.direction === 'down' ? 'grew quieter' : 'grew busier'} than my recent baseline`
     case 'survey_gap_question':
@@ -210,10 +294,10 @@ function pulseSummary(p) {
   }
 }
 
-// ── Notable pulses (Pulse-selected, NOT re-ranked) ───────────────────────────
-// Any pulses whose window falls inside the report window, ranked by Pulse's OWN stored score,
-// routed through the shared node_report surface affordance (assignSurfaces). We consume Pulse's
-// selection/order — we never recompute a score.
+// Notable pulses (Pulse-selected, NOT re-ranked). Any pulses whose window falls inside the report
+// window, in Pulse's OWN score order, routed through the shared node_report surface affordance.
+// For seasonal/annual this READS the daily pulses accumulated across the period — pulseBatch is
+// never run on a long window (its scoring is daily-grained).
 async function notablePulses(nodeId, window) {
   const rows = await pgFetch(
     `pulses?node_id=eq.${nodeId}` +
@@ -222,7 +306,7 @@ async function notablePulses(nodeId, window) {
     true,
   )
   if (!rows.length) return []
-  const ranked = rows.map(rowToPayload) // already score-desc from the query; Pulse's ranking
+  const ranked = rows.map(rowToPayload)
   const { per_surface } = assignSurfaces(ranked, ['node_report'])
   const chosenIds = (per_surface.node_report || []).slice(0, REPORT_MAX_PULSES)
   const byId = new Map(ranked.map((p) => [p.pulse_id, p]))
@@ -232,61 +316,56 @@ async function notablePulses(nodeId, window) {
   })
 }
 
-/**
- * Build the daily ReportPayload for a node + date. Every field is DB-grounded; quarantined rows
- * are excluded via RANGE_OK. Degrades fail-open (empty activity / null soundscape) rather than
- * throwing, matching Pulse's coverage semantics — a node with no data yields a valid, quiet
- * payload rather than an error.
- * @param {string} nodeId
- * @param {string} [date]  'YYYY-MM-DD' (UTC calendar day); defaults to today
- * @returns {Promise<ReportPayload>}
- */
-export async function buildDailyReport(nodeId, date) {
-  const window = resolveDailyWindow(date)
-  const dayStart = new Date(window.start)
+// Distinct species ever recorded on the node before `before` (paginated, cap-safe). For annual
+// milestones ("Nth species recorded here").
+async function distinctSpeciesBefore(nodeId, before) {
+  const set = new Set()
+  for (let page = 0; page < REPORT_MAX_PAGES; page++) {
+    const batch = await pgFetch(
+      `detections?node_id=eq.${nodeId}&detected_at=lt.${enc(before)}&confidence=gte.${MIN_CONFIDENCE}&${RANGE_OK}` +
+        `&select=species_name&order=detected_at.asc&limit=${REPORT_PAGE_SIZE}&offset=${page * REPORT_PAGE_SIZE}`,
+      true,
+    )
+    for (const r of batch) if (r.species_name) set.add(r.species_name)
+    if (batch.length < REPORT_PAGE_SIZE) break
+  }
+  return set
+}
 
-  const baselineStart = new Date(dayStart.getTime() - PULSE_CONFIG.aciBaselineDays * 86400000).toISOString()
+// Soundscape trend across a long window: mean ACI over the LATE edge vs the EARLY edge (each a
+// bounded ≤1000-log read, so cap-safe and unbiased — a single season/year mean would be truncated
+// to its first 1000 logs). This is the honest "did the soundscape shift across the period" signal.
+async function edgeTrend(nodeId, window, edgeDays) {
+  const start = new Date(window.start)
+  const end = new Date(window.end)
+  const earlyEnd = new Date(start.getTime() + edgeDays * 86400000).toISOString()
+  const lateStart = new Date(end.getTime() - edgeDays * 86400000).toISOString()
+  const [early, late] = await Promise.all([
+    aciMean(nodeId, window.start, earlyEnd),
+    aciMean(nodeId, lateStart, window.end),
+  ])
+  const delta = early.mean != null && late.mean != null ? late.mean - early.mean : null
+  let trend = null
+  if (delta != null) trend = Math.abs(delta) < PULSE_CONFIG.aciMinDelta ? 'steady' : delta > 0 ? 'busier' : 'quieter'
+  return { mean_aci: late.mean, baseline_mean_aci: early.mean, delta, trend, sample_count: late.sampleCount, edge_days: edgeDays }
+}
 
-  // NOTE (v1.1 watch-item): aciMean (reused from _pulse/sources.js) is subject to the same
-  // db-max-rows cap — its mean/sample_count reflect at most 1000 ACI logs. For a single day that is
-  // representative (ACI is reported as a trend/direction, never a hard counted fact). A SEASONAL /
-  // ANNUAL window spans far more than 1000 logs, so v1.1 needs a paginated or SQL-aggregate ACI read
-  // to avoid an early-window-biased mean. Left as-is for the daily cadence.
-  const [{ node, lat, lon }, rows, windowAci, baselineAci, pulses] = await Promise.all([
+// Shared gather: the DB-grounded facts every cadence needs. new_species = first-ever on THIS node.
+async function gatherCommon(nodeId, window) {
+  const [{ node, lat, lon }, rows, pulses] = await Promise.all([
     nodeCoords(nodeId),
     detectionRows(nodeId, window),
-    aciMean(nodeId, window.start, window.end),
-    aciMean(nodeId, baselineStart, window.start),
     notablePulses(nodeId, window),
   ])
-
   const { bySpecies, hourCounts, total } = aggregate(rows)
   const species = [...bySpecies.values()].sort((a, b) => b.count - a.count)
+  const newFlags = await Promise.all(species.map((s) => hasPriorDetection(nodeId, s.species_name, window.start)))
+  const new_species = species.filter((_, i) => !newFlags[i]).map((s) => ({ species_name: s.species_name, first_seen: s.first_seen }))
+  return { node, lat, lon, rows, bySpecies, species, hourCounts, total, pulses, new_species }
+}
 
-  // New-for-this-node: a window species with NO detection ever before the window start. One
-  // prior-check per distinct species (reuses hasPriorDetection; RANGE_OK-safe). Bounded by the
-  // day's distinct-species count.
-  const newFlags = await Promise.all(
-    species.map((s) => hasPriorDetection(nodeId, s.species_name, window.start)),
-  )
-  const new_species = species
-    .filter((_, i) => !newFlags[i])
-    .map((s) => ({ species_name: s.species_name, first_seen: s.first_seen }))
-
-  // Soundscape trend from mean-ACI delta vs the trailing baseline, using Pulse's noise floor.
-  const delta =
-    windowAci.mean != null && baselineAci.mean != null ? windowAci.mean - baselineAci.mean : null
-  let trend = null
-  if (delta != null) {
-    if (Math.abs(delta) < PULSE_CONFIG.aciMinDelta) trend = 'steady'
-    else trend = delta > 0 ? 'busier' : 'quieter'
-  }
-
-  const peak = peakWindow(hourCounts, dayStart)
-
-  const firstDates = species.map((s) => s.first_seen).filter(Boolean).sort()
-  const lastDates = species.map((s) => s.last_seen).filter(Boolean).sort()
-
+// Common node identity + activity + coverage assembly, shared across cadences.
+function assemble({ nodeId, window, node, lat, lon, species, total, new_species, pulses, soundscape, phenology, aciSampleCount }) {
   return {
     node_id: nodeId,
     cadence: window.cadence,
@@ -309,25 +388,196 @@ export async function buildDailyReport(nodeId, date) {
     },
     new_species,
     notable_pulses: pulses,
+    soundscape,
+    phenology,
+    coverage: {
+      has_detections: total > 0,
+      has_aci: aciSampleCount > 0,
+      degraded: total === 0,
+    },
+  }
+}
+
+// ── Daily builder (v1 semantics preserved exactly) ──────────────────────────
+/**
+ * @param {string} nodeId
+ * @param {string} [date] 'YYYY-MM-DD'
+ * @returns {Promise<ReportPayload>}
+ */
+export async function buildDailyReport(nodeId, date) {
+  const window = resolveDailyWindow(date)
+  const dayStart = new Date(window.start)
+  const baselineStart = new Date(dayStart.getTime() - PULSE_CONFIG.aciBaselineDays * 86400000).toISOString()
+
+  const common = await gatherCommon(nodeId, window)
+  const [windowAci, baselineAci] = await Promise.all([
+    aciMean(nodeId, window.start, window.end),
+    aciMean(nodeId, baselineStart, window.start),
+  ])
+
+  const delta = windowAci.mean != null && baselineAci.mean != null ? windowAci.mean - baselineAci.mean : null
+  let trend = null
+  if (delta != null) trend = Math.abs(delta) < PULSE_CONFIG.aciMinDelta ? 'steady' : delta > 0 ? 'busier' : 'quieter'
+
+  const firstDates = common.species.map((s) => s.first_seen).filter(Boolean).sort()
+  const lastDates = common.species.map((s) => s.last_seen).filter(Boolean).sort()
+
+  return assemble({
+    nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
+    species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
+    aciSampleCount: windowAci.sampleCount,
     soundscape: {
       mean_aci: windowAci.mean,
       baseline_mean_aci: baselineAci.mean,
-      delta,
-      trend,
+      delta, trend,
       sample_count: windowAci.sampleCount,
-      peak_window: peak,
+      peak_window: peakBand(common.hourCounts, dayStart),
     },
     phenology: {
       period_key: window.period_key,
       week_of_year: isoWeek(dayStart),
       first_detection_date: firstDates[0] ?? null,
       last_detection_date: lastDates[lastDates.length - 1] ?? null,
-      new_species_count: new_species.length,
+      new_species_count: common.new_species.length,
     },
-    coverage: {
-      has_detections: total > 0,
-      has_aci: windowAci.sampleCount > 0,
-      degraded: total === 0,
+  })
+}
+
+// ── Seasonal builder ────────────────────────────────────────────────────────
+/**
+ * Seasonal report: per-species first/last-of-season arrivals & departures, week-over-week
+ * activity/diversity, and the seasonal ACI trend (early edge vs late edge). Node-internal only.
+ * @param {string} nodeId
+ * @param {string} [dateOrKey] 'YYYY-<season>' or a date within the season
+ * @returns {Promise<ReportPayload>}
+ */
+export async function buildSeasonalReport(nodeId, dateOrKey) {
+  const { lat: latPeek } = await nodeCoords(nodeId)
+  const window = resolveSeasonalWindow(dateOrKey, latPeek)
+  const common = await gatherCommon(nodeId, window)
+  const soundscape = await edgeTrend(nodeId, window, 14)
+
+  // Arrivals: earliest first-of-season detections. Departures: earliest to fall silent (last-seen
+  // ascending). Both are pure timestamp sorts over the grounded per-species first/last.
+  const arrivals = [...common.bySpecies.values()]
+    .sort((a, b) => new Date(a.first_seen) - new Date(b.first_seen))
+    .slice(0, REPORT_MAX_MOVEMENTS)
+    .map((s) => ({ species_name: s.species_name, first_seen: s.first_seen }))
+  const departures = [...common.bySpecies.values()]
+    .sort((a, b) => new Date(a.last_seen) - new Date(b.last_seen))
+    .slice(0, REPORT_MAX_MOVEMENTS)
+    .map((s) => ({ species_name: s.species_name, last_seen: s.last_seen }))
+
+  // Week-over-week series across the season (detections + distinct species per ISO week).
+  const byWeek = new Map()
+  for (const r of common.rows) {
+    if (!r.species_name) continue
+    const wk = weekStartKey(new Date(r.detected_at))
+    let e = byWeek.get(wk)
+    if (!e) { e = { week_start: wk, detections: 0, species: new Set() }; byWeek.set(wk, e) }
+    e.detections += 1
+    e.species.add(r.species_name)
+  }
+  const weekly = [...byWeek.values()].sort((a, b) => a.week_start.localeCompare(b.week_start))
+    .map((e) => ({ week_start: e.week_start, detections: e.detections, distinct_species: e.species.size }))
+
+  const firstDates = common.species.map((s) => s.first_seen).filter(Boolean).sort()
+  const lastDates = common.species.map((s) => s.last_seen).filter(Boolean).sort()
+  const [year, name] = window.period_key.split('-')
+
+  return assemble({
+    nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
+    species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
+    aciSampleCount: soundscape.sample_count,
+    soundscape: { ...soundscape, peak_window: peakBand(common.hourCounts, null) },
+    phenology: {
+      period_key: window.period_key,
+      season: name,
+      season_year: Number(year),
+      arrivals,
+      departures,
+      weekly,
+      first_detection_date: firstDates[0] ?? null,
+      last_detection_date: lastDates[lastDates.length - 1] ?? null,
+      new_species_count: common.new_species.length,
     },
+  })
+}
+
+// ── Annual builder ──────────────────────────────────────────────────────────
+/**
+ * Annual report: the year's arc — totals, per-species first/last dates (top_species), seasonal
+ * transitions (detections + diversity per meteorological season), and milestones (cumulative
+ * species recorded here). Node-internal only.
+ * @param {string} nodeId
+ * @param {string} [dateOrKey] 'YYYY' or a date within the year
+ * @returns {Promise<ReportPayload>}
+ */
+export async function buildAnnualReport(nodeId, dateOrKey) {
+  const window = resolveAnnualWindow(dateOrKey)
+  const common = await gatherCommon(nodeId, window)
+  const [soundscape, priorSpecies] = await Promise.all([
+    edgeTrend(nodeId, window, 30),
+    distinctSpeciesBefore(nodeId, window.start),
+  ])
+
+  // Seasonal breakdown: detections + distinct species per season block within the year.
+  const byBlock = new Map()
+  for (const r of common.rows) {
+    if (!r.species_name) continue
+    const { block } = seasonalBlock(new Date(r.detected_at))
+    let e = byBlock.get(block)
+    if (!e) { e = { block, detections: 0, species: new Set() }; byBlock.set(block, e) }
+    e.detections += 1
+    e.species.add(r.species_name)
+  }
+  const BLOCK_ORDER = ['DJF', 'MAM', 'JJA', 'SON']
+  const seasonal_breakdown = BLOCK_ORDER.filter((b) => byBlock.has(b)).map((b) => {
+    const e = byBlock.get(b)
+    return { season: seasonName(b, common.lat), detections: e.detections, distinct_species: e.species.size }
+  })
+
+  // Milestone: how many distinct species have EVER been recorded here, and how many of them arrived
+  // this year (grounded, cumulative — "the Nth species recorded here").
+  const allTime = new Set(priorSpecies)
+  for (const s of common.species) allTime.add(s.species_name)
+  const milestone = { total_species_all_time: allTime.size, new_species_this_year: common.new_species.length }
+
+  const firstDates = common.species.map((s) => s.first_seen).filter(Boolean).sort()
+  const lastDates = common.species.map((s) => s.last_seen).filter(Boolean).sort()
+
+  return assemble({
+    nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
+    species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
+    aciSampleCount: soundscape.sample_count,
+    soundscape: { ...soundscape, peak_window: peakBand(common.hourCounts, null) },
+    phenology: {
+      period_key: window.period_key,
+      year: Number(window.period_key),
+      seasonal_breakdown,
+      milestone,
+      first_detection_date: firstDates[0] ?? null,
+      last_detection_date: lastDates[lastDates.length - 1] ?? null,
+      new_species_count: common.new_species.length,
+    },
+  })
+}
+
+/**
+ * Cadence dispatcher. Builds the ReportPayload for a node + cadence + period_key-or-date.
+ * @param {string} nodeId
+ * @param {ReportCadence} cadence
+ * @param {string} [dateOrKey]
+ * @returns {Promise<ReportPayload>}
+ */
+export function buildReport(nodeId, cadence, dateOrKey) {
+  switch (cadence) {
+    case 'daily': return buildDailyReport(nodeId, dateOrKey)
+    case 'seasonal': return buildSeasonalReport(nodeId, dateOrKey)
+    case 'annual': return buildAnnualReport(nodeId, dateOrKey)
+    default: throw new Error(`unsupported cadence: ${cadence}`)
   }
 }
+
+// Exported for the season selector / validation on surfaces.
+export { SEASON_NAMES }

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { cadenceForPeriodKey } from '../lib/report'
 
-// Node Phenology Report v1 — public permalink (read-only). Renders a CACHED node report for
-// sharing: /node/:id/report/:date. The node speaks its own daily record in the first person
-// ("every place is speaking / the node is the author"). Reads node_reports directly (public-read
-// RLS); it never generates and never writes. Place data only — no person data is stored on, or
-// read from, node_reports.
+// Node Phenology Report — public permalink (read-only). Renders a CACHED node report for sharing:
+// /node/:id/report/:period_key. The :period_key encodes the cadence (daily 'YYYY-MM-DD', seasonal
+// 'YYYY-<season>', annual 'YYYY'). The node speaks its own record in the first person ("every place
+// is speaking / the node is the author"). Reads node_reports directly (public-read RLS); never
+// generates, never writes. Place data only — no person data on, or read from, node_reports.
 
 const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
@@ -14,27 +15,44 @@ const C = {
   text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
 }
 
-function prettyDate(periodKey) {
-  const d = new Date(`${periodKey}T00:00:00.000Z`)
-  if (Number.isNaN(d.getTime())) return periodKey
-  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+// Reader-facing framing for the period, derived purely from the period_key.
+function periodFraming(periodKey) {
+  const cadence = cadenceForPeriodKey(periodKey)
+  if (cadence === 'annual') return { cadence, label: `the year ${periodKey}` }
+  if (cadence === 'seasonal') {
+    const [year, season] = periodKey.split('-')
+    return { cadence, label: `${season} ${year}` }
+  }
+  if (cadence === 'daily') {
+    const d = new Date(`${periodKey}T00:00:00.000Z`)
+    const label = Number.isNaN(d.getTime())
+      ? periodKey
+      : d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+    return { cadence, label }
+  }
+  return { cadence: null, label: periodKey }
 }
 
 export default function NodeReportPage() {
-  const { id, date } = useParams()
-  const [report, setReport] = useState(null) // { narrative, payload, ... } | null
+  const { id, date } = useParams() // :date is the period_key
+  const [report, setReport] = useState(null)
   const [node, setNode] = useState(null)
   const [loading, setLoading] = useState(true)
+
+  const framing = periodFraming(date)
 
   useEffect(() => {
     let cancelled = false
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true)
+    const cadence = cadenceForPeriodKey(date)
     Promise.all([
-      supabase.from('node_reports')
-        .select('narrative, payload, voice, generated_at')
-        .eq('node_id', id).eq('cadence', 'daily').eq('period_key', date)
-        .maybeSingle(),
+      cadence
+        ? supabase.from('node_reports')
+            .select('narrative, payload, voice, generated_at')
+            .eq('node_id', id).eq('cadence', cadence).eq('period_key', date)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
       supabase.from('nodes').select('name').eq('id', id).maybeSingle(),
     ]).then(([{ data: r }, { data: n }]) => {
       if (cancelled) return
@@ -60,14 +78,14 @@ export default function NodeReportPage() {
           Every place is speaking
         </p>
         <h1 style={{ fontSize: '26px', fontWeight: 700, margin: '0 0 4px', lineHeight: 1.25 }}>{placeName}</h1>
-        <p style={{ fontSize: '14px', color: C.textMuted, margin: '0 0 28px' }}>Its own record of {prettyDate(date)}</p>
+        <p style={{ fontSize: '14px', color: C.textMuted, margin: '0 0 28px' }}>Its own record of {framing.label}</p>
 
         {loading ? (
-          <p style={{ color: C.textMuted }}>Gathering the day…</p>
+          <p style={{ color: C.textMuted }}>Gathering the record…</p>
         ) : !report?.narrative ? (
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '20px' }}>
             <p style={{ color: C.textSub, lineHeight: 1.7, margin: 0 }}>
-              This place has not published a report for this day yet.
+              This place has not published a report for this period yet.
             </p>
           </div>
         ) : (
