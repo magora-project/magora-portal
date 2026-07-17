@@ -23,6 +23,19 @@ const EBIRD_DIST_KM = 50
 const EBIRD_BACK_DAYS = 30
 const SOURCE = 'ebird:obs_geo_recent'
 
+// Known eBird split/lump aliases: eBird's current (split) species code -> our table's BROAD
+// common_name. eBird reports the split taxon near a cell, but BirdNET + our `species` table
+// carry the pre-split broad species, so neither code nor scientific_name matches and the local
+// bird never enters the allowlist (→ false-quarantine). These curated overrides map the eBird
+// obs back to our species. Extend as new splits surface in the unmapped audit log. (Verified
+// July 2026 against eBird near birdnode11 / cell 90:-222.)
+const SPLIT_ALIASES = {
+  eawvir1: 'Warbling Vireo',        // Eastern Warbling Vireo (Vireo gilvus)
+  wewvir2: 'Warbling Vireo',        // Western Warbling Vireo (Vireo swainsoni) — the local bird
+  yelwar1: 'Yellow Warbler',        // Northern Yellow Warbler (Setophaga aestiva) — the widespread bird
+  wesfly: 'Cordilleran Flycatcher', // Western Flycatcher (Empidonax difficilis) lumps Cordilleran + Pacific-slope
+}
+
 // GLOBAL-FIRST COVERAGE GUARD (EIA §8: an unimplemented region goes quiet, never wrong).
 // The `species` table is currently North-America-biased. In a region where it maps only a
 // small fraction of what eBird reports, the resulting allowlist is INCOMPLETE, and an
@@ -98,14 +111,21 @@ async function activeCells() {
   return cells
 }
 
-// Build scientific_name / ebird_code / common_name -> species_id lookups (one pass).
+// Build scientific_name / ebird_code / common_name -> species_id lookups. Paginated: the
+// `species` table exceeds PostgREST's 1000-row cap (1166+ rows), so a single GET silently
+// truncated the lookup — species beyond row 1000 (incl. Warbling Vireo, Yellow Warbler) never
+// mapped, so their eBird obs fell through and the local birds false-quarantined. Page through all.
 async function speciesLookups() {
-  const rows = await sbGet('species?select=id,scientific_name,ebird_code,common_name')
   const bySci = new Map(), byCode = new Map(), byCommon = new Map()
-  for (const s of rows) {
-    if (s.scientific_name) bySci.set(s.scientific_name.toLowerCase(), s.id)
-    if (s.ebird_code) byCode.set(s.ebird_code, s.id)
-    if (s.common_name) byCommon.set(s.common_name.toLowerCase(), s.id)
+  for (let off = 0; ; off += 1000) {
+    const rows = await sbGet(`species?select=id,scientific_name,ebird_code,common_name&order=id.asc&limit=1000&offset=${off}`)
+    if (!Array.isArray(rows) || rows.length === 0) break
+    for (const s of rows) {
+      if (s.scientific_name) bySci.set(s.scientific_name.toLowerCase(), s.id)
+      if (s.ebird_code) byCode.set(s.ebird_code, s.id)
+      if (s.common_name) byCommon.set(s.common_name.toLowerCase(), s.id)
+    }
+    if (rows.length < 1000) break
   }
   return { bySci, byCode, byCommon }
 }
@@ -123,12 +143,19 @@ export async function buildAllowlist({ ebirdKey } = {}) {
     if (obs.length === 0) { report.skipped.push({ cell: ck, reason: 'no eBird obs' }); continue }
     const ids = new Set()
     let unmapped = 0
+    const unmappedNames = []
     for (const o of obs) {
-      const id = look.byCode.get(o.speciesCode)
+      // Resolve an eBird obs -> our species_id, most-robust path first:
+      //   alias (curated split/lump override) -> scientific_name (stable for un-split taxa)
+      //   -> common_name -> stored eBird code (LAST — codes drift with splits/lumps).
+      const id = look.byCommon.get((SPLIT_ALIASES[o.speciesCode] || '').toLowerCase())
         || look.bySci.get((o.sciName || '').toLowerCase())
         || look.byCommon.get((o.comName || '').toLowerCase())
-      if (id) ids.add(id); else unmapped++
+        || look.byCode.get(o.speciesCode)
+      if (id) ids.add(id); else { unmapped++; unmappedNames.push(`${o.comName} [${o.sciName}/${o.speciesCode}]`) }
     }
+    // Audit: eBird species near this cell we couldn't map (candidate future SPLIT_ALIASES / taxonomy gaps).
+    if (unmappedNames.length) console.warn(`[range-allowlist] cell ${ck}: ${unmapped} unmapped eBird species:\n  ` + unmappedNames.join('\n  '))
     if (ids.size === 0) { report.skipped.push({ cell: ck, reason: 'no species mapped', ebird: obs.length }); continue }
     // Coverage guard — refuse to build an incomplete cell (would over-quarantine). Fail-open.
     if (ids.size < MIN_CELL_SPECIES || ids.size / obs.length < MIN_CELL_COVERAGE) {
