@@ -41,7 +41,18 @@ if (!URL || !KEY) {
 }
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json' }
 const PAGE = 500
+const PATCH_CONCURRENCY = 25 // the PATCH round-trip (~110ms) is the bottleneck; sequential writes
+                             // can't finish a 95k-row table in one pass, so fan them out.
 const norm = (s) => String(s || '').trim().toLowerCase()
+
+// Run `fn` over items with bounded concurrency. Per-item errors are caught + counted (a single
+// transient PATCH failure must not abort a long backfill); returns the failure count.
+async function mapPool(items, limit, fn) {
+  let i = 0, fails = 0
+  const worker = async () => { while (i < items.length) { const idx = i++; try { await fn(items[idx]) } catch { fails++ } } }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return fails
+}
 
 async function pgGet(path) {
   const res = await fetch(`${URL}/rest/v1/${path}`, { headers: H })
@@ -76,13 +87,16 @@ function statusOf(plausible) {
   return plausible ? 'plausible' : 'quarantined'
 }
 
-// Memoized is_plausible: keyed on (cell-ish) coords + species. The 0.5° cell is what actually
-// determines the allowlist, but rounding coords to 4dp is a safe finer key (same species at the
-// same place collapses to one call — e.g. all 106 Rook rows at Casa Colibri => 1 RPC).
+// Memoized is_plausible: keyed on species + (4dp) coords, NOT week. The v1 allowlist is
+// week-agnostic (all rows week 0; is_plausible matches week IN (0, p_week)), so the result is
+// independent of the week we pass — including week in the cache key only multiplied identical
+// RPC calls (e.g. one species at one node across 48 weeks = 48 calls instead of 1), which made a
+// full-table run too slow to finish in one pass. Collapsing to species+coords cuts it to one RPC
+// per distinct place/species. (If a future week-resolved allowlist ships, restore week here.)
 const plausibleCache = new Map()
 async function isPlausible(speciesId, lat, lon, week) {
   if (!speciesId || lat == null || lon == null) return null // matches is_plausible's own null guard
-  const k = `${speciesId}|${lat.toFixed(4)}|${lon.toFixed(4)}|${week}`
+  const k = `${speciesId}|${lat.toFixed(4)}|${lon.toFixed(4)}`
   if (plausibleCache.has(k)) return plausibleCache.get(k)
   const v = await pgRpc('is_plausible', { p_species_id: speciesId, p_lat: lat, p_lon: lon, p_week: week })
   plausibleCache.set(k, v)
@@ -90,12 +104,13 @@ async function isPlausible(speciesId, lat, lon, week) {
 }
 
 function tally() {
-  return { seen: 0, plausible: 0, quarantined: 0, unchecked: 0, changed: 0, skipped_no_coords: 0 }
+  return { seen: 0, plausible: 0, quarantined: 0, unchecked: 0, changed: 0, failed: 0, skipped_no_coords: 0 }
 }
 function logTally(label, t) {
   console.log(
     `${label}: ${t.seen} rows | plausible ${t.plausible}, quarantined ${t.quarantined}, unchecked ${t.unchecked} | ` +
     `${APPLY ? 'updated' : 'would update'} ${t.changed}` +
+    (t.failed ? ` | ${t.failed} PATCH failures (re-run to retry)` : '') +
     (t.skipped_no_coords ? ` | ${t.skipped_no_coords} without resolvable coords (left as-is, fail-open)` : ''),
   )
 }
@@ -119,6 +134,7 @@ async function backfillDetections() {
         `&order=id.asc&limit=${PAGE}${after}`,
     )
     if (!rows.length) break
+    const changed = []
     for (const r of rows) {
       t.seen++
       let lat = null, lon = null
@@ -129,10 +145,11 @@ async function backfillDetections() {
 
       const status = statusOf(await isPlausible(r.species_id, lat, lon, rangeWeek(r.detected_at)))
       t[status]++
-      if (status !== r.range_status) {
-        t.changed++
-        if (APPLY) await pgPatch(`detections?id=eq.${r.id}`, { range_status: status, range_checked_at: new Date().toISOString() })
-      }
+      if (status !== r.range_status) { t.changed++; changed.push({ id: r.id, status }) }
+    }
+    if (APPLY && changed.length) {
+      t.failed += await mapPool(changed, PATCH_CONCURRENCY, (c) =>
+        pgPatch(`detections?id=eq.${c.id}`, { range_status: c.status, range_checked_at: new Date().toISOString() }))
     }
     after = `&id=gt.${encodeURIComponent(rows[rows.length - 1].id)}`
     if (rows.length < PAGE) break
@@ -166,16 +183,18 @@ async function backfillMobile() {
         `&order=id.asc&limit=${PAGE}${after}`,
     )
     if (!rows.length) break
+    const changed = []
     for (const r of rows) {
       t.seen++
       const speciesId = resolvePrimary(r.species)
       if (r.lat == null || r.lon == null) t.skipped_no_coords++
       const status = statusOf(await isPlausible(speciesId, r.lat, r.lon, rangeWeek(r.detected_at)))
       t[status]++
-      if (status !== r.range_status) {
-        t.changed++
-        if (APPLY) await pgPatch(`mobile_detections?id=eq.${r.id}`, { range_status: status, range_checked_at: new Date().toISOString() })
-      }
+      if (status !== r.range_status) { t.changed++; changed.push({ id: r.id, status }) }
+    }
+    if (APPLY && changed.length) {
+      t.failed += await mapPool(changed, PATCH_CONCURRENCY, (c) =>
+        pgPatch(`mobile_detections?id=eq.${c.id}`, { range_status: c.status, range_checked_at: new Date().toISOString() }))
     }
     after = `&id=gt.${encodeURIComponent(rows[rows.length - 1].id)}`
     if (rows.length < PAGE) break
