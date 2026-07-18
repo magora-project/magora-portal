@@ -63,6 +63,14 @@ export default function NodeReportPage() {
     return () => { cancelled = true }
   }, [id, date])
 
+  const [copied, setCopied] = useState(false)
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setCopied(true); setTimeout(() => setCopied(false), 1800)
+    } catch { /* clipboard unavailable — no-op */ }
+  }
+
   const placeName = report?.payload?.node?.place_label || node?.name || 'This place'
   const act = report?.payload?.activity
   const newSpecies = report?.payload?.new_species || []
@@ -78,7 +86,16 @@ export default function NodeReportPage() {
           Every place is speaking
         </p>
         <h1 style={{ fontSize: '26px', fontWeight: 700, margin: '0 0 4px', lineHeight: 1.25 }}>{placeName}</h1>
-        <p style={{ fontSize: '14px', color: C.textMuted, margin: '0 0 28px' }}>Its own record of {framing.label}</p>
+        <p style={{ fontSize: '14px', color: C.textMuted, margin: '0 0 16px' }}>Its own record of {framing.label}</p>
+
+        {report?.narrative && (
+          <button
+            onClick={copyLink}
+            style={{ background: 'none', border: `1px solid ${C.border}`, borderRadius: '999px', color: copied ? C.accentLight : C.textSub, cursor: 'pointer', fontSize: '12px', fontWeight: 600, padding: '6px 14px', marginBottom: '28px' }}
+          >
+            {copied ? 'Link copied ✓' : '🔗 Copy report link'}
+          </button>
+        )}
 
         {loading ? (
           <p style={{ color: C.textMuted }}>Gathering the record…</p>

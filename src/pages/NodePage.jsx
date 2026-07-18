@@ -75,6 +75,7 @@ export default function NodePage() {
   const [pulseOpen, setPulseOpen] = useState(false) // NodePage "Pulse" panel (Narrative Agent v1)
   const pulseNarr = usePulseNarrative(id)
   const [reportOpen, setReportOpen] = useState(false) // "Today at this place" report card (Report v1)
+  const [reportLinkCopied, setReportLinkCopied] = useState(false)
   const nodeReport = useNodeReport(id)
   const fetchedWiki = useRef(new Set())
   const { user, openSignIn, listener, promptHandleClaim } = useAuth()
@@ -540,12 +541,25 @@ export default function NodePage() {
                   <p key={i} style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.75, margin: i === 0 ? 0 : '12px 0 0', fontStyle: 'italic' }}>{para}</p>
                 ))}
                 {nodeReport.periodKey && (
-                  <Link
-                    to={`/node/${id}/report/${nodeReport.periodKey}`}
-                    style={{ display: 'inline-block', marginTop: '14px', fontSize: '12px', fontWeight: '600', color: C.accentLight, textDecoration: 'none' }}
-                  >
-                    Read this report →
-                  </Link>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '14px', flexWrap: 'wrap' }}>
+                    <Link
+                      to={`/node/${id}/report/${nodeReport.periodKey}`}
+                      style={{ fontSize: '12px', fontWeight: '600', color: C.accentLight, textDecoration: 'none' }}
+                    >
+                      Read this report →
+                    </Link>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(`${window.location.origin}/node/${id}/report/${nodeReport.periodKey}`)
+                          setReportLinkCopied(true); setTimeout(() => setReportLinkCopied(false), 1800)
+                        } catch { /* clipboard unavailable */ }
+                      }}
+                      style={{ background: 'none', border: 'none', color: reportLinkCopied ? C.accentLight : C.textMuted, cursor: 'pointer', fontSize: '12px', fontWeight: '600', padding: 0 }}
+                    >
+                      {reportLinkCopied ? 'Link copied ✓' : '🔗 Copy link'}
+                    </button>
+                  </div>
                 )}
               </>
             ) : nodeReport.status === 'empty' ? (
