@@ -473,12 +473,12 @@ export default function NodePage() {
         )}
       </div>
 
-      {/* This place, over time — the node's own phenology report (Report v1.1). Collapsible;
+      {/* The story of this place — the node's own phenology report (Report v1.1). Collapsible;
           check-before-generate (the endpoint builds + narrates + caches). Node voice, ends on an
           open wondering. Cadence selector (today / this season / this year); a permalink to the full
           read-only report lives below the prose. */}
       <div style={{ ...card, marginBottom: '14px' }}>
-        <div style={cardLabel}>This place, over time</div>
+        <div style={cardLabel}>The story of this place</div>
         {!reportOpen ? (
           <button
             onClick={() => { setReportOpen(true); nodeReport.load() }}
