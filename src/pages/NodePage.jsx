@@ -96,7 +96,9 @@ export default function NodePage() {
   const [reportLinkCopied, setReportLinkCopied] = useState(false)
   const nodeReport = useNodeReport(id)
   const [technicalOpen, setTechnicalOpen] = useState(false) // operator drawer, collapsed by default
-  const status = useNodeStatus(id, node?.last_seen_at)      // public liveness (not telemetry)
+  // Public liveness (not telemetry). aciLogs is the LIVE heartbeat and is already fetched here on
+  // the 30s refresh, so the status stays current between the detector's daily runs.
+  const status = useNodeStatus(id, { lastSeenAt: node?.last_seen_at, heartbeatsDesc: aciLogs.map(l => l.recorded_at) })
   const hero = useNodePageHero(id)                          // the Glance observation (Pulse-routed)
   const fetchedWiki = useRef(new Set())
   const { user, openSignIn, listener, promptHandleClaim } = useAuth()

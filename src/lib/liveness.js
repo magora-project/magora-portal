@@ -8,22 +8,41 @@
 // This is a reader-facing INDICATOR, not telemetry: it answers one Glance-layer question and
 // exposes nothing about battery, connectivity, storage, or recording configuration.
 //
-// Two signals, both shipped by Node Offline Detection v1:
-//   * nodes.last_seen_at   — refreshed every detector tick, so it is the FRESH signal.
-//   * node_status_events   — written only on an actual transition, so the latest row can be days
-//     old while the node is perfectly healthy. It carries the node's own derived cadence
-//     (expected_interval_seconds), which is what makes last_seen_at interpretable.
+// THE HEARTBEAT IS aci_logs, NOT nodes.last_seen_at. This distinction is the whole correctness
+// story here, and getting it wrong is not a subtle failure:
 //
-// So: re-derive from last_seen_at against the node's own rhythm when we can, fall back to the
-// last recorded transition otherwise, and say "unknown" when neither is available — never a
-// cheerful default. A node whose heartbeat has gone stale reads as not listening, which is the
-// safe direction to be wrong in: it under-claims rather than asserting life that isn't there.
+//   * aci_logs        — written by the node every cycle (~22-24s on current hardware). This is the
+//     LIVE signal, readable directly by any client, and it is what the detector itself judges.
+//   * last_seen_at    — a SNAPSHOT of that heartbeat, refreshed only when the detector cron runs,
+//     which is DAILY (vercel.json: node-status-check, "0 9 * * *"). For ~23 hours out of every 24
+//     it is hours stale on a perfectly healthy node.
+//   * node_status_events — written only on an actual transition, so the latest row can be days old
+//     while the node is fine. Useful as a fallback state, not as a freshness signal.
+//
+// So last_seen_at must NEVER be compared against the node's per-cycle cadence: that conflates "the
+// node is dark" with "the cron hasn't run since this morning", and would label every healthy node
+// as not listening for most of the day. Judge the live aci_logs against the node's own rhythm
+// instead, and fall back to the daily snapshot only when no heartbeats are in hand — where the
+// honest claim is about the last CHECK, bounded by the detector's cadence rather than the node's.
+//
+// When there is nothing usable, say "unknown" — never a cheerful default. A node whose heartbeat
+// has genuinely gone stale reads as not listening, the safe direction to be wrong in: it
+// under-claims rather than asserting life that isn't there.
 
-// One source of truth for the offline multiplier: the same K the detector judges nodes by
-// (api/_node_status/heartbeat.js). That module is pure math with no imports, so pulling the
-// constant in costs nothing and keeps the public label from drifting away from the operational
-// definition of "offline".
-import { HEARTBEAT_CONFIG } from '../../api/_node_status/heartbeat.js'
+// One source of truth for the heartbeat model: the same K, the same cadence derivation, and the
+// same online/offline rule the detector judges nodes by (api/_node_status/heartbeat.js). That
+// module is pure math with no imports, so reusing it costs nothing and keeps the public label from
+// drifting away from the operational definition of "offline".
+import {
+  HEARTBEAT_CONFIG, deriveExpectedIntervalSeconds, deriveStatus,
+} from '../../api/_node_status/heartbeat.js'
+
+/**
+ * How stale the daily snapshot may be before it stops supporting any claim. The detector runs once
+ * a day, so a snapshot up to ~2 runs old is still evidence of the last check; beyond that we know
+ * nothing current. Bounded by the DETECTOR's cadence, never the node's.
+ */
+const SNAPSHOT_MAX_AGE_SECONDS = 2 * 86400
 
 /** Relative "last heard" phrasing. Coarse on purpose: a public page, not a monitoring dashboard. */
 export function lastHeardPhrase(lastSeenAt, now = Date.now()) {
@@ -42,34 +61,56 @@ export function lastHeardPhrase(lastSeenAt, now = Date.now()) {
 
 /**
  * @param {Object} p
- * @param {string|null} [p.lastSeenAt]  nodes.last_seen_at
+ * @param {string[]} [p.heartbeatsDesc]  aci_logs recorded_at values, most-recent-first (the LIVE
+ *   signal — pass the rows the page already fetched; no extra query needed)
+ * @param {string|null} [p.lastSeenAt]  nodes.last_seen_at (daily snapshot — fallback only)
  * @param {{status: string, at: string, expected_interval_seconds: number|null}|null} [p.latestEvent]
  * @param {number} [p.now]
  * @returns {{state: 'listening'|'quiet'|'unknown', label: string, detail: string|null}}
  */
-export function derivePublicStatus({ lastSeenAt, latestEvent, now = Date.now() }) {
-  const lastHeard = lastHeardPhrase(lastSeenAt, now)
-  const interval = Number(latestEvent?.expected_interval_seconds)
-  const lastSeenMs = lastSeenAt ? new Date(lastSeenAt).getTime() : NaN
+export function derivePublicStatus({ heartbeatsDesc, lastSeenAt, latestEvent, now = Date.now() }) {
+  const beats = Array.isArray(heartbeatsDesc) ? heartbeatsDesc.filter(Boolean) : []
+  const latestBeatMs = beats.length ? new Date(beats[0]).getTime() : NaN
 
-  let state = 'unknown'
-  if (Number.isFinite(lastSeenMs) && Number.isFinite(interval) && interval > 0) {
-    // The fresh path: judge the node against its OWN rhythm, exactly as the detector does.
-    const gapSeconds = (now - lastSeenMs) / 1000
-    state = gapSeconds > HEARTBEAT_CONFIG.defaultK * interval ? 'quiet' : 'listening'
-  } else if (latestEvent?.status === 'online' || latestEvent?.status === 'offline') {
-    // No usable heartbeat (missing/unparseable last_seen_at, or no derived cadence yet) —
-    // defer to the last transition the detector actually recorded.
-    state = latestEvent.status === 'online' ? 'listening' : 'quiet'
+  // ── Primary: the live heartbeat, judged by the detector's own model ──────────────────────
+  // Cadence comes from these same rows, so a node cycling every 24s and one cycling every 5min
+  // are each judged against their own rhythm — no hardcoded interval, no cron dependency.
+  if (Number.isFinite(latestBeatMs)) {
+    const interval = deriveExpectedIntervalSeconds(beats)
+      // A node's own recorded cadence is the next-best estimate when we hold too few samples.
+      ?? (Number.isFinite(Number(latestEvent?.expected_interval_seconds))
+        ? Number(latestEvent.expected_interval_seconds)
+        : null)
+    if (interval != null && interval > 0) {
+      const state = deriveStatus({
+        gapSeconds: (now - latestBeatMs) / 1000,
+        expectedInterval: interval,
+        k: HEARTBEAT_CONFIG.defaultK,
+      }) === 'online' ? 'listening' : 'quiet'
+      return decorate(state, lastHeardPhrase(beats[0], now))
+    }
   }
 
+  // ── Fallback: the daily snapshot. We can only speak to the last CHECK, so staleness is
+  // bounded by the DETECTOR's cadence — never by the node's per-cycle rhythm. ───────────────
+  const snapshotMs = lastSeenAt ? new Date(lastSeenAt).getTime() : NaN
+  const snapshotFresh = Number.isFinite(snapshotMs) && (now - snapshotMs) / 1000 <= SNAPSHOT_MAX_AGE_SECONDS
+  const lastHeard = lastHeardPhrase(
+    Number.isFinite(latestBeatMs) ? beats[0] : lastSeenAt, now,
+  )
+
+  if (latestEvent?.status === 'offline') return decorate('quiet', lastHeard)
+  if (latestEvent?.status === 'online' && snapshotFresh) return decorate('listening', lastHeard)
+  if (snapshotFresh) return decorate('listening', lastHeard)
+  return decorate('unknown', lastHeard)
+}
+
+function decorate(state, lastHeard) {
   const label = state === 'listening'
     ? 'Listening now'
     : state === 'quiet' ? 'Not listening right now' : 'Listening status unknown'
-
   const detail = lastHeard
     ? `Last heard ${lastHeard}`
     : state === 'unknown' ? 'No heartbeat recorded yet' : null
-
   return { state, label, detail }
 }
