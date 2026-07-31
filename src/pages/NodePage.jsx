@@ -446,10 +446,11 @@ export default function NodePage() {
         <p style={{ fontSize: '14px', color: C.textSub, lineHeight: 1.7 }}>{bio}</p>
       </div>
 
-      {/* Pulse — this place in its own voice (Narrative Agent v1). One collapsible panel,
-          one question; check-before-generate (the endpoint caches the voiced text). */}
+      {/* Pulse — this place noticing, in its own words (Narrative Agent v1). One collapsible panel,
+          one question; check-before-generate. Always the `node` voice — the reader-facing voice
+          picker was removed (2026-07-28); the voice registry stays as substrate for report voices. */}
       <div style={{ ...card, marginBottom: '14px' }}>
-        <div style={cardLabel}>Pulse</div>
+        <div style={cardLabel}>In this place’s own words</div>
         {!pulseOpen ? (
           <button
             onClick={() => { setPulseOpen(true); pulseNarr.load() }}
@@ -459,29 +460,6 @@ export default function NodePage() {
           </button>
         ) : (
           <>
-            {/* Voice selector — same facts, different register. One question, one panel. */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
-              {pulseNarr.voices.map((v) => {
-                const active = pulseNarr.voice === v.id
-                return (
-                  <button
-                    key={v.id}
-                    onClick={() => pulseNarr.selectVoice(v.id)}
-                    disabled={pulseNarr.status === 'loading'}
-                    style={{
-                      background: active ? C.accent : 'none',
-                      border: `1px solid ${active ? C.accent : C.border}`,
-                      borderRadius: '999px',
-                      color: active ? C.text : C.textMuted,
-                      cursor: pulseNarr.status === 'loading' ? 'default' : 'pointer',
-                      fontSize: '12px', fontWeight: '600', padding: '5px 12px',
-                    }}
-                  >
-                    {v.label}
-                  </button>
-                )
-              })}
-            </div>
             {pulseNarr.status === 'loading' ? (
               <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Listening…</p>
             ) : pulseNarr.status === 'ready' ? (
@@ -495,12 +473,12 @@ export default function NodePage() {
         )}
       </div>
 
-      {/* This place, in its own voice — the node's own phenology report (Report v1.1). Collapsible;
+      {/* This place, over time — the node's own phenology report (Report v1.1). Collapsible;
           check-before-generate (the endpoint builds + narrates + caches). Node voice, ends on an
           open wondering. Cadence selector (today / this season / this year); a permalink to the full
           read-only report lives below the prose. */}
       <div style={{ ...card, marginBottom: '14px' }}>
-        <div style={cardLabel}>This place, in its own voice</div>
+        <div style={cardLabel}>This place, over time</div>
         {!reportOpen ? (
           <button
             onClick={() => { setReportOpen(true); nodeReport.load() }}
