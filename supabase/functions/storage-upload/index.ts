@@ -13,8 +13,14 @@ function json(body: unknown, status = 200) {
 }
 
 // Buckets a signed-in user may upload to (always into their own {uid}/ folder).
-const ALLOWED_BUCKETS = new Set(["listener-avatars", "temp-audio"])
+const ALLOWED_BUCKETS = new Set(["listener-avatars", "temp-audio", "node-banners"])
 const MAX_BYTES = 25 * 1024 * 1024
+
+// Buckets whose contents are served publicly as images. The browser sniffs and renders whatever
+// lands here, so accepting an arbitrary content type would let a signed-in user park active
+// content on the project's origin under a URL that looks like a photo. Restrict by actual MIME.
+const IMAGE_BUCKETS = new Set(["listener-avatars", "node-banners"])
+const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"])
 
 // Workaround for a Storage service (v1.60.10) that can't validate the project's
 // JWT-signing-key tokens (they carry a `kid` header old Storage doesn't parse),
@@ -58,6 +64,9 @@ Deno.serve(async (req) => {
     return json({ error: "Invalid filename" }, 400)
   }
   if (file.size > MAX_BYTES) return json({ error: "File too large" }, 400)
+  if (IMAGE_BUCKETS.has(bucket) && !IMAGE_TYPES.has(file.type)) {
+    return json({ error: "That file needs to be an image (JPEG, PNG, WebP, GIF or AVIF)." }, 400)
+  }
 
   const path = `${user.id}/${filename}`
   const bytes = new Uint8Array(await file.arrayBuffer())

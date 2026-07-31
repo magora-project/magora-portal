@@ -11,6 +11,7 @@ import { usePulseNarrative } from '../lib/narrative'
 import { useNodeReport } from '../lib/report'
 import { useNodeStatus } from '../lib/nodeStatus'
 import { useNodePageHero } from '../lib/nodeHero'
+import { getNodeBannerUrl, uploadNodeBanner, clearNodeBanner, ACCEPTED_IMAGE_TYPES } from '../lib/nodeBanner'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
 import ProvenanceChip from '../components/ProvenanceChip'
 
@@ -96,6 +97,9 @@ export default function NodePage() {
   const [reportLinkCopied, setReportLinkCopied] = useState(false)
   const nodeReport = useNodeReport(id)
   const [technicalOpen, setTechnicalOpen] = useState(false) // operator drawer, collapsed by default
+  const [bannerBusy, setBannerBusy] = useState(false)
+  const [bannerError, setBannerError] = useState(null)
+  const bannerInputRef = useRef(null)
   // Public liveness (not telemetry). aciLogs is the LIVE heartbeat and is already fetched here on
   // the 30s refresh, so the status stays current between the detector's daily runs.
   const status = useNodeStatus(id, { lastSeenAt: node?.last_seen_at, heartbeatsDesc: aciLogs.map(l => l.recorded_at) })
@@ -171,6 +175,36 @@ export default function NodePage() {
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node?.id])
+
+  // Banner photo — owner only. The write path is set_node_banner (auth.uid() = owner_id); nodes
+  // has no client UPDATE policy, so a non-owner reaching this code still cannot change anything.
+  // Refetches on success so the new photo appears without a reload.
+  async function handleBannerPick(e) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // let the same file be re-picked after an error
+    if (!file) return
+    setBannerBusy(true); setBannerError(null)
+    try {
+      await uploadNodeBanner(id, file)
+      await fetchData()
+    } catch (err) {
+      setBannerError(err.message || 'Could not save the photo.')
+    } finally {
+      setBannerBusy(false)
+    }
+  }
+
+  async function handleBannerClear() {
+    setBannerBusy(true); setBannerError(null)
+    try {
+      await clearNodeBanner(id)
+      await fetchData()
+    } catch (err) {
+      setBannerError(err.message || 'Could not remove the photo.')
+    } finally {
+      setBannerBusy(false)
+    }
+  }
 
   async function toggleFollow() {
     if (!user) { openSignIn(); return }
@@ -278,7 +312,10 @@ export default function NodePage() {
       ? `${Math.abs(coords.lat).toFixed(1)}°${coords.lat >= 0 ? 'N' : 'S'}, ${Math.abs(coords.lon).toFixed(1)}°${coords.lon >= 0 ? 'W' : 'E'}`
       : habitat || 'Unmapped')
   const stewardHandle = node.steward_handle || node.steward || null
-  const bannerImg = node.profile_image_url || node.image_url || node.banner_url || null
+  // banner_path is the only real image column on `nodes` — the page previously read
+  // profile_image_url / image_url / banner_url, none of which have ever existed.
+  const bannerImg = getNodeBannerUrl(node.banner_path)
+  const isOwner = !!user && !!node.owner_id && user.id === node.owner_id
 
   // All-time species stats (hidden sounds, insects/human/dogs, excluded)
   const speciesStats = speciesNames.reduce((acc, name) => {
@@ -376,7 +413,58 @@ export default function NodePage() {
             ? <><span className="heartbeat-dot" /> {status.label}</>
             : `${status.state === 'quiet' ? '⚫' : '○'} ${status.label}`}
         </div>
+
+        {/* Owner-only photo control. Visitors never see it; the RPC re-checks ownership server-side,
+            so hiding the button is presentation, not the security boundary. Sits bottom-right so it
+            never collides with the status chip. */}
+        {isOwner && (
+          <div style={{ position: 'absolute', bottom: '10px', right: '10px', display: 'flex', gap: '8px' }}>
+            {bannerImg && (
+              <button
+                onClick={handleBannerClear}
+                disabled={bannerBusy}
+                style={{
+                  fontSize: '12px', fontWeight: '600', padding: '6px 10px', borderRadius: '8px',
+                  background: 'rgba(13,40,24,0.82)', backdropFilter: 'blur(4px)',
+                  border: `1px solid ${C.border}`, color: C.textMuted,
+                  cursor: bannerBusy ? 'default' : 'pointer', fontFamily: "'DM Sans', sans-serif",
+                }}
+              >
+                Remove
+              </button>
+            )}
+            <button
+              onClick={() => bannerInputRef.current?.click()}
+              disabled={bannerBusy}
+              style={{
+                fontSize: '12px', fontWeight: '700', padding: '6px 12px', borderRadius: '8px',
+                background: 'rgba(13,40,24,0.82)', backdropFilter: 'blur(4px)',
+                border: `1px solid ${C.accent}`, color: C.accentLight,
+                cursor: bannerBusy ? 'default' : 'pointer', fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              {bannerBusy ? 'Saving…' : bannerImg ? 'Change photo' : '📷 Add a photo'}
+            </button>
+            <input
+              ref={bannerInputRef}
+              type="file"
+              accept={ACCEPTED_IMAGE_TYPES}
+              onChange={handleBannerPick}
+              style={{ display: 'none' }}
+            />
+          </div>
+        )}
       </div>
+
+      {bannerError && (
+        <div style={{
+          fontSize: '12px', color: '#ffb4a2', background: '#3d1f1a',
+          border: '1px solid #6b2f24', borderRadius: '10px',
+          padding: '8px 12px', marginBottom: '12px', marginTop: '-6px',
+        }}>
+          {bannerError}
+        </div>
+      )}
 
       {/* Identity — "What place is this?": name, what kind of place, where, who tends it. */}
       <div style={{ marginBottom: '14px' }}>
