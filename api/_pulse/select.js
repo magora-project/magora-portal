@@ -3,8 +3,10 @@
 //   assignSurfaces(rankedPulses, surfacesInScope) -> { per_surface }
 //
 // Given the window's pulses already ranked by score desc, route them to render surfaces:
-// single-cardinality surfaces (detection_card / listen_result / journal_entry) get the
-// top ELIGIBLE pulse_id (or null); node_report gets the ranked list of eligible pulse_ids.
+// single-cardinality surfaces (detection_card / listen_result / journal_entry / node_page_hero)
+// get the top ELIGIBLE pulse_id (or null); node_report gets the ranked list of eligible
+// pulse_ids. Eligible-kind sets differ per surface (node_page_hero is the narrowest — see
+// SURFACE_AFFORDANCE), so "top eligible" is not the same pulse on every surface.
 // This is allocation-by-score — ranking, which is Pulse's job — never rendering.
 //
 // Eligibility uses only confirmed payload fields (kind, components, evidence). It does NOT

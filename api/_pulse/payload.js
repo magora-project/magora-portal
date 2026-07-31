@@ -66,7 +66,7 @@ export const PULSE_KINDS = /** @type {PulseKind[]} */ ([
 ])
 
 /**
- * @typedef {"detection_card"|"listen_result"|"journal_entry"|"node_report"} PulseSurface
+ * @typedef {"detection_card"|"listen_result"|"journal_entry"|"node_report"|"node_page_hero"} PulseSurface
  */
 
 /**
@@ -75,20 +75,26 @@ export const PULSE_KINDS = /** @type {PulseKind[]} */ ([
  * upsert change). Single-cardinality surfaces hold one pulse_id (or null); node_report
  * holds a ranked list of pulse_ids.
  * @typedef {Object} PulseSelection
- * @property {{ detection_card?: string|null, listen_result?: string|null, journal_entry?: string|null, node_report?: string[] }} per_surface
+ * @property {{ detection_card?: string|null, listen_result?: string|null, journal_entry?: string|null, node_report?: string[], node_page_hero?: string|null }} per_surface
  */
 
 /**
  * On-demand response (v1.1): the top pulse (unchanged) plus response-only routing.
  * Callers that ignore `selection` see the same top-1 payload as before.
+ *
+ * `selected` (NodePage v1) resolves the requested single-cardinality surface's pulse_id back
+ * to its payload, so a caller rendering ONE surface does not have to assume the routed pulse
+ * is the top-1 (it often is not — the top pulse may be ineligible for that surface). Null for
+ * list-cardinality surfaces (node_report), which already get their ranked ids via `selection`.
  * @typedef {Object} PulseOnDemandResult
  * @property {PulsePayload|null} pulse
  * @property {PulseSelection} selection
+ * @property {PulsePayload|null} selected
  */
 
-/** The four render surfaces Pulse can route a chosen pattern to. */
+/** The render surfaces Pulse can route a chosen pattern to. */
 export const SURFACES = /** @type {PulseSurface[]} */ ([
-  'detection_card', 'listen_result', 'journal_entry', 'node_report',
+  'detection_card', 'listen_result', 'journal_entry', 'node_report', 'node_page_hero',
 ])
 
 /** Default surface for an on-demand request that doesn't name one. */
@@ -99,6 +105,21 @@ export const DEFAULT_SURFACE = 'detection_card'
 const SINGLE_QUESTION_KINDS = ['novel_detection', 'activity_spike', 'survey_gap_question']
 // node_report is a ranked list over all non-gated kinds.
 const REPORT_KINDS = ['novel_detection', 'activity_spike', 'soundscape_shift', 'survey_gap_question']
+// node_page_hero (NodePage v1) is the reader-facing Glance slot: the ONE thing this place is
+// noticing right now. Deliberately NARROWER than the other single surfaces — survey_gap_question
+// is excluded, and that exclusion is PERMANENT, not a v1 gate waiting on the participation loop.
+//
+// A survey gap is an invitation to answer ("no recorded vegetation structure — can you fill it
+// in?", "is this species present here?"), i.e. a participation ask. A grounded habitat gap scores
+// data_absence = 1, so it clears the grounded guard and would routinely take the Glance slot,
+// where it would compete with Follow as a second call to action. The Glance slot holds ONE
+// meaningful OBSERVATION and the public page carries exactly one primary action.
+//
+// When the participation loop ships, survey gaps route to a dedicated consent-gated participation
+// slot — do NOT add the kind back here. Excluding it is strictly stronger than the
+// grounded-survey-gap degradation guard it would otherwise inherit; select.js still applies that
+// guard for the surfaces that do accept the kind.
+const HERO_KINDS = ['novel_detection', 'activity_spike']
 
 /**
  * Static surface -> affordance map: cardinality + the eligible-kind set. Eligibility is a
@@ -110,6 +131,7 @@ export const SURFACE_AFFORDANCE = {
   listen_result:  { cardinality: 'single', kinds: SINGLE_QUESTION_KINDS },
   journal_entry:  { cardinality: 'single', kinds: SINGLE_QUESTION_KINDS },
   node_report:    { cardinality: 'list',   kinds: REPORT_KINDS },
+  node_page_hero: { cardinality: 'single', kinds: HERO_KINDS },
 }
 
 /**

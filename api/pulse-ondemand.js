@@ -1,11 +1,12 @@
 // Pulse Agent v1 — interactive entry point (HTTP). v1.1: optional surface routing.
 //
 // POST { node_id, window?, surface? }  where window is optional { start, end, cadence }
-// and surface is one of detection_card | listen_result | journal_entry | node_report
-// (default detection_card). Cache-first (6h PULSE_ONDEMAND_TTL); returns the top-ranked
-// pulse plus a response-only `selection.per_surface` scoped to the requested surface.
-// Returns { pulse: null, selection } when there is nothing to say. Callers that ignore
-// `selection` still get `pulse` (the same top-1 as before).
+// and surface is one of detection_card | listen_result | journal_entry | node_report |
+// node_page_hero (default detection_card). Cache-first (6h PULSE_ONDEMAND_TTL); returns the
+// top-ranked pulse, a response-only `selection.per_surface` scoped to the requested surface,
+// and `selected` — that surface's routed payload (null for node_report, whose ranked ids are
+// already in `selection`). Returns { pulse: null, selection, selected: null } when there is
+// nothing to say. Callers that ignore the newer fields still get `pulse` (the same top-1).
 //
 // Read/generate surface (no cron secret); writes place-derived pulses only, through the
 // SECURITY DEFINER upsert RPC. `selection` is response-only — no DB write.
@@ -25,8 +26,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { pulse, selection } = await pulseOnDemand(nodeId, req.body?.window, surface)
-    return res.status(200).json({ pulse, selection })
+    const { pulse, selection, selected } = await pulseOnDemand(nodeId, req.body?.window, surface)
+    return res.status(200).json({ pulse, selection, selected })
   } catch (e) {
     console.error('pulse-ondemand error:', e.message)
     return res.status(500).json({ error: e.message })

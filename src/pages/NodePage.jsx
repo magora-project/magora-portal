@@ -9,7 +9,25 @@ import { getListenerAvatarUrl } from '../lib/listener'
 import { followJournal, unfollowJournal, getFollowerCount, getPublicFollowers, useJournalFollowStatus } from '../lib/journalFollows'
 import { usePulseNarrative } from '../lib/narrative'
 import { useNodeReport } from '../lib/report'
+import { useNodeStatus } from '../lib/nodeStatus'
+import { useNodePageHero } from '../lib/nodeHero'
 import DetectionCard, { toMountainTime } from '../components/DetectionCard'
+import ProvenanceChip from '../components/ProvenanceChip'
+
+// NodePage v1 — the living portrait of a place (2026-07-31).
+//
+// The page is the NODE'S profile, not the visitor's location: it answers "What place is this?",
+// never "Where am I?". It is organised in two reader-facing layers plus one operator drawer:
+//
+//   GLANCE      identity, where it is, whether it is listening, the ONE thing it is noticing,
+//               and a single primary action. Answers "what place is this / what's happening now".
+//   UNDERSTAND  the place's own account of itself over time — the Pulse narrative, the report,
+//               what it records most, the wider web around it, the raw record. "What has changed".
+//   TECHNICAL   hardware and raw acoustic instrumentation, collapsed. Not part of the portrait.
+//
+// Deliberately absent, and not to be added without the substrate behind them: any influence or
+// causal framing (weather, temperature, season), species relationships, and node audio playback.
+// Each is blocked on an unbuilt reference slice; see the 2026-07-31 architectural eval.
 
 const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
@@ -77,6 +95,9 @@ export default function NodePage() {
   const [reportOpen, setReportOpen] = useState(false) // "Today at this place" report card (Report v1)
   const [reportLinkCopied, setReportLinkCopied] = useState(false)
   const nodeReport = useNodeReport(id)
+  const [technicalOpen, setTechnicalOpen] = useState(false) // operator drawer, collapsed by default
+  const status = useNodeStatus(id, node?.last_seen_at)      // public liveness (not telemetry)
+  const hero = useNodePageHero(id)                          // the Glance observation (Pulse-routed)
   const fetchedWiki = useRef(new Set())
   const { user, openSignIn, listener, promptHandleClaim } = useAuth()
 
@@ -256,7 +277,6 @@ export default function NodePage() {
       : habitat || 'Unmapped')
   const stewardHandle = node.steward_handle || node.steward || null
   const bannerImg = node.profile_image_url || node.image_url || node.banner_url || null
-  const recording = !!node.is_active
 
   // All-time species stats (hidden sounds, insects/human/dogs, excluded)
   const speciesStats = speciesNames.reduce((acc, name) => {
@@ -323,28 +343,63 @@ export default function NodePage() {
           ? <img src={bannerImg} alt={node.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
           : <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '68px', opacity: 0.45 }}>{habitatEmoji}</div>
         }
-        <div style={{
-          position: 'absolute', top: '12px', right: '12px',
-          display: 'flex', alignItems: 'center', gap: '7px',
-          fontSize: '12px', fontWeight: '700', padding: '5px 12px', borderRadius: '20px',
-          background: 'rgba(13,40,24,0.82)', backdropFilter: 'blur(4px)',
-          border: `1px solid ${recording ? C.accent : C.border}`,
-          color: recording ? C.accentLight : C.textMuted,
-        }}>
-          {recording ? <><span className="heartbeat-dot" /> Currently recording</> : '⚫ Quiet right now'}
+        {/* Public liveness — derived from the node's own heartbeat cadence (Node Offline
+            Detection v1), not from a stored is_active flag. A status indicator, never telemetry:
+            no battery, connectivity, storage, or recording configuration is exposed here. */}
+        <div
+          title={status.detail || undefined}
+          style={{
+            position: 'absolute', top: '12px', right: '12px',
+            display: 'flex', alignItems: 'center', gap: '7px',
+            fontSize: '12px', fontWeight: '700', padding: '5px 12px', borderRadius: '20px',
+            background: 'rgba(13,40,24,0.82)', backdropFilter: 'blur(4px)',
+            border: `1px solid ${status.state === 'listening' ? C.accent : C.border}`,
+            color: status.state === 'listening' ? C.accentLight : C.textMuted,
+          }}
+        >
+          {status.state === 'listening'
+            ? <><span className="heartbeat-dot" /> {status.label}</>
+            : `${status.state === 'quiet' ? '⚫' : '○'} ${status.label}`}
         </div>
       </div>
 
-      {/* Identity */}
+      {/* Identity — "What place is this?": name, what kind of place, where, who tends it. */}
       <div style={{ marginBottom: '14px' }}>
         <div style={{ fontSize: '26px', fontWeight: '800', color: C.text, lineHeight: 1.1 }}>{node.name}</div>
         <div style={{ fontSize: '13px', color: C.textMuted, marginTop: '5px' }}>
           {habitatEmoji} {habitat}{node.elevation_m ? ` · ${node.elevation_m} ${elevUnit}` : ''}
           {stewardHandle ? ` · stewarded by @${stewardHandle}` : ''}
         </div>
+        <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '4px' }}>
+          {coords ? `${coords.lat.toFixed(4)}°, ${coords.lon.toFixed(4)}°` : region}
+          {status.detail ? ` · ${status.detail}` : ''}
+        </div>
       </div>
 
-      {/* Follow + Share */}
+      {/* The Glance observation — the ONE thing this place is noticing right now, routed by Pulse
+          to the node_page_hero surface and rendered by a pure formatter (no model, no causation).
+          Silent when there is nothing notable: an empty hero is a truthful state, so it collapses
+          rather than filling the slot with something the data does not support. */}
+      {hero.status === 'ready' && (
+        <div style={{
+          background: C.card, border: `1px solid ${C.accent}`, borderRadius: '16px',
+          padding: '16px 18px', marginBottom: '14px',
+        }}>
+          <div style={{ fontSize: '17px', fontWeight: '700', color: C.text, lineHeight: 1.35 }}>
+            {hero.headline}
+          </div>
+          {hero.detail && (
+            <div style={{ fontSize: '13px', color: C.textSub, lineHeight: 1.6, marginTop: '6px' }}>
+              {hero.detail}
+            </div>
+          )}
+          <div style={{ marginTop: '10px' }}>
+            <ProvenanceChip kind={hero.provenance} />
+          </div>
+        </div>
+      )}
+
+      {/* Follow — the single primary action. Share stays a small icon affordance, not a second CTA. */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
         <button
           onClick={toggleFollow}
@@ -425,19 +480,22 @@ export default function NodePage() {
         </div>
       )}
 
-      {/* Profile stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '20px' }}>
+      {/* Profile stats — the two facts that describe the place rather than the instrument. The raw
+          acoustic index (ACI) moved to the technical drawer: it is an unexplained 0–1 sensor value
+          to a visitor, and it reads as instrument health, not as something the place is telling us. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '10px' }}>
         {[
           { label: 'Species recorded', value: totalSpecies || '—' },
-          { label: 'Soundscape health', value: latestAci != null ? latestAci.toFixed(2) : '—', sub: latestAci != null ? aciLevel : null },
           { label: 'Listening since', value: listeningSince || '—' },
-        ].map(({ label, value, sub }) => (
+        ].map(({ label, value }) => (
           <div key={label} style={{ ...card, padding: '14px', textAlign: 'center' }}>
             <div style={{ fontSize: '22px', fontWeight: '800', color: C.accentLight, lineHeight: 1 }}>{value}</div>
-            {sub && <div style={{ fontSize: '11px', color: C.textMuted, marginTop: '3px' }}>{sub}</div>}
             <div style={{ fontSize: '10px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '6px' }}>{label}</div>
           </div>
         ))}
+      </div>
+      <div style={{ marginBottom: '20px' }}>
+        <ProvenanceChip kind="direct_observation" />
       </div>
 
       {/* Ecosystem bio */}
@@ -463,7 +521,12 @@ export default function NodePage() {
             {pulseNarr.status === 'loading' ? (
               <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Listening…</p>
             ) : pulseNarr.status === 'ready' ? (
-              <p style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.7, margin: 0, fontStyle: 'italic' }}>{pulseNarr.text}</p>
+              <>
+                <p style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.7, margin: 0, fontStyle: 'italic' }}>{pulseNarr.text}</p>
+                <div style={{ marginTop: '12px' }}>
+                  <ProvenanceChip kind="ai_interpretation" />
+                </div>
+              </>
             ) : pulseNarr.status === 'empty' ? (
               <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Quiet here for now, nothing new to note.</p>
             ) : (
@@ -518,6 +581,9 @@ export default function NodePage() {
                 {nodeReport.text.split(/\n\n+/).map((para, i) => (
                   <p key={i} style={{ fontSize: '15px', color: C.textSub, lineHeight: 1.75, margin: i === 0 ? 0 : '12px 0 0', fontStyle: 'italic' }}>{para}</p>
                 ))}
+                <div style={{ marginTop: '12px' }}>
+                  <ProvenanceChip kind="ai_interpretation" />
+                </div>
                 {nodeReport.periodKey && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '14px', flexWrap: 'wrap' }}>
                     <Link
@@ -560,6 +626,9 @@ export default function NodePage() {
               <span style={{ fontSize: '12px', fontWeight: '700', color: C.accentLight, flexShrink: 0 }}>×{n}</span>
             </div>
           ))}
+          <div style={{ marginTop: '12px' }}>
+            <ProvenanceChip kind="direct_observation" />
+          </div>
         </div>
       )}
 
@@ -613,7 +682,14 @@ export default function NodePage() {
                   )
                 })}
               </div>
-              <div style={{ fontSize: '10px', color: C.textMuted, marginTop: '10px' }}>{nearby.attribution}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }}>
+                {/* iNaturalist research-grade records are an external verified reference layer, so
+                    they carry the established-knowledge class — NOT "community observation", which
+                    is reserved for contributions made through Magora and stays unbacked until the
+                    consent model ships. */}
+                <ProvenanceChip kind="established_knowledge" note="iNaturalist" />
+                <span style={{ fontSize: '10px', color: C.textMuted }}>{nearby.attribution}</span>
+              </div>
             </>
           ) : (
             <div style={{ fontSize: '12px', color: C.textMuted }}>No research-grade observations logged near here yet on iNaturalist.</div>
@@ -621,38 +697,7 @@ export default function NodePage() {
         </div>
       )}
 
-      {/* Place details */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
-        {[
-          { label: 'Coordinates', value: coords ? `${coords.lat.toFixed(4)}°, ${coords.lon.toFixed(4)}°` : '—' },
-          { label: 'Elevation', value: node.elevation_m ? `⛰️ ${node.elevation_m} ${elevUnit}` : '—' },
-          { label: 'Hardware', value: HARDWARE_LABEL[node.hardware_type] || node.hardware_type || '—' },
-          { label: 'Deployed', value: listeningSince || '—' },
-        ].map(({ label, value }) => (
-          <div key={label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px' }}>
-            <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{label}</div>
-            <div style={{ fontSize: '14px', fontWeight: '600', color: C.text }}>{value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* ACI sparkline */}
-      {aciLogs.length > 0 && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>Soundscape health, last {aciLogs.length} readings</span>
-            <span style={{ fontSize: '11px', color: C.textMuted }}>Hover bars for detail</span>
-          </div>
-          <AciSparkline logs={aciLogs} />
-          <div style={{ display: 'flex', gap: '16px', marginTop: '10px' }}>
-            {[['🟢', 'High (>0.65)'], ['🔵', 'Moderate (0.50–0.65)'], ['⬜', 'Low (<0.50)']].map(([dot, label]) => (
-              <div key={label} style={{ fontSize: '11px', color: C.textMuted }}>{dot} {label}</div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recent detections */}
+      {/* The raw record — the structured detections everything above is derived from. */}
       <div style={{ marginBottom: '28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
           <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Ecological record</span>
@@ -663,50 +708,112 @@ export default function NodePage() {
             Nothing recorded at this listening post
           </div>
         ) : (
-          <div className="detection-grid">
-            {dedupedDetections.map(d => (
-              <DetectionCard
-                key={d.id} d={d} node={node} wikiData={wikiData}
-                count={speciesCount[d.species_name || d.raw_label] || 1}
-                insight={d.insight ? { text: d.insight } : insights[d.id]} onRequestInsight={() => requestInsight(d)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="detection-grid">
+              {dedupedDetections.map(d => (
+                <DetectionCard
+                  key={d.id} d={d} node={node} wikiData={wikiData}
+                  count={speciesCount[d.species_name || d.raw_label] || 1}
+                  insight={d.insight ? { text: d.insight } : insights[d.id]} onRequestInsight={() => requestInsight(d)}
+                />
+              ))}
+            </div>
+            <div style={{ marginTop: '14px' }}>
+              <ProvenanceChip kind="direct_observation" />
+            </div>
+          </>
         )}
       </div>
 
-      {/* Acoustic log */}
-      <div style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <span style={{ fontSize: '18px', fontWeight: '700', color: C.text }}>Soundscape log</span>
-          <span style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This node only</span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {aciLogs.map(log => {
-            const level = log.aci_score > 0.65 ? 'High' : log.aci_score > 0.50 ? 'Moderate' : 'Low'
-            return (
-              <div key={log.id} style={{
-                background: C.card, border: `1px solid ${C.border}`,
-                borderRadius: '12px', padding: '12px 16px',
-                display: 'flex', alignItems: 'center', gap: '12px',
-              }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0, border: `1px solid ${C.border}` }}>🦟</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '13px', fontWeight: '700', color: C.text }}>{level} insect activity</div>
-                  <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '2px' }}>
-                    {toMountainTime(log.recorded_at)} · {log.time_category} · ACI {log.aci_score}
-                  </div>
+      {/* ═══ TECHNICAL — the instrument, not the place ═══
+          Hardware and raw acoustic instrumentation, collapsed by default. This is the public
+          half of the public/Manage split: a visitor can open it, but it never competes with the
+          portrait. Anything operational added later (battery, connectivity, storage, calibration,
+          maintenance) belongs behind Manage Node — for the steward — not here. */}
+      <details
+        open={technicalOpen}
+        onToggle={(e) => setTechnicalOpen(e.currentTarget.open)}
+        style={{ marginBottom: '24px' }}
+      >
+        <summary style={{
+          cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: '8px',
+          background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px',
+          padding: '12px 16px', fontSize: '13px', fontWeight: '700', color: C.textSub,
+        }}>
+          <span style={{ color: C.textMuted, fontSize: '11px' }}>{technicalOpen ? '▾' : '▸'}</span>
+          Technical details
+          <span style={{ fontWeight: '500', color: C.textMuted, fontSize: '12px' }}>
+            · hardware and acoustic instrumentation
+          </span>
+        </summary>
+
+        <div style={{ paddingTop: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+            {[
+              { label: 'Coordinates', value: coords ? `${coords.lat.toFixed(4)}°, ${coords.lon.toFixed(4)}°` : '—' },
+              { label: 'Elevation', value: node.elevation_m ? `⛰️ ${node.elevation_m} ${elevUnit}` : '—' },
+              { label: 'Hardware', value: HARDWARE_LABEL[node.hardware_type] || node.hardware_type || '—' },
+              { label: 'Deployed', value: listeningSince || '—' },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{label}</div>
+                <div style={{ fontSize: '14px', fontWeight: '600', color: C.text }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Acoustic Complexity Index — the raw per-cycle sensor reading and its history. */}
+          {aciLogs.length > 0 && (
+            <>
+              <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>Soundscape health, last {aciLogs.length} readings</span>
+                  <span style={{ fontSize: '11px', color: C.textMuted }}>Hover bars for detail</span>
                 </div>
-                <div style={{ width: '70px', flexShrink: 0 }}>
-                  <div style={{ height: '5px', background: C.bg, borderRadius: '3px', overflow: 'hidden', border: `1px solid ${C.border}` }}>
-                    <div style={{ width: `${log.aci_score * 100}%`, height: '100%', background: C.accent, borderRadius: '3px' }} />
-                  </div>
+                <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '12px' }}>
+                  Acoustic Complexity Index{latestAci != null ? ` · currently ${latestAci.toFixed(2)} (${aciLevel})` : ''}
+                </div>
+                <AciSparkline logs={aciLogs} />
+                <div style={{ display: 'flex', gap: '16px', marginTop: '10px', flexWrap: 'wrap' }}>
+                  {[['🟢', 'High (>0.65)'], ['🔵', 'Moderate (0.50–0.65)'], ['⬜', 'Low (<0.50)']].map(([dot, label]) => (
+                    <div key={label} style={{ fontSize: '11px', color: C.textMuted }}>{dot} {label}</div>
+                  ))}
                 </div>
               </div>
-            )
-          })}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ fontSize: '14px', fontWeight: '700', color: C.text }}>Soundscape log</span>
+                <span style={{ fontSize: '11px', color: C.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em' }}>This node only</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {aciLogs.map(log => {
+                  const level = log.aci_score > 0.65 ? 'High' : log.aci_score > 0.50 ? 'Moderate' : 'Low'
+                  return (
+                    <div key={log.id} style={{
+                      background: C.card, border: `1px solid ${C.border}`,
+                      borderRadius: '12px', padding: '12px 16px',
+                      display: 'flex', alignItems: 'center', gap: '12px',
+                    }}>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0, border: `1px solid ${C.border}` }}>🦟</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: C.text }}>{level} insect activity</div>
+                        <div style={{ fontSize: '12px', color: C.textMuted, marginTop: '2px' }}>
+                          {toMountainTime(log.recorded_at)} · {log.time_category} · ACI {log.aci_score}
+                        </div>
+                      </div>
+                      <div style={{ width: '70px', flexShrink: 0 }}>
+                        <div style={{ height: '5px', background: C.bg, borderRadius: '3px', overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                          <div style={{ width: `${log.aci_score * 100}%`, height: '100%', background: C.accent, borderRadius: '3px' }} />
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
-      </div>
+      </details>
     </div>
   )
 }

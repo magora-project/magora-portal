@@ -12,7 +12,7 @@
 // `{ pulses, selection }` (pulses = the same ranked list). Callers that ignore
 // `selection` see unchanged top-1 / ranked-list behavior.
 
-import { WEIGHTS_VERSION, PULSE_ONDEMAND_TTL_MS, SURFACES, DEFAULT_SURFACE } from './payload.js'
+import { WEIGHTS_VERSION, PULSE_ONDEMAND_TTL_MS, SURFACES, DEFAULT_SURFACE, SURFACE_AFFORDANCE } from './payload.js'
 import { loadWeights, fetchPulsesForWindow, storePulse } from './db.js'
 import { generateCandidates } from './generate.js'
 import { scorePulses } from './score.js'
@@ -47,10 +47,28 @@ export function resolveWindow(window, defaultCadence = 'on_demand') {
 }
 
 /**
+ * Resolve a single-cardinality surface's routed pulse_id back to its payload. Returns null for
+ * list-cardinality surfaces (their ranked ids are already the useful form) and when nothing was
+ * routed. Pure lookup over the ranked list — no I/O, no re-ranking.
+ */
+function resolveSelected(ranked, selection, surface) {
+  if (SURFACE_AFFORDANCE[surface]?.cardinality !== 'single') return null
+  const id = selection.per_surface?.[surface]
+  return id ? (ranked.find((p) => p.pulse_id === id) ?? null) : null
+}
+
+/**
  * Interactive entry point. Cache-first: if the stored pulses for this resolved window are
  * fresh (top generated within PULSE_ONDEMAND_TTL, 6h) reuse them, else generate -> score
  * -> store. Returns the top pulse (unchanged) plus response-only `selection` scoped to the
- * requested surface (per_surface carries only that key).
+ * requested surface (per_surface carries only that key) and `selected`, that surface's routed
+ * payload.
+ *
+ * `pulse` and `selected` are NOT the same thing and callers should pick deliberately: `pulse`
+ * is the window's top-ranked payload regardless of surface eligibility, while `selected` is
+ * what this surface may actually render. They diverge whenever the top pulse is ineligible
+ * here — e.g. a soundscape_shift outranking a novel_detection on node_page_hero. A caller
+ * rendering one surface wants `selected`; existing callers that read `pulse` are unaffected.
  * @param {string} nodeId
  * @param {Partial<import('./payload.js').Window>} [window]
  * @param {import('./payload.js').PulseSurface} [surface]
@@ -71,19 +89,20 @@ export async function pulseOnDemand(nodeId, window, surface = DEFAULT_SURFACE) {
   } else {
     const scored = await runCore(nodeId, resolved)
     if (scored.length === 0) {
-      return { pulse: null, selection: assignSurfaces([], [surface]) }
+      return { pulse: null, selection: assignSurfaces([], [surface]), selected: null }
     }
     ranked = (await Promise.all(scored.map((p) => storePulse(nodeId, resolved, p))))
       .sort((a, b) => b.score - a.score)
   }
 
-  return { pulse: ranked[0] ?? null, selection: assignSurfaces(ranked, [surface]) }
+  const selection = assignSurfaces(ranked, [surface])
+  return { pulse: ranked[0] ?? null, selection, selected: resolveSelected(ranked, selection, surface) }
 }
 
 /**
  * Batch entry point (cron). Generate -> score -> store (idempotent) -> notify-to-Slack
  * (operator side-effect). Returns the ranked pulses (unchanged) plus response-only
- * `selection` populated across all four surfaces.
+ * `selection` populated across every surface in SURFACES.
  *
  * `opts.suppressAlert` skips the per-run operator Slack post. The Report scheduler (Report v1.1)
  * runs pulseBatch once per node per night and emits a SINGLE `[report ops]` digest for the whole
