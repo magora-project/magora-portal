@@ -315,18 +315,18 @@ export default function NodePage() {
   const card = { background: C.card, border: `1px solid ${C.border}`, borderRadius: '16px', padding: '16px 18px' }
   const cardLabel = { fontSize: '11px', fontWeight: '700', color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }
 
-  // Collapsed disclosure control for the two generated-prose cards. ONE labelled control, not a
-  // card label plus a near-identical button: the title names the thing, the sub-line says what you
-  // get and over what span. That span is the whole difference between the two cards — one is a
-  // moment, the other a record — and the reader can't infer it from the titles alone.
+  // Collapsed disclosure control for the two generated-prose cards. ONE control, ONE phrase, and
+  // the phrase says what pressing it DOES — not what the content is called. Titles like "In this
+  // place's own words" / "The story of this place" named the writing but left the reader guessing
+  // at the action, and read as two tenses of one feature. Same verb in both, so the only
+  // difference the eye catches is the one that matters: now vs. changed over time.
   // (Both stay click-to-generate: each costs a model call, so they are not run for every visitor.)
   const disclosureBtn = {
-    width: '100%', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '4px',
-    background: 'none', border: `1px solid ${C.border}`, borderRadius: '10px',
-    padding: '12px 14px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+    width: '100%', textAlign: 'left', background: 'none', border: `1px solid ${C.border}`,
+    borderRadius: '10px', padding: '12px 14px', cursor: 'pointer',
+    fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: '700',
+    color: C.accentLight, lineHeight: 1.35,
   }
-  const disclosureTitle = { fontSize: '14px', fontWeight: '700', color: C.accentLight, lineHeight: 1.3 }
-  const disclosureSub = { fontSize: '12px', fontWeight: '500', color: C.textMuted, lineHeight: 1.45 }
   const webGroupBtn = { width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '8px 10px', fontSize: '13px', fontWeight: 600, color: C.textSub, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }
   const webSpeciesRow = { display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', padding: '4px 6px', borderRadius: '8px', background: C.card }
   const webThumb = { borderRadius: '6px', objectFit: 'cover', flexShrink: 0, background: C.border }
@@ -525,12 +525,11 @@ export default function NodePage() {
       <div style={{ ...card, marginBottom: '14px' }}>
         {!pulseOpen ? (
           <button onClick={() => { setPulseOpen(true); pulseNarr.load() }} style={disclosureBtn}>
-            <span style={disclosureTitle}>In this place’s own words</span>
-            <span style={disclosureSub}>what it is noticing right now</span>
+            Read what this place is noticing now
           </button>
         ) : (
           <>
-            <div style={cardLabel}>In this place’s own words</div>
+            <div style={cardLabel}>What this place is noticing now</div>
             {pulseNarr.status === 'loading' ? (
               <p style={{ fontSize: '14px', color: C.textMuted, lineHeight: 1.7, margin: 0 }}>Listening…</p>
             ) : pulseNarr.status === 'ready' ? (
@@ -556,12 +555,11 @@ export default function NodePage() {
       <div style={{ ...card, marginBottom: '14px' }}>
         {!reportOpen ? (
           <button onClick={() => { setReportOpen(true); nodeReport.load() }} style={disclosureBtn}>
-            <span style={disclosureTitle}>The story of this place</span>
-            <span style={disclosureSub}>how it has changed — today, this season, this year</span>
+            Read how this place has changed
           </button>
         ) : (
           <>
-            <div style={cardLabel}>The story of this place</div>
+            <div style={cardLabel}>How this place has changed</div>
             {/* Cadence selector — same node, different time-scale. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
               {nodeReport.cadences.map((c) => {
