@@ -30,12 +30,12 @@
 // under-claims rather than asserting life that isn't there.
 
 // One source of truth for the heartbeat model: the same K, the same cadence derivation, and the
-// same online/offline rule the detector judges nodes by (api/_node_status/heartbeat.js). That
-// module is pure math with no imports, so reusing it costs nothing and keeps the public label from
-// drifting away from the operational definition of "offline".
+// same online/offline rule the detector judges nodes by. It lives in `shared/` — NOT `api/` —
+// because vite.config.js proxies all `/api/*` to the deployed app in dev, so importing it from
+// there returns HTML and breaks the app locally while working fine in prod.
 import {
   HEARTBEAT_CONFIG, deriveExpectedIntervalSeconds, deriveStatus,
-} from '../../api/_node_status/heartbeat.js'
+} from '../../shared/heartbeat.js'
 
 /**
  * How stale the daily snapshot may be before it stops supporting any claim. The detector runs once
