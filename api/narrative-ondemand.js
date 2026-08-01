@@ -4,8 +4,9 @@
 // "Pulse" panel is a single-question container; voice default 'node').
 //
 // Flow: pulseOnDemand (check-before-generate, 6h TTL) -> take the pulse ASSIGNED TO THE
-// REQUESTED SURFACE from selection.per_surface (never re-rank/re-route; routing is Pulse's,
-// D5) -> check the PER-VOICE render cache (pulse_narratives, keyed on (pulse_id, voice)) ->
+// REQUESTED SURFACE, read straight off the response as `selected` (never re-rank/re-route;
+// routing is Pulse's, D5) -> check the PER-VOICE render cache (pulse_narratives, keyed on
+// (pulse_id, voice)) ->
 // on miss/stale render via narrate(payload, voice) + cache -> return { pulse, narrative, voice }.
 // { pulse: null } (nothing to say / nothing assigned to this surface) -> quiet empty state.
 //
@@ -14,7 +15,7 @@
 // selection is not modified. Place data only — no person data, no Slack path.
 
 import { pulseOnDemand } from './_pulse/core.js'
-import { pgFetch, rowToPayload, sbRpc } from './_pulse/db.js'
+import { pgFetch, sbRpc } from './_pulse/db.js'
 import { narrate } from './_narrative/narrate.js'
 import { getVoice, DEFAULT_VOICE } from './_narrative/voices.js'
 
@@ -34,14 +35,18 @@ export default async function handler(req, res) {
 
   try {
     // Pulse does the generate/cache; we consume the surface assignment only.
-    const { selection } = await pulseOnDemand(nodeId, req.body?.window, surface)
-    const targetId = selection?.per_surface?.[surface] ?? null
-    if (!targetId) return res.status(200).json({ pulse: null, narrative: null, voice })
-
-    // Fetch the assigned pulse row (need generated_at for the freshness compare).
-    const row = await pgFetch(`pulses?id=eq.${targetId}&select=*`)
-    if (!row || row.kind === 'absence') return res.status(200).json({ pulse: null, narrative: null, voice })
-    const payload = rowToPayload(row)
+    //
+    // `selected` is the payload Pulse routed to THIS surface, resolved by pulseOnDemand over the
+    // ranked list it already held — so there is no second read of `pulses` here. It carries
+    // generated_at, which is what the freshness compare below needs. It is null when nothing was
+    // routed, and also for a list-cardinality surface (node_report): a narrative voices ONE pulse,
+    // so a ranked list has nothing single to render.
+    const { selected } = await pulseOnDemand(nodeId, req.body?.window, surface)
+    if (!selected || selected.kind === 'absence') {
+      return res.status(200).json({ pulse: null, narrative: null, voice })
+    }
+    const payload = selected
+    const targetId = payload.pulse_id
 
     // Per-voice cache hit (migration 20260718): serve stored text when it was narrated at or
     // after the pulse was (re)generated. Stale (narrated_at < generated_at) => regenerate.

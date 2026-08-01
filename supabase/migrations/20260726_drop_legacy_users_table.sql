@@ -1,0 +1,34 @@
+-- Drop the legacy, empty `public.users` table.
+--
+-- ⚠️ THIS IS `public.users`, NOT `auth.users`. They are different tables in different schemas and
+-- were confirmed to be distinct objects before writing this (pg_class oid 18591 vs 16499).
+-- `auth.users` is Supabase's authentication table; `listeners.id = auth.users(id)` and the whole
+-- application's identity model depends on it. It is NOT touched here, and nothing in this
+-- migration references it. Every statement below is schema-qualified for exactly this reason —
+-- the near-identical names are the hazard this migration exists to remove.
+--
+-- WHY: `public.users` is a 0-row leftover. `nodes.owner_id` originally pointed at it, which is why
+-- a node could never actually be owned by a real account until 20260705 repointed that FK at
+-- auth.users. Nothing has referenced it since. It surfaced again in the 20260725 RLS audit as one
+-- of four tables carrying a default-PUBLIC write policy — harmless there only because it holds no
+-- data. Keeping an empty table whose name invites confusion with the authentication table is a
+-- standing hazard for exactly the kind of mistake that would be catastrophic and irreversible.
+--
+-- PRE-DROP AUDIT (2026-08-01) — all clear:
+--   * 0 rows.
+--   * No inbound foreign keys referencing it.
+--   * No views or materialized views referencing it.
+--   * No functions/RPCs referencing it (checked over pg_get_functiondef for all non-aggregate
+--     routines outside pg_catalog/information_schema).
+--   * No triggers on it.
+--   * No non-trivial pg_depend entries.
+--   * No client code: zero `from('users')` or `rest/v1/users` in src/, api/, or supabase/functions/.
+--   * The only repo mention is the 20260725 policy line, whose policy is dropped with the table.
+--
+-- Plain DROP TABLE, deliberately NOT `CASCADE`: if some dependency was missed, the error should
+-- surface loudly rather than silently destroying whatever depends on it. Do not escalate to
+-- CASCADE if this fails — stop and re-audit.
+--
+-- WRITE-ONLY migration: reviewed and applied manually. Do not auto-apply.
+
+drop table public.users;
