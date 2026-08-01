@@ -31,13 +31,21 @@ React 19 + Vite PWA on Vercel (`app.themagoraproject.com`; repo `magora-portal`)
 
 Node-offline detection is **SHIPPED**. It detects and records correctly; nobody is notified, because `SLACK_WEBHOOK_URL` is unset (see field items).
 
-### ⚠️ Open: decommissioned-node representation (needs a decision, no guard built)
+### ✅ RESOLVED 2026-08-01 — decommissioned nodes are labelled offline and stop authoring
 
-The pipeline still treats birdnode11 as a node that may return. As of 2026-08-01 it has accrued **16 `node_reports` and 102 `pulses` since the decommission**, and the reports are not empty or degraded — they are fluent first-person prose narrating silence as if the node were still present:
+**The decision: label it offline, keep everything.** A decommissioned place is never hidden or deleted — it had a life, the data it gathered is valuable, and later features may read it. It simply stops claiming to witness days it was not there for.
 
-> *"I am birdnode11. This is my record of July 31, 2026. Today I recorded no confident detections… **The day passed through me** without anything I could confirm."*
+**Implemented in three parts:**
 
-These publish to **public permalinks that unfurl OG share cards**, so this is a truthfulness problem on a public surface, not wasted compute. Two further consequences: the prose invites a reader to interpret *hardware removal* as ecological quiet (*"I do not know what that quiet means"*), and any future absence layer (D2) reading these windows would see 20+ days of zero detections at a listening post. The coverage seam already answers this correctly — `nodeOnlineThroughout` reports the ongoing 20.3-day gap — so the signal to gate on exists; nothing consumes it yet.
+1. **`nodes.is_active = false`** — the app's existing offline label (already honoured by the journal badge and the detection-card dot).
+2. **Labelled on the map, not hidden** (`19845d4`). The map filtered `.eq('is_active', true)`, so flipping the flag alone would have made the node *vanish* — no pin, no route in, its page reachable only by direct URL. That is deleting a place from view, the opposite of labelling it, and it would strand the record the decision exists to preserve. The map now loads every node and draws offline ones hollow/grey/dashed at a smaller radius: present, clearly not listening, one tap from their record. Only live nodes pulse. The **"Listening posts active"** headline now counts `is_active` nodes, so a decommissioned node cannot inflate it.
+3. **Stopped authoring** (`cfea5b7`), gated in **two** places because there are two doors: `report-cron` now iterates only `is_active` nodes (which also gates the daily `pulseBatch`, running in the same loop), and `generateReportForNode` refuses to author for an inactive node **after** the cache check — because `report-ondemand` is public and unauthenticated, so any visitor pressing "Read how this place has changed" would otherwise mint a fresh report through that door. Gating at the shared seam covers both callers and cannot drift.
+
+**Existing reports are still served** (the cache check runs before the gate), so the record stays readable — it just stops growing. The refusal returns the same quiet `report: null` an uneventful period returns, so every caller already handles it.
+
+**The skip is deliberately loud.** The failure mode of gating on a flag is a *live* node wrongly marked inactive going quietly unreported, so `report-cron` names skipped nodes in both the summary and the `[report ops]` digest (`… · skipped 1 inactive (birdnode11)`). Note this currently has nowhere to post — `SLACK_WEBHOOK_URL` is unset.
+
+**Verified on prod:** uncached periods refused (`{"report": null}`), the existing seasonal report still served, a live node unaffected, report count unchanged at 18, and birdnode11's page shows the calm empty state with its Ecological record intact.
 
 ## Key tables and schema facts you must always know
 
@@ -62,7 +70,7 @@ These publish to **public permalinks that unfurl OG share cards**, so this is a 
 
 **Security remediation (`20260725`, 2026-07-31).** Four policies named `"Service role full access <table>"` (`nodes`, `detections`, `aci_logs`, `users`) were created without a `TO` clause. `CREATE POLICY` silently defaults to **PUBLIC**, so each granted ALL commands with `USING true`/`CHECK true` to every role including `anon` — and the anon key ships in the client bundle. ~328k rows (176,596 detections, 151,237 aci_logs) were publicly writable and deletable; a `nodes` DELETE cascades to `pulses`, `node_reports`, `node_status_events`, `journal_follows`, `node_follows`. Found while smoke-testing `set_node_banner`: an anon PATCH expected to fail returned 204 and wrote a row (reverted within the minute, never served). Fixed with `ALTER POLICY ... TO service_role`; every legitimate writer uses service_role, which bypasses RLS. A full audit of the `public` schema found no other over-granted write policy, and RLS is enabled on every application table. **Rule: every `CREATE POLICY` must carry an explicit `TO <role>`; verify with `pg_policies.roles`, never the policy name.**
 
-Prior ledger detail: Spine since the last charter: `20260719` nodes_elevation_unit, `20260720` range_validity_gate (**Range-Validity Gate v1**), `20260721` harden_record_node_status (**Completion v1 Part C**), `20260722` range_gate_precision (**Precision Fix** — `is_plausible` fail-open + drift-code repairs), `20260723` node_reports (**Node Phenology Report cache**). **Next free migration is `20260724`.** `main` = `origin/main` = **`2ce0d42`** (**NodePage v1** `215a44e` PR #15 → liveness fix `83b617b` → **SPA deep-link fix** `cbdd61f` PR #16 → button copy `0a0227a`/`3735839` PR #17/#18 → **node banner photo** `d70792f` and the **RLS remediation** `2ce0d42`, PR #19 — all no-squash fast-forward). Production DB changes are manual/deliberate.
+Prior ledger detail: Spine since the last charter: `20260719` nodes_elevation_unit, `20260720` range_validity_gate (**Range-Validity Gate v1**), `20260721` harden_record_node_status (**Completion v1 Part C**), `20260722` range_gate_precision (**Precision Fix** — `is_plausible` fail-open + drift-code repairs), `20260723` node_reports (**Node Phenology Report cache**). **Next free migration is `20260724`.** `main` = `origin/main` = **`cfea5b7`** (**NodePage v1** `215a44e` PR #15 → liveness fix `83b617b` → **SPA deep-link fix** `cbdd61f` PR #16 → button copy `0a0227a`/`3735839` PR #17/#18 → **node banner photo** `d70792f` and the **RLS remediation** `2ce0d42`, PR #19 — all no-squash fast-forward). Production DB changes are manual/deliberate.
 
 ## Task queue
 
