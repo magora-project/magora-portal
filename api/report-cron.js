@@ -70,8 +70,27 @@ export default async function handler(req, res) {
   }
   const ref = completedPeriodRef(cadence)
 
-  const nodes = await pgFetch('nodes?select=id,name&limit=1000', true)
-  const summary = { cadence, ref, nodes: nodes.length, generated: 0, cached: 0, quiet: 0, errors: 0, periodKeys: new Set() }
+  // Only ACTIVE nodes author. A node that has stopped listening must not keep writing first-person
+  // reports about days it did not witness: those publish to public permalinks that unfurl share
+  // cards, so a decommissioned node narrating "the day passed through me" is a truthfulness problem
+  // on a public surface — and it would hand a future absence layer a run of zero-detection days at
+  // a listening post that was not, in fact, listening. Its existing reports stay published; the
+  // place's record is retained. It simply stops adding new ones.
+  //
+  // This also gates the daily pulseBatch below, since that runs inside the same loop.
+  //
+  // The skip is reported in the summary AND the ops digest on purpose: the failure mode of gating
+  // on a flag is a LIVE node wrongly marked inactive going quietly unreported. Naming the skipped
+  // nodes every run makes that visible instead of silent.
+  const allNodes = await pgFetch('nodes?select=id,name,is_active&limit=1000', true)
+  const nodes = allNodes.filter((n) => n.is_active)
+  const skipped = allNodes.filter((n) => !n.is_active)
+  const summary = {
+    cadence, ref,
+    nodes: nodes.length,
+    skippedInactive: skipped.map((n) => n.name || n.id),
+    generated: 0, cached: 0, quiet: 0, errors: 0, periodKeys: new Set(),
+  }
 
   for (const node of nodes) {
     try {
@@ -98,7 +117,8 @@ export default async function handler(req, res) {
   const periodKeys = [...summary.periodKeys]
   const digest =
     `${cadence} ${periodKeys.join(',') || ref}: ${summary.nodes} nodes, ` +
-    `${summary.generated} generated, ${summary.cached} cached, ${summary.quiet} quiet, ${summary.errors} errors`
+    `${summary.generated} generated, ${summary.cached} cached, ${summary.quiet} quiet, ${summary.errors} errors` +
+    (skipped.length ? ` · skipped ${skipped.length} inactive (${summary.skippedInactive.join(', ')})` : '')
   await postReportOps(digest) // exactly one digest per run
 
   return res.status(200).json({ ...summary, periodKeys, digest })

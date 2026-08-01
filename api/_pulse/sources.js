@@ -16,7 +16,9 @@ const RANGE_OK = 'or=(range_status.is.null,range_status.neq.quarantined)'
 
 // ── Node basics ──────────────────────────────────────────────────────────────
 export async function nodeCoords(nodeId) {
-  const node = await pgFetch(`nodes?id=eq.${nodeId}&select=id,name,location,elevation_m,elevation_unit`)
+  // `is_active` rides along so callers can tell a listening place from a decommissioned one
+  // without a second round-trip (the report generator gates new authoring on it).
+  const node = await pgFetch(`nodes?id=eq.${nodeId}&select=id,name,location,elevation_m,elevation_unit,is_active`)
   const coords = node?.location?.coordinates // GeoJSON [lon, lat]
   if (!coords) return { node, lat: null, lon: null }
   return { node, lat: coords[1], lon: coords[0] }

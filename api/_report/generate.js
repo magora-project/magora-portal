@@ -39,6 +39,23 @@ export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 
     }
   }
 
+  // Cache miss — but a node that has STOPPED LISTENING must not author anything new. Its existing
+  // reports above are still served (the place's record is retained and readable); it simply stops
+  // adding days it did not witness.
+  //
+  // The gate lives here, after the cache check, rather than only in the cron: report-ondemand is
+  // public and unauthenticated, so any visitor pressing "Read how this place has changed" on a
+  // decommissioned node's page would otherwise mint a fresh first-person report through that door.
+  // These publish to permalinks that unfurl share cards, so the claim has to be true wherever it
+  // is triggered from.
+  //
+  // Returns the same quiet `report: null` a genuinely uneventful period returns, so every caller
+  // already handles it — the cron counts it as `quiet`, the UI shows its calm empty state.
+  const { node } = await nodeCoords(nodeId)
+  if (node && node.is_active === false) {
+    return { periodKey, report: null }
+  }
+
   // Miss / stale: build the grounded payload, then narrate on the report tier (Sonnet).
   const payload = await buildReport(nodeId, cadence, periodKey)
   const out = await narrateReport(payload, voice)
