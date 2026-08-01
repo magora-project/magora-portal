@@ -27,7 +27,7 @@ React 19 + Vite PWA on Vercel (`app.themagoraproject.com`; repo `magora-portal`)
 
 ### Decommissioned
 
-- **birdnode11** — Gardiner MT (Yellowstone area). **Decommissioned 2026-07-12; the hardware is physically gone.** The `2026-07-12 09:15` offline transition recorded by the detector *was* the decommission, not a missed field incident. **Its data is retained deliberately** — 18,854 detections, 34,081 `aci_logs`: place over people, the ecological record belongs to the place, and Gardiner MT was genuinely listened to. What is wrong is only the **representation** — see the open truthfulness item below.
+- **birdnode11** — Gardiner MT (Yellowstone area). **Decommissioned 2026-07-12; the hardware is physically gone.** The `2026-07-12 09:15` offline transition recorded by the detector *was* the decommission, not a missed field incident. **Its data is retained deliberately** — 18,854 detections, 34,081 `aci_logs`: place over people, the ecological record belongs to the place, and Gardiner MT was genuinely listened to. Its **representation** was the only thing wrong, and that is now resolved — see below.
 
 Node-offline detection is **SHIPPED**. It detects and records correctly; nobody is notified, because `SLACK_WEBHOOK_URL` is unset (see field items).
 
