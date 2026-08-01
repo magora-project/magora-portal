@@ -20,13 +20,24 @@ Person-exposure features must always parallel the detection publish-consent patt
 
 React 19 + Vite PWA on Vercel (`app.themagoraproject.com`; repo `magora-portal`). **Vercel plan is now Pro** (upgraded 2026-07-17 when the report bundle crossed the Hobby 12-function cap). Supabase (PostgreSQL 15 + PostGIS) for all data. Fly.io worker (`magora-listen-worker`, dfw, 1GB) for BirdNET inference. Supabase Edge Functions. `pgmq` for the audio inference queue (only consumer is `audio_inference`). Claude API for ecological insights and narrative generation (**now including a Sonnet report-model tier** — see Reports). eBird for species data and the range allowlist. Vercel cron for batch/report endpoints. `api/` function count is **16** (Hobby cap was the forcing function for Pro; headroom is fine on Pro).
 
-## Live nodes
+## Live nodes — TWO as of 2026-07-12
 
-- **Magic Lantern** — online (cold-start test case; minimal history). Elevation 6300 ft.
-- **birdnode11** — Gardiner MT (Yellowstone area). Online, richest detection history; the primary report/verification node. Elevation NULL. Power-cable field item CLOSED.
-- **Casa Colibri** — third node; historically zero `aci_logs` (skipped by node-offline detection — can't distinguish "offline" from "never deployed"). Elevation 6300 ft. Motivated the Range-Validity Gate (a Sphenisciform false-positive posted near it — now hidden on prod by the shipped gate).
+- **Casa Colibri** — live and healthy; **26,260 `aci_logs`**, the best-monitored node on the network (5 status events, latest `2026-07-31 online`). Elevation 6300 ft. Motivated the Range-Validity Gate (a Sphenisciform false-positive posted near it — now hidden on prod by the shipped gate). *(Corrected 2026-08-01: the prior "historically zero `aci_logs`, skipped by node-offline detection" claim is FALSE and has been struck. The detector has no exclusion list — the skip branch is purely data-driven, and a node enrols itself once it has `HEARTBEAT_CONFIG.minSamples` logs.)*
+- **Magic Lantern** — online (cold-start; minimal history — 1 status event, the `2026-07-09` baseline, which is correct since events are written only on transition). Elevation 6300 ft.
 
-Node-offline detection is **SHIPPED** — silent power-outage incidents are surfaced (once Slack is wired).
+### Decommissioned
+
+- **birdnode11** — Gardiner MT (Yellowstone area). **Decommissioned 2026-07-12; the hardware is physically gone.** The `2026-07-12 09:15` offline transition recorded by the detector *was* the decommission, not a missed field incident. **Its data is retained deliberately** — 18,854 detections, 34,081 `aci_logs`: place over people, the ecological record belongs to the place, and Gardiner MT was genuinely listened to. What is wrong is only the **representation** — see the open truthfulness item below.
+
+Node-offline detection is **SHIPPED**. It detects and records correctly; nobody is notified, because `SLACK_WEBHOOK_URL` is unset (see field items).
+
+### ⚠️ Open: decommissioned-node representation (needs a decision, no guard built)
+
+The pipeline still treats birdnode11 as a node that may return. As of 2026-08-01 it has accrued **16 `node_reports` and 102 `pulses` since the decommission**, and the reports are not empty or degraded — they are fluent first-person prose narrating silence as if the node were still present:
+
+> *"I am birdnode11. This is my record of July 31, 2026. Today I recorded no confident detections… **The day passed through me** without anything I could confirm."*
+
+These publish to **public permalinks that unfurl OG share cards**, so this is a truthfulness problem on a public surface, not wasted compute. Two further consequences: the prose invites a reader to interpret *hardware removal* as ecological quiet (*"I do not know what that quiet means"*), and any future absence layer (D2) reading these windows would see 20+ days of zero detections at a listening post. The coverage seam already answers this correctly — `nodeOnlineThroughout` reports the ongoing 20.3-day gap — so the signal to gate on exists; nothing consumes it yet.
 
 ## Key tables and schema facts you must always know
 
@@ -47,7 +58,7 @@ Node-offline detection is **SHIPPED** — silent power-outage incidents are surf
 - `node_status_events` — LIVE (Node Offline Detection v1, `20260717`). Transition log: `node_id`, `status`, `at`, `gap_seconds`, `expected_interval_seconds`, `is_baseline`. Public-read RLS. Written via `record_node_status` (**now SECURITY DEFINER service_role-only** — hardened `20260721`; anon→401, service_role→200 verified). `nodeOnlineThroughout(node_id, window)` is the coverage-continuity seam absence imports.
 - Insight-cache RPCs (SECURITY DEFINER, shipped): `set_detection_insight`, `set_node_detection_insight`, `set_session_insight`. Stored insight checked before any Claude call.
 
-**Migration state:** `main` and prod are **in sync through `20260725`**. `20260724` node_banner (`nodes.banner_path` + `node-banners` bucket + `set_node_banner` owner-checked SECURITY DEFINER RPC) and `20260725` scope_service_role_policies (**security remediation** — see below) were applied 2026-07-31 via `supabase db query --linked` in an explicit transaction. **Next free migration is `20260726`.**
+**Migration state:** `main` and prod are **in sync through `20260726`**. `20260724` node_banner (`nodes.banner_path` + `node-banners` bucket + `set_node_banner` owner-checked SECURITY DEFINER RPC) and `20260725` scope_service_role_policies (**security remediation** — see below) were applied 2026-07-31 via `supabase db query --linked` in an explicit transaction. `20260726` drop_legacy_users_table removed the empty legacy `public.users` (NOT `auth.users` — distinct objects, oid 18591 vs 16499; auth verified intact after). **Next free migration is `20260727`.**
 
 **Security remediation (`20260725`, 2026-07-31).** Four policies named `"Service role full access <table>"` (`nodes`, `detections`, `aci_logs`, `users`) were created without a `TO` clause. `CREATE POLICY` silently defaults to **PUBLIC**, so each granted ALL commands with `USING true`/`CHECK true` to every role including `anon` — and the anon key ships in the client bundle. ~328k rows (176,596 detections, 151,237 aci_logs) were publicly writable and deletable; a `nodes` DELETE cascades to `pulses`, `node_reports`, `node_status_events`, `journal_follows`, `node_follows`. Found while smoke-testing `set_node_banner`: an anon PATCH expected to fail returned 204 and wrote a row (reverted within the minute, never served). Fixed with `ALTER POLICY ... TO service_role`; every legitimate writer uses service_role, which bypasses RLS. A full audit of the `public` schema found no other over-granted write policy, and RLS is enabled on every application table. **Rule: every `CREATE POLICY` must carry an explicit `TO <role>`; verify with `pg_policies.roles`, never the policy name.**
 
@@ -128,7 +139,7 @@ Obsidian vault synced to Google Drive — canonical documentation store. Navigat
 
 ## Field items (track separately)
 
-- **`SLACK_WEBHOOK_URL` still unset** — `[pulse ops]`, `[node ops]`, and `[report ops]` all no-op safely until it's set (one env var unblocks all three). Detection/logging/reports unaffected.
+- **`SLACK_WEBHOOK_URL` still unset** — `[pulse ops]`, `[node ops]` and `[report ops]` have nowhere to post (one env var unblocks all three). Detection, logging and reports are unaffected: outages are **detected and recorded silently — no operator is notified**. This is a deliberate choice for now, not a defect, but it is not harmless, and the wording should not imply otherwise. birdnode11's `2026-07-12` offline transition was recorded correctly and announced to no one; that it turned out to be a planned decommission was luck, not design.
 - **`CRON_SECRET`** — clean 64-hex, set **non-Sensitive** in Vercel (a trailing-newline copy had blocked deploys). Leave non-Sensitive so rotations don't break cron auth.
 - **Vercel is now Pro** — the report bundle crossed the Hobby 12-function cap (`api/` now 16). Note: the report code, incl. v1, had never *actually* deployed before the Pro upgrade (v1's earlier "live" was the handler driven locally against prod).
 - **`scripts/gen_guild_sql.py`** — keep in git as the input-of-record for `indicator_status`/`sensitivity_flag` regional calls.
