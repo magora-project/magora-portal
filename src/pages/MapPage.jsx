@@ -99,7 +99,11 @@ export default function MapPage() {
 
     try {
       const [nodesRes, detRes, aciRes, todayRes, mobileRes, sessionsRes] = await Promise.all([
-        supabase.from('nodes').select('*').eq('is_active', true),
+        // All nodes, not just active ones. A node that stops listening is LABELLED offline on the
+        // map, never hidden from it: the place was genuinely listened to and its record stays
+        // reachable. Filtering by is_active here would have made "mark it offline" mean "delete it
+        // from view" — the opposite of labelling — and would strand its page with no way in.
+        supabase.from('nodes').select('*'),
         supabase.from('detections')
           .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
           .gte('confidence', MIN_CONFIDENCE)
@@ -259,6 +263,10 @@ export default function MapPage() {
     .map(n => ({ ...n, coords: parseNodeLocation(n.location) }))
     .filter(n => n.coords)
 
+  // The map now carries offline places too, so anything counting "active" must say so explicitly —
+  // otherwise a decommissioned node inflates the headline figure.
+  const activeNodes = nodes.filter(n => n.is_active)
+
   const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]))
 
   function isRecentNode(node) {
@@ -313,7 +321,7 @@ export default function MapPage() {
                 Listening posts active
               </div>
               <div style={{ fontSize: '24px', fontWeight: 900, color: '#1a1a1a', lineHeight: 1, fontFamily: "'Big Shoulders Display', sans-serif" }}>
-                {nodes.length > 0 ? nodes.length : '—'}
+                {activeNodes.length > 0 ? activeNodes.length : '—'}
               </div>
             </div>
           </div>
@@ -361,15 +369,21 @@ export default function MapPage() {
                 <CircleMarker
                   key={node.id}
                   center={[node.coords.lat, node.coords.lon]}
-                  radius={10}
-                  pathOptions={{ fillColor: '#1D9E75', color: '#0F6E56', weight: 2, fillOpacity: 0.85 }}
-                  className={isRecentNode(node) ? 'node-pulse' : ''}
+                  radius={node.is_active ? 10 : 8}
+                  // Offline places stay on the map, drawn hollow and grey: present, clearly not
+                  // listening, still one tap from their record. Only a live node pulses.
+                  pathOptions={node.is_active
+                    ? { fillColor: '#1D9E75', color: '#0F6E56', weight: 2, fillOpacity: 0.85 }
+                    : { fillColor: '#7aad8a', color: '#7aad8a', weight: 2, fillOpacity: 0.15, dashArray: '3 3' }}
+                  className={node.is_active && isRecentNode(node) ? 'node-pulse' : ''}
                   eventHandlers={{ click: () => navigate(`/node/${node.id}`) }}
                 >
                   <Tooltip direction="top" offset={[0, -10]} opacity={0.95}>
-                    <strong style={{ fontSize: '14px' }}>{node.name}</strong><br />
+                    <strong style={{ fontSize: '14px' }}>{node.name}</strong>
+                    {!node.is_active && <span style={{ fontSize: '12px', color: '#777' }}> · offline</span>}<br />
                     <span style={{ fontSize: '12px', color: '#555' }}>
-                      {node.habitat_type}{node.elevation_m ? ` · ${node.elevation_m} ${node.elevation_unit || 'ft'}` : ''} · tap to view
+                      {node.habitat_type}{node.elevation_m ? ` · ${node.elevation_m} ${node.elevation_unit || 'ft'}` : ''}
+                      {node.is_active ? ' · tap to view' : ' · no longer listening · tap to view its record'}
                     </span>
                   </Tooltip>
                 </CircleMarker>
