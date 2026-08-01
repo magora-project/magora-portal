@@ -37,7 +37,12 @@ async function checkNode(node, nowMs, k) {
 
   // No / too-little heartbeat history → cannot derive a cadence, so we cannot distinguish
   // "offline" from "never deployed". Skip rather than false-alarm (global-ready: no hardcoded
-  // fallback interval). Casa Colibri (zero aci_logs) lands here.
+  // fallback interval).
+  //
+  // This skip is purely data-driven — there is no per-node exclusion list, and a node enrols
+  // itself the moment it has HEARTBEAT_CONFIG.minSamples logs. (An older comment here named Casa
+  // Colibri as the node that lands in this branch; that stopped being true — as of 2026-07-31 it
+  // has ~26k aci_logs, 5 recorded status events, and is assessed like any other node.)
   const expectedInterval = deriveExpectedIntervalSeconds(logs.map((r) => r.recorded_at))
   if (expectedInterval == null || !logs.length) {
     return { node_id: node.id, name: node.name, skipped: 'insufficient_heartbeat_history' }
