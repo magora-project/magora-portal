@@ -1,7 +1,16 @@
 # Runbook — `PROVISION_SECRET` rotation & cutover
 
-**Written:** 2026-08-01. **Status:** code merged, rotation NOT yet performed.
-**Severity:** the current `PROVISION_SECRET` value is compromised — publicly readable.
+**Written:** 2026-08-01. **Status: ✅ COMPLETE — rotation performed 2026-08-02.**
+**Severity (at discovery):** the `PROVISION_SECRET` value was compromised — publicly readable.
+
+> **Outcome.** The leaked secret is dead: a direct call to `provision-node` with the old value now
+> returns `401`, and the new value returns `400` (gate passes, fields missing). The old bundle is
+> still served at its immutable URL — that is expected and harmless now that its secret is worthless.
+> Registration verified working end-to-end against live production after rotation, 7/7 checks
+> including the forged-`owner_id` test. Orphan cleanup done: 12/12 removed. Final state: 3 nodes,
+> 3 node auth users (1:1), 13 total auth users, 0 unowned nodes. Detection and ACI counts both grew
+> across the window, confirming node ingest was never affected (nodes authenticate with their own
+> GoTrue credentials, not this secret). Kept as the incident record — the steps below are what ran.
 
 ## What happened
 
@@ -93,23 +102,35 @@ that window is acceptable.
 
 7. **Update local `.env`** — replace the `PROVISION_SECRET` value with the new one.
 
-## Verification
+## Verification — all passed 2026-08-02
 
-- [ ] Register a test node end-to-end through the wizard; confirm it succeeds and appears with the
-      correct `owner_id`.
-- [ ] Confirm `nodes.owner_id` equals the signed-in steward's uid, **not** anything client-supplied.
-- [ ] Signed-out request to `/api/register-node` → `401`.
-- [ ] Request with a forged `owner_id` in the body → node is created owned by the *caller*, proving
-      the body value is ignored.
-- [ ] Direct call to `provision-node` using the **old** secret → `401 Unauthorized`.
-- [ ] Rebuild and confirm no file under `dist/` contains the new secret.
-- [ ] Delete the test node and its auth user.
+Automated against the live production endpoint with a throwaway steward account (created, used,
+and deleted within the run):
+
+- [x] `GET /api/register-node` → `405`.
+- [x] `POST` with no token → `401`.
+- [x] `POST` with a garbage token → `401`.
+- [x] `POST` with a valid token but no fields → `400`.
+- [x] Registration succeeds for a signed-in steward → `200` with `node_id` / `email` / `password`.
+- [x] **Forged `owner_id` in the body → node created owned by the _caller_.** The decisive test:
+      ownership is not spoofable.
+- [x] Direct call to `provision-node` with the **old** secret → `401`. With the new secret → `400`.
+- [x] Live production bundle contains the secret in no file; anon key still present (positive
+      control proving the check detects an inlined value).
+- [x] Test node, its node auth user, and the throwaway steward all deleted; DB returned to its
+      exact pre-test state.
+
+Re-run any time with `TARGET=https://magora-portal.vercel.app node test-register-node.mjs`
+(harness kept out of the repo — it needs the service-role key to create and clean up its fixtures).
 
 ## Follow-ups
 
-- **Orphan cleanup** — see `scripts/cleanup-orphan-node-users.sql` (written, not executed). Removes
-  the 12 dormant `node-*@magora.internal` auth users with no `nodes` row. They can still sign in and
-  reach the `authenticated` surface, so they are worth removing, but none has signed in since June.
+- **Orphan cleanup — ✅ done 2026-08-02.** All 12 dormant `node-*@magora.internal` auth users
+  removed. Executed via the GoTrue admin API rather than the SQL in
+  `scripts/cleanup-orphan-node-users.sql`, because the admin API also clears the auth-internal rows
+  (identities, sessions) that a raw `delete from auth.users` leaves to FK cascade. The SQL is kept
+  as the reviewable statement of intent and the audit predicate. The runner re-derived the orphan
+  list independently and aborted unless it found exactly 12 with zero authored rows.
 - **Charter rule to add:** never give a secret a `VITE_` prefix. In Vite that prefix *means* public.
   This is the second name-implies-a-gate failure after `20260725`; the rule should be explicit.
 - **Vault reconcile** — `✅ Where We Are` still asserts the Pis write via `service_role`. Phase 0
