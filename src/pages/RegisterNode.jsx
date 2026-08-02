@@ -75,29 +75,30 @@ export default function RegisterNode() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/provision-node`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-provision-secret': import.meta.env.VITE_PROVISION_SECRET,
-          },
-          body: JSON.stringify({
-            name: form.nodeName,
-            hardware_type: hardware,
-            lat: parseFloat(form.lat),
-            lon: parseFloat(form.lon),
-            elevation_m: parseFloat(form.elevation) || null,
-            elevation_unit: form.elevation_unit,
-            habitat_type: form.habitat,
-            species_whitelist: whitelist || undefined,
-            // Links the node to the signed-in steward so it appears on their
-            // field journal (nodes.owner_id → auth.users).
-            owner_id: user?.id,
-          }),
-        }
-      )
+      // Goes through the portal's own server (api/register-node.js), never straight to the
+      // Edge Function: the provisioning gate secret is server-side only. We send the steward's
+      // session token and the server derives nodes.owner_id from it — the browser cannot claim
+      // ownership on someone else's behalf, so no owner_id is sent from here.
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Sign in to register a node')
+
+      const res = await fetch('/api/register-node', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          name: form.nodeName,
+          hardware_type: hardware,
+          lat: parseFloat(form.lat),
+          lon: parseFloat(form.lon),
+          elevation_m: parseFloat(form.elevation) || null,
+          elevation_unit: form.elevation_unit,
+          habitat_type: form.habitat,
+          species_whitelist: whitelist || undefined,
+        }),
+      })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Provisioning failed')
       setNodeId(data.node_id)
