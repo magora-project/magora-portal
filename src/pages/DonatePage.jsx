@@ -80,7 +80,7 @@ export default function DonatePage() {
           ♥ Support the project
         </a>
         <Link
-          to="/register"
+          to="/add-node"
           style={{
             flex: 1, minWidth: '200px', textAlign: 'center', padding: '13px 22px',
             background: 'transparent', color: C.text, border: `2px solid ${C.border}`,

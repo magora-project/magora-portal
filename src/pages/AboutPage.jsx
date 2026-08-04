@@ -118,7 +118,7 @@ export default function AboutPage() {
         </Card>
         <Card
           title="Deploy a Node"
-          cta={<Link to="/register" style={nodeCtaStyle}>Build a node →</Link>}
+          cta={<Link to="/add-node" style={nodeCtaStyle}>Build a node →</Link>}
         >
           A 24-hour listening post that builds the long-term acoustic record of a place.
         </Card>

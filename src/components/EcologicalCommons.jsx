@@ -72,7 +72,7 @@ export default function EcologicalCommons() {
             title="Add your listening post"
             text="Deploy a node in your backyard, schoolyard, or wilderness. Every place adds a thread to the ecological record."
             cta="Add a node"
-            to="/register"
+            to="/add-node"
           />
           <CommonsCard
             title="Support open ecological infrastructure"
