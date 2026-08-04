@@ -104,7 +104,7 @@ const BADGE_EXPLAIN = {
 function DetectionCard({ d, node, showNode = false, wikiData, count, insight, onRequestInsight }) {
   const [activeBadge, setActiveBadge] = useState(null)
   const [callState, setCallState] = useState(null) // null | 'loading' | 'ready' | 'error'
-  const [soundUrl, setSoundUrl] = useState(null)
+  const [sound, setSound] = useState(null) // { url, source, meta }
   const [shareOpen, setShareOpen] = useState(false)
   // Ecosystem insight is collapsed by default and resets to collapsed on refresh.
   const [insightOpen, setInsightOpen] = useState(false)
@@ -118,47 +118,30 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
     if (next && !insight?.text && !insight?.loading) onRequestInsight?.()
   }
 
+  // Species reference audio ("what this species sounds like") — NOT this place's own
+  // recording. Selection is ranked server-side by xeno-canto quality grade and sample
+  // rate; see api/_audio/xc-select.js. The lookup is proxied because the xeno-canto v3
+  // API needs a key that must not ship in the browser bundle.
   async function loadCall() {
     setCallState('loading')
-    const name = d.species_name || d.raw_label
-    const sci = d.raw_label?.includes('_') ? d.raw_label.split('_')[1] : null
-    let url = null
+    const name = d.species_name || d.raw_label || ''
+    // raw_label is "CommonName_ScientificName".
+    const sci = d.raw_label?.includes('_') ? d.raw_label.split('_')[1] : ''
 
-    // GBIF aggregates audio from Xeno-canto + others, supports CORS, no proxy needed
-    const queries = [
-      sci && `scientificName=${encodeURIComponent(sci)}`,
-      `q=${encodeURIComponent(name)}`,
-    ].filter(Boolean)
-
-    for (const q of queries) {
-      try {
-        const res = await fetch(
-          `https://api.gbif.org/v1/occurrence/search?mediaType=Sound&${q}&limit=20`
-        )
-        if (!res.ok) continue
-        const data = await res.json()
-        for (const occ of (data.results || [])) {
-          for (const m of (occ.media || [])) {
-            if (m.type === 'Sound' && m.identifier) {
-              const id = m.identifier.startsWith('//')
-                ? `https:${m.identifier}`
-                : m.identifier
-              url = id
-              break
-            }
-          }
-          if (url) break
-        }
-        if (url) break
-      } catch (e) {
-        console.warn('GBIF error:', q, e)
-      }
+    try {
+      const params = new URLSearchParams()
+      if (sci) params.set('sci', sci)
+      if (name) params.set('name', name)
+      const res = await fetch(`/api/xeno-canto?${params}`)
+      if (!res.ok) { setCallState('error'); return }
+      const data = await res.json()
+      if (!data?.recording?.url) { setCallState('error'); return }
+      setSound({ url: data.recording.url, source: data.source, meta: data.recording })
+      setCallState('ready')
+    } catch (e) {
+      console.warn('reference audio lookup failed:', e)
+      setCallState('error')
     }
-
-    if (!url) { setCallState('error'); return }
-    console.log('Playing audio URL:', url)
-    setSoundUrl(url)
-    setCallState('ready')
   }
 
   const conf = d.confidence ? Math.round(d.confidence * 100) : null
@@ -328,12 +311,13 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
         )}
 
         {/* Library recording player */}
-        {callState === 'ready' && soundUrl && (
+        {callState === 'ready' && sound?.url && (
           <div style={{ marginBottom: '12px' }}>
             <div style={{ fontSize: '10px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-              Library recording · Xeno-canto / GBIF
+              Library recording · {sound.source === 'gbif' ? 'GBIF' : 'Xeno-canto'}
+              {sound.meta?.quality && ` · grade ${sound.meta.quality}`}
             </div>
-            <audio controls src={soundUrl} style={{ width: '100%', height: '36px' }} />
+            <audio controls src={sound.url} style={{ width: '100%', height: '36px' }} />
           </div>
         )}
 

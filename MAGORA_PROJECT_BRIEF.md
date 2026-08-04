@@ -192,7 +192,7 @@ src/
 - Confidence, time, dawn chorus, season, sunrise offset badges (each tappable for explanation)
 - Guild + migration status + sensitivity flag from species table
 - Wikipedia thumbnail + first-sentence fact
-- **🔊 Listen** — fetches from xeno-canto API by scientific name, plays song inline (toggle pause/resume)
+- **🔊 Listen** — species *reference* audio (what this species sounds like — **not** this place's own recording). Looks the species up on xeno-canto by scientific name via the `/api/xeno-canto` proxy, and picks the **best-quality** recording (grade A/B first, then highest sample rate) rather than first-match
 - **🌿 Get Ecological Insight** — calls `/api/insight` Claude endpoint
 
 ### NodePage features
@@ -259,6 +259,6 @@ src/
 | Edge functions | Supabase Edge Functions (Deno) |
 | Frontend | React 19 + Vite + React Router v7 |
 | Mapping | Leaflet + react-leaflet |
-| Bird call audio | xeno-canto public API |
+| Bird call audio | xeno-canto API v3 via `/api/xeno-canto` proxy (key required) |
 | Hosting | Vercel |
 | AI insights | Claude via /api/insight |
