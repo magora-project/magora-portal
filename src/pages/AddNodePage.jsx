@@ -98,6 +98,13 @@ export default function AddNodePage() {
             hears, when the dawn chorus starts where you are, how the soundscape shifts through the
             season. You don't write any of it. The place does.
           </p>
+          {/* The public-map guard (a node appears only after its first plausible detection) is
+              framed as the moment of arrival rather than as a wait. */}
+          <p style={{ color: C.textSub, fontSize: '16px', lineHeight: 1.7, margin: '0 0 16px' }}>
+            Your page is yours from the moment you register. The <em>map</em> is different: your
+            place joins it the moment it speaks — its first confirmed bird is what puts the pin
+            there. Nothing to wait for and nothing to claim. It arrives by being heard.
+          </p>
           <p style={{ color: C.textMuted, fontSize: '14px', lineHeight: 1.6, margin: 0 }}>
             The guide above is maintained alongside the firmware it describes.{' '}
             <a href={buildDocSource} target="_blank" rel="noreferrer" style={{ color: C.accentLight }}>

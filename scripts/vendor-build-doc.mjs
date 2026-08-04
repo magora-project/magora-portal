@@ -10,12 +10,16 @@
 // of the deploy. Vendoring bakes it in, so a deploy is reproducible and the page has no runtime
 // network dependency.
 //
-// WHY `main` BY DEFAULT, NOT A HARDCODED SHA: pinning to a specific commit would mean editing a
-// price in BUILD.md does NOT reach the page until someone also bumps a SHA here — which is a second
-// edit, the exact drift this is meant to prevent. So the default tracks `main` and a deploy picks up
-// whatever is current. Set BUILD_DOC_REF to a SHA or tag when you need a reproducible historical
-// build. (This differs from DETECT_SHA in the firmware, which is pinned on purpose: shipping a
-// stale paragraph is cosmetic, shipping stale firmware to someone's hardware is not.)
+// WHY `release`, NOT `main` AND NOT A FROZEN SHA (decided 2026-08-04):
+//   * Bare `main` couples every unverified commit to a stranger's first-boot experience, and makes
+//     "the guide said X" unreproducible once main moves.
+//   * A hardcoded SHA is the opposite failure — it rots silently, and a price edit never reaches
+//     the page, which is the drift this whole mechanism exists to prevent.
+// `release` is a pointer that ONLY ADVANCES AFTER THE WALKTHROUGH IS RE-VERIFIED AGAINST IT, so the
+// page is both reproducible and fresh: editing BUILD.md still takes exactly one edit, and it reaches
+// builders when someone has confirmed the guide still works. Advancing it is a deliberate act —
+// see docs/tasks/release-pointer-runbook.md.
+// BUILD_DOC_REF overrides for a reproducible historical build.
 //
 // FAILURE BEHAVIOUR: if the fetch fails, the previously committed artifact is left in place and the
 // build continues with a warning. A network blip should not break a deploy, and the committed copy
@@ -26,7 +30,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { marked } from 'marked'
 
-const REF = process.env.BUILD_DOC_REF || 'main'
+const REF = process.env.BUILD_DOC_REF || 'release'
 const SOURCE = `https://raw.githubusercontent.com/magora-project/magora-acoustic-biodiversity/${REF}/BUILD.md`
 
 const here = path.dirname(fileURLToPath(import.meta.url))

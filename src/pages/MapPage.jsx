@@ -99,11 +99,32 @@ export default function MapPage() {
 
     try {
       const [nodesRes, detRes, aciRes, todayRes, mobileRes, sessionsRes] = await Promise.all([
-        // All nodes, not just active ones. A node that stops listening is LABELLED offline on the
-        // map, never hidden from it: the place was genuinely listened to and its record stays
-        // reachable. Filtering by is_active here would have made "mark it offline" mean "delete it
-        // from view" — the opposite of labelling — and would strand its page with no way in.
-        supabase.from('nodes').select('*'),
+        // All nodes that have SPOKEN, regardless of whether they still are.
+        //
+        // Two different rules live in this one query, and they pull in opposite directions:
+        //
+        //   * A node that stops listening is LABELLED offline, never hidden. The place was
+        //     genuinely listened to and its record stays reachable. Filtering by is_active here
+        //     would have made "mark it offline" mean "delete it from view" — the opposite of
+        //     labelling — and would strand its page with no way in. So: no is_active filter.
+        //
+        //   * A node that has NEVER spoken is not yet a place on the map. Registration is
+        //     self-serve, so anyone signed in can create a node row; without this, the map fills
+        //     with empty pins for hardware that was never built. A place earns its pin by
+        //     speaking.
+        //
+        // `detections!inner(...)` makes this an inner join, so a node with no matching detection
+        // is dropped from the result entirely. `range_status = 'plausible'` reuses the
+        // Range-Validity Gate, so a node that only ever posts implausible garbage never goes
+        // public either. The embedded limit keeps the payload to one throwaway row per node —
+        // it's an existence test, not data we use.
+        //
+        // The steward's own view is unaffected: NodePage and JournalPage query `nodes` directly,
+        // so a freshly-registered node is fully visible to its owner from the moment it exists.
+        supabase.from('nodes')
+          .select('*, detections!inner(id)')
+          .eq('detections.range_status', 'plausible')
+          .limit(1, { foreignTable: 'detections' }),
         supabase.from('detections')
           .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
           .gte('confidence', MIN_CONFIDENCE)
@@ -121,7 +142,13 @@ export default function MapPage() {
       const firstErr = nodesRes.error || detRes.error || aciRes.error || todayRes.error
       if (firstErr) throw firstErr
 
-      setNodes(nodesRes.data || [])
+      // Drop the embedded `detections` existence-probe so a node object keeps exactly the shape
+      // the rest of the page (and NodePage) expects — the join is a filter, not data.
+      setNodes((nodesRes.data || []).map(row => {
+        const node = { ...row }
+        delete node.detections
+        return node
+      }))
       setDetections(detRes.data || [])
       setMobileDetections(mobileRes.data || [])
       setSessions(sessionsRes.data || [])
