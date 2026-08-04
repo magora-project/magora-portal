@@ -2,10 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 
+// Order and labels track the promoted build in BUILD.md. The Zero 2W is listed but no longer
+// recommended: it has no USB-A port (the promoted USB mic needs an adapter) and thermal-throttles
+// under continuous BirdNET load. Existing nodes run it; new builders shouldn't start there.
 const HARDWARE_OPTIONS = [
-  { id: 'rpi-zero-2w', name: 'Raspberry Pi Zero 2W', sub: 'Recommended · ~$15' },
-  { id: 'rpi-4', name: 'Raspberry Pi 4', sub: 'More power · ~$55' },
+  { id: 'rpi-4', name: 'Raspberry Pi 4', sub: 'Recommended · ~$55' },
   { id: 'rpi-3b', name: 'Raspberry Pi 3B+', sub: 'Good balance · ~$35' },
+  { id: 'rpi-zero-2w', name: 'Raspberry Pi Zero 2W', sub: 'Cheapest · needs adapter + cooling' },
   { id: 'other', name: 'Other / custom', sub: 'Linux SBC' },
 ]
 
@@ -25,7 +28,7 @@ const IMAGE_URL = 'https://github.com/magora-project/magora-acoustic-biodiversit
 export default function RegisterNode() {
   const { user, openSignIn } = useAuth()
   const [step, setStep] = useState(1)
-  const [hardware, setHardware] = useState('rpi-zero-2w')
+  const [hardware, setHardware] = useState('rpi-4')
   const [form, setForm] = useState({
     nodeName: '', wifi_ssid: '', wifi_password: '',
     lat: '', lon: '', elevation: '', elevation_unit: 'ft', habitat: 'montane-scrub',
