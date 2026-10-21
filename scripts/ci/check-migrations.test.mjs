@@ -24,6 +24,7 @@ ok('grandfather list ignores comments, blanks and CRLF',
 
 const CLI = fileURLToPath(new URL('./check-migrations.mjs', import.meta.url))
 const tmp = mkdtempSync(join(tmpdir(), 'check-migrations-selftest-'))
+let lastStderr = ''
 const tree = (name, files, { cli = CLI, links = {}, nodeArgs = [] } = {}) => {
   const root = join(tmp, name)
   for (const [rel, body] of Object.entries(files)) {
@@ -31,7 +32,9 @@ const tree = (name, files, { cli = CLI, links = {}, nodeArgs = [] } = {}) => {
     writeFileSync(join(root, rel), body)
   }
   for (const [rel, target] of Object.entries(links)) symlinkSync(join(root, target), join(root, rel))
-  return spawnSync(process.execPath, [...nodeArgs, cli, '--root', root], { stdio: 'ignore' }).status
+  const r = spawnSync(process.execPath, [...nodeArgs, cli, '--root', root], { encoding: 'utf8' })
+  lastStderr = r.stderr
+  return r.status
 }
 try {
   ok('CLI ok on a valid tree', tree('valid', {
@@ -45,12 +48,13 @@ try {
     'supabase/migrations/2_new.sql': '',
     'scripts/ci/migrations-grandfathered.txt': '1_old.sql\n',
   }) === 1)
+  // The message pins the guard: without it an uncaught ENOENT also exits 1.
   ok('CLI FAIL (fail closed) without a grandfather list', tree('nolist', {
     'supabase/migrations/1_old.sql': '',
-  }) === 1)
+  }) === 1 && lastStderr.includes('check-migrations: FAIL (could not judge):'))
   ok('CLI FAIL (fail closed) without a migrations dir', tree('nodir', {
     'scripts/ci/migrations-grandfathered.txt': '',
-  }) === 1)
+  }) === 1 && lastStderr.includes('check-migrations: FAIL (could not judge):'))
   ok('CLI FAIL on a symlinked migration (refused, not skipped)', tree('linked', {
     'supabase/migrations/1_old.sql': '',
     'scripts/ci/migrations-grandfathered.txt': '1_old.sql\n',

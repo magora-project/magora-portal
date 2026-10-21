@@ -16,7 +16,8 @@ const out = (...messages) => JSON.stringify([{ filePath: 'src/a.jsx', messages }
 const base = JSON.stringify({ 'no-unused-vars': 2, 'react-hooks/static-components': 1 })
 const atBaseline = out(msg('no-unused-vars'), msg('no-unused-vars'), msg('react-hooks/static-components'))
 const run = (o) => evaluate({ status: 1, stdout: atBaseline, stderr: '', baselineText: base, ...o })
-const couldNotJudge = (v) => v.ok === false && /could not judge/.test(v.lines[0])
+// `reason`, when given, pins which guard fired: several malformed inputs also trip a later guard.
+const couldNotJudge = (v, reason = '') => v.ok === false && /could not judge/.test(v.lines[0]) && v.lines[0].includes(reason)
 
 // passing and failing directions
 ok('equal to baseline -> ok', run({}).ok === true)
@@ -33,17 +34,17 @@ ok('per rule: a fall in one rule does not pay for a rise in another',
 
 // fail-closed cases
 ok('ESLint failed to start -> FAIL', couldNotJudge(run({ spawnError: new Error('ENOENT') })))
-ok('ESLint exit 2 (config error) -> FAIL', couldNotJudge(run({ status: 2, stdout: '' })))
+ok('ESLint exit 2 (config error) -> FAIL', couldNotJudge(run({ status: 2, stdout: '' }), 'ESLint exited 2'))
 ok('ESLint killed (status null) -> FAIL', couldNotJudge(run({ status: null })))
 ok('output not JSON -> FAIL', couldNotJudge(run({ stdout: 'Oops! Something went wrong' })))
 ok('output JSON but not an array -> FAIL', couldNotJudge(run({ stdout: '{}' })))
 ok('empty result array (nothing linted) -> FAIL', couldNotJudge(run({ status: 0, stdout: '[]' })))
-ok('result entry without messages -> FAIL', couldNotJudge(run({ stdout: '[{}]' })))
-ok('result entry with null messages -> FAIL', couldNotJudge(run({ stdout: '[{"filePath":"x","messages":null}]' })))
-ok('null result entry -> FAIL', couldNotJudge(run({ stdout: '[null]' })))
+ok('result entry without messages -> FAIL', couldNotJudge(run({ stdout: '[{}]' }), 'without a messages array'))
+ok('result entry with null messages -> FAIL', couldNotJudge(run({ stdout: '[{"filePath":"x","messages":null}]' }), 'without a messages array'))
+ok('null result entry -> FAIL', couldNotJudge(run({ stdout: '[null]' }), 'without a messages array'))
 ok('fatal parse error -> FAIL', couldNotJudge(run({ stdout: out(msg(null, { fatal: true })) })))
 ok('rule-less diagnostic -> FAIL', couldNotJudge(run({ stdout: out(msg(null)) })))
-ok('missing baseline -> FAIL', couldNotJudge(run({ baselineText: null })))
+ok('missing baseline -> FAIL', couldNotJudge(run({ baselineText: null }), 'is missing'))
 ok('baseline not JSON -> FAIL', couldNotJudge(run({ baselineText: '{' })))
 ok('baseline an array -> FAIL', couldNotJudge(run({ baselineText: '[]' })))
 ok('baseline negative count -> FAIL', couldNotJudge(run({ baselineText: '{"x": -1}' })))

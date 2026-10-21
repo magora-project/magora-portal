@@ -59,8 +59,10 @@ try {
   let threw = false
   try { findTests(join(tmp, 'linked')) } catch { threw = true }
   ok('a symlinked test is refused, not skipped', threw)
+  // The message pins the guard: without it the uncaught throw also exits 1.
+  const cliLinked = spawnSync(process.execPath, [RUNNER, '--root', join(tmp, 'linked')], { encoding: 'utf8' })
   ok('CLI exits non-zero on a symlinked test',
-    spawnSync(process.execPath, [RUNNER, '--root', join(tmp, 'linked')], { stdio: 'ignore' }).status === 1)
+    cliLinked.status === 1 && cliLinked.stderr.includes('run-tests: FAIL (could not judge):'))
 
   // Run through a symlinked path: main() must still run (it once compared unresolved paths).
   symlinkSync(join(RUNNER, '..'), join(tmp, 'scripts-link'), 'junction')

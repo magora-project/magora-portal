@@ -28,11 +28,14 @@ try {
 
   write('none/supabase/functions/_shared/util.ts')
   ok('no index.ts -> empty list', findEntrypoints(join(tmp, 'none')).length === 0)
+  const zero = spawnSync(process.execPath, [CLI, '--root', join(tmp, 'none')], { encoding: 'utf8' })
   ok('CLI FAIL (fail closed) on zero functions',
-    spawnSync(process.execPath, [CLI, '--root', join(tmp, 'none')], { stdio: 'ignore' }).status === 1)
+    zero.status === 1 && zero.stderr.includes('FAIL (could not judge): no supabase/functions/*/index.ts found'))
   mkdirSync(join(tmp, 'nodir'))
+  // The message pins the guard: without it an uncaught ENOENT also exits 1.
+  const nodir = spawnSync(process.execPath, [CLI, '--root', join(tmp, 'nodir')], { encoding: 'utf8' })
   ok('CLI FAIL (fail closed) without supabase/functions',
-    spawnSync(process.execPath, [CLI, '--root', join(tmp, 'nodir')], { stdio: 'ignore' }).status === 1)
+    nodir.status === 1 && nodir.stderr.includes('check-deno: FAIL (could not judge):'))
   write('linked/supabase/functions/a-fn/index.ts')
   write('linked-target/b-fn/index.ts')
   symlinkSync(join(tmp, 'linked-target', 'b-fn'), join(tmp, 'linked/supabase/functions/b-fn'), 'junction')
