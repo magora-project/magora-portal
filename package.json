@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "lint:ratchet": "node scripts/ci/lint-ratchet.mjs",
     "check:migrations": "node scripts/ci/check-migrations.mjs",
+    "check:deno": "node scripts/ci/check-deno.mjs",
     "test": "node scripts/run-tests.mjs",
     "preview": "vite preview"
   },

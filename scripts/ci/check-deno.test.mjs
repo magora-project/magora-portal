@@ -1,0 +1,41 @@
+// Self-test for scripts/ci/check-deno.mjs: entry-point discovery and the zero-entry failure.
+// Never runs Deno (every CLI case here fails before Deno would start).
+// Run: node scripts/ci/check-deno.test.mjs
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { findEntrypoints } from './check-deno.mjs'
+
+let pass = 0, fail = 0
+const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
+
+const CLI = fileURLToPath(new URL('./check-deno.mjs', import.meta.url))
+const tmp = mkdtempSync(join(tmpdir(), 'check-deno-selftest-'))
+const write = (rel) => {
+  mkdirSync(join(tmp, rel, '..'), { recursive: true })
+  writeFileSync(join(tmp, rel), '')
+}
+try {
+  write('two/supabase/functions/b-fn/index.ts')
+  write('two/supabase/functions/a-fn/index.ts')
+  write('two/supabase/functions/_shared/util.ts')
+  write('two/supabase/functions/README.md')
+  ok('finds each function index.ts, sorted, skipping dirs without one',
+    JSON.stringify(findEntrypoints(join(tmp, 'two'))) ===
+      JSON.stringify(['supabase/functions/a-fn/index.ts', 'supabase/functions/b-fn/index.ts']))
+
+  write('none/supabase/functions/_shared/util.ts')
+  ok('no index.ts -> empty list', findEntrypoints(join(tmp, 'none')).length === 0)
+  ok('CLI FAIL (fail closed) on zero functions',
+    spawnSync(process.execPath, [CLI, '--root', join(tmp, 'none')], { stdio: 'ignore' }).status === 1)
+  mkdirSync(join(tmp, 'nodir'))
+  ok('CLI FAIL (fail closed) without supabase/functions',
+    spawnSync(process.execPath, [CLI, '--root', join(tmp, 'nodir')], { stdio: 'ignore' }).status === 1)
+} finally {
+  rmSync(tmp, { recursive: true, force: true })
+}
+
+console.log(`\n${pass} passed, ${fail} failed`)
+process.exit(fail ? 1 : 0)
