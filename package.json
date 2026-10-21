@@ -9,6 +9,7 @@
     "prebuild": "node scripts/vendor-build-doc.mjs",
     "build": "vite build",
     "lint": "eslint .",
+    "lint:ratchet": "node scripts/ci/lint-ratchet.mjs",
     "test": "node scripts/run-tests.mjs",
     "preview": "vite preview"
   },

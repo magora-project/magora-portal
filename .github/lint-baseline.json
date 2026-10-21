@@ -1,0 +1,6 @@
+{
+  "no-unused-vars": 1,
+  "react-hooks/set-state-in-effect": 3,
+  "react-hooks/static-components": 7,
+  "react-refresh/only-export-components": 2
+}
