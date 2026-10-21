@@ -1,0 +1,34 @@
+# Migrations that predate the rollback rule (repo harness spec §5.5). A control file (§2.1):
+# adding a name here exempts that migration from needing a rollback, so review any change.
+20260626_add_species_whitelist.sql
+20260627_node_follows.sql
+20260628_listen_phase1_mobile_detections.sql
+20260629_listen_phase2_queue_rpc.sql
+20260630_listen_phase4_public_view.sql
+20260701_listen_consent_published.sql
+20260702_listen_insight.sql
+20260703_listener_profiles.sql
+20260704_set_detection_insight.sql
+20260705_nodes_owner_auth_users.sql
+20260706_listener_follows.sql
+20260707_listen_sessions.sql
+20260708_node_insight_batch.sql
+20260709_expose_tz_offset.sql
+20260710_journal_follows.sql
+20260711_pulses.sql
+20260712_pulses_subject_key.sql
+20260713_pulse_narrative.sql
+20260714_species_ebird_taxonomy.sql
+20260715_ref_species_traits.sql
+20260716_species_guild_curated_only.sql
+20260717_node_status_events.sql
+20260718_pulse_narratives.sql
+20260719_nodes_elevation_unit.sql
+20260720_range_validity_gate.sql
+20260721_harden_record_node_status.sql
+20260722_range_gate_precision.sql
+20260723_node_reports.sql
+20260724_node_banner.sql
+20260725_scope_service_role_policies.sql
+20260726_drop_legacy_users_table.sql
+20260727_ingest_node_id_constraints.sql
