@@ -1,4 +1,3 @@
-/* global process */
 // Model for ecosystem-insight generation. Kept in one place (Task F) so the
 // high-volume insight path and any future low-volume report path can use
 // different tiers with a single edit. Haiku 4.5 for insights: the July 2026

@@ -1,4 +1,3 @@
-/* global process */
 // Report Share Cards v1 — per-report OG meta on the permalink. The app is a client-rendered Vite
 // PWA, so crawlers (Slack / iMessage / Twitter) read <head> without running JS and see nothing.
 // vercel.json rewrites /node/:id/report/:date → here (an INTERNAL rewrite: the browser URL stays

@@ -1,4 +1,3 @@
-/* global process */
 // Node Phenology Report v1.1 — batch scheduler. The moment Pulse's deferred batch half finally has
 // a scheduled reader.
 //

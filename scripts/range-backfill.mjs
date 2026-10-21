@@ -1,4 +1,3 @@
-/* global process, fetch */
 // Universal Range-Validity Gate — historical backfill / re-scan (Range-Gate Completion v1, Part B).
 //
 // The gate (migration 20260720) is enforced as a BEFORE-INSERT trigger, so it only classifies

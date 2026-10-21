@@ -1,4 +1,3 @@
-/* global process */
 // Node Offline Detection v1 — operator notification.
 //
 // IMPORTANT: node-offline is an OPERATOR MONITORING side-effect — the human dev/ops surface.

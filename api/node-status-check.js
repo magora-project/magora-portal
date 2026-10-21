@@ -1,4 +1,3 @@
-/* global process */
 // Node Offline Detection v1 — the detector (HTTP, cron-driven).
 //
 // Per node: derive the node's OWN expected heartbeat cadence from its recent aci_logs, compare

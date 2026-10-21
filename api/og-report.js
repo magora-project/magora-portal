@@ -1,4 +1,3 @@
-/* global process */
 // Report Share Cards v1 — the og:image renderer. An edge function that turns a node_reports row
 // into a ~1200×630 landscape social card (Satori / @vercel/og). Grounded ONLY in the report row
 // (payload + narrative): node/place, the node's own CLOSING OPEN-WONDERING as the hero line, and

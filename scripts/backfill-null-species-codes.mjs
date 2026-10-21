@@ -1,4 +1,3 @@
-/* global process, fetch */
 // Backfill eBird codes onto null-code `species` rows — so the range gate can JUDGE them instead
 // of failing open (Range-Gate Precision Fix v1, Flag #1). Complements migration 20260722 (which
 // made is_plausible fail open for null-code species): a null-code EXOTIC (Gentoo Penguin, Hawaii

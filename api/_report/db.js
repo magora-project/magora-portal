@@ -1,4 +1,3 @@
-/* global process */
 // Node Phenology Report v1 — database layer.
 //
 // Reads (the report cache lookup) go on the anon key — node_reports is public-read place data.

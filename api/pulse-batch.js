@@ -1,4 +1,3 @@
-/* global process */
 // Pulse Agent v1 — batch entry point (HTTP, cron-driven).
 //
 // For each node (or a single node_id if supplied), generate -> score -> store the daily

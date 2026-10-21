@@ -1,4 +1,3 @@
-/* global process */
 // Universal Range-Validity Gate v1 — allowlist builder (batch, monthly cron).
 //
 // Populates public.range_allowlist: for each ACTIVE location cell (derived from node

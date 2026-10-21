@@ -1,4 +1,3 @@
-/* global process */
 // Pulse Agent v1 — database layer (Supabase PostgREST).
 //
 // Reads go directly against PostgREST on the anon key; the only write is through the

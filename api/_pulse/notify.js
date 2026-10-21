@@ -1,4 +1,3 @@
-/* global process */
 // Pulse Agent v1 — operator notification.
 //
 // IMPORTANT: this is an OPERATOR MONITORING side-effect, never a publication in the

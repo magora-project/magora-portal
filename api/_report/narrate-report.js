@@ -1,4 +1,3 @@
-/* global process */
 // Node Phenology Report v1 — render a ReportPayload into longer-form, first-person node-voice
 // prose. Mirrors the Narrative Agent's invariants (pure function of the payload; the LLM RENDERS,
 // it is never the knowledge source) but adapts them to report LENGTH and STANCE:

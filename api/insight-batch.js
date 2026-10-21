@@ -1,4 +1,3 @@
-/* global process */
 // Task H: batch pre-generate node-detection insights at 50% off via the Anthropic
 // Message Batches API. Runs on a Vercel Cron schedule (see vercel.json). Each run:
 //   1. drains any ended batches we recognize (custom_id `det_<uuid>`) and writes the

@@ -1,4 +1,3 @@
-/* global process */
 // Node Offline Detection v1 — database layer (Supabase PostgREST).
 //
 // Deliberately self-contained (a tiny copy of the pgFetch/sbRpc pattern in _pulse/db.js)

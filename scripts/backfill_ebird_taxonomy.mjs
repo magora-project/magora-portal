@@ -1,4 +1,3 @@
-/* global process, fetch */
 // Backfill eBird taxonomy (ebird_code / family / order_name) onto the `species` table.
 //
 // Prereq for the EIA trait slice: gives ref_species_traits an `ebird_code` crosswalk key.
