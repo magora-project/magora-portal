@@ -9,6 +9,7 @@
     "prebuild": "node scripts/vendor-build-doc.mjs",
     "build": "vite build",
     "lint": "eslint .",
+    "test": "node scripts/run-tests.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
