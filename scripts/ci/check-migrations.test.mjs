@@ -1,7 +1,7 @@
 // Self-test for scripts/ci/check-migrations.mjs. Pure cases plus CLI runs on temp-dir trees.
 // Run: node scripts/ci/check-migrations.test.mjs
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,13 +24,14 @@ ok('grandfather list ignores comments, blanks and CRLF',
 
 const CLI = fileURLToPath(new URL('./check-migrations.mjs', import.meta.url))
 const tmp = mkdtempSync(join(tmpdir(), 'check-migrations-selftest-'))
-const tree = (name, files) => {
+const tree = (name, files, { cli = CLI, links = {} } = {}) => {
   const root = join(tmp, name)
   for (const [rel, body] of Object.entries(files)) {
     mkdirSync(join(root, rel, '..'), { recursive: true })
     writeFileSync(join(root, rel), body)
   }
-  return spawnSync(process.execPath, [CLI, '--root', root], { stdio: 'ignore' }).status
+  for (const [rel, target] of Object.entries(links)) symlinkSync(join(root, target), join(root, rel))
+  return spawnSync(process.execPath, [cli, '--root', root], { stdio: 'ignore' }).status
 }
 try {
   ok('CLI ok on a valid tree', tree('valid', {
@@ -50,6 +51,15 @@ try {
   ok('CLI FAIL (fail closed) without a migrations dir', tree('nodir', {
     'scripts/ci/migrations-grandfathered.txt': '',
   }) === 1)
+  ok('CLI FAIL on a symlinked migration (refused, not skipped)', tree('linked', {
+    'supabase/migrations/1_old.sql': '',
+    'scripts/ci/migrations-grandfathered.txt': '1_old.sql\n',
+    'elsewhere/2_new.sql': '',
+  }, { links: { 'supabase/migrations/2_new.sql': 'elsewhere/2_new.sql' } }) === 1)
+  symlinkSync(join(CLI, '..'), join(tmp, 'ci-link'), 'junction')
+  ok('CLI run through a symlinked path still judges', tree('unpaired-via-link', {
+    'supabase/migrations/1_old.sql': '',
+  }, { cli: join(tmp, 'ci-link', 'check-migrations.mjs') }) === 1)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }

@@ -2,7 +2,7 @@
 // cannot launch, and on finding zero tests. Fixtures live in a temp dir, never in the repo.
 // Run: node scripts/run-tests.test.mjs
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -53,6 +53,19 @@ try {
   ok('CLI exits non-zero on a failing test', cliBad.status === 1)
   const cliGood = spawnSync(process.execPath, [RUNNER, '--root', good], { stdio: 'ignore' })
   ok('CLI exits zero when all pass', cliGood.status === 0)
+
+  write('linked/a.test.mjs', 'process.exit(0)\n')
+  symlinkSync(join(tmp, 'bad', 'b.test.mjs'), join(tmp, 'linked', 'b.test.mjs'))
+  let threw = false
+  try { findTests(join(tmp, 'linked')) } catch { threw = true }
+  ok('a symlinked test is refused, not skipped', threw)
+  ok('CLI exits non-zero on a symlinked test',
+    spawnSync(process.execPath, [RUNNER, '--root', join(tmp, 'linked')], { stdio: 'ignore' }).status === 1)
+
+  // Run through a symlinked path: main() must still run (it once compared unresolved paths).
+  symlinkSync(join(RUNNER, '..'), join(tmp, 'scripts-link'), 'junction')
+  ok('CLI run through a symlinked path still judges',
+    spawnSync(process.execPath, [join(tmp, 'scripts-link', 'run-tests.mjs'), '--root', join(tmp, 'empty')], { stdio: 'ignore' }).status === 1)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }

@@ -4,9 +4,9 @@
 // Fails closed if the migrations directory or the grandfather list is missing, and on a stale list
 // entry, so the list cannot quietly drift from the directory.
 // Run: node scripts/ci/check-migrations.mjs [--root <dir>]
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 export const MIGRATIONS_DIR = 'supabase/migrations'
 export const ROLLBACKS_DIR = 'supabase/migrations/rollbacks'
@@ -32,7 +32,13 @@ export function checkMigrations({ forward, rollbacks, grandfathered }) {
   return problems
 }
 
-const sqlFiles = (dir) => readdirSync(dir, { withFileTypes: true }).filter((d) => d.isFile() && d.name.endsWith('.sql')).map((d) => d.name)
+// A symlinked migration would be skipped by isFile() and so escape the rollback rule: refuse it.
+function sqlFiles(dir) {
+  const entries = readdirSync(dir, { withFileTypes: true })
+  const link = entries.find((d) => d.isSymbolicLink())
+  if (link) throw new Error(`symlinks are not supported: ${join(dir, link.name)}`)
+  return entries.filter((d) => d.isFile() && d.name.endsWith('.sql')).map((d) => d.name)
+}
 
 export function readTree(root) {
   const forward = sqlFiles(join(root, MIGRATIONS_DIR))
@@ -59,4 +65,7 @@ function main(argv) {
   return 0
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(main(process.argv.slice(2)))
+// Compare real paths: Node resolves symlinks for import.meta.url but not for argv[1], so a plain
+// URL comparison silently skips main() when the script is run through a symlinked path.
+const invokedPath = (() => { try { return realpathSync(process.argv[1]) } catch { return process.argv[1] } })()
+if (invokedPath === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2)))

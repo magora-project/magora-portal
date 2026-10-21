@@ -2,7 +2,7 @@
 // Never runs Deno (every CLI case here fails before Deno would start).
 // Run: node scripts/ci/check-deno.test.mjs
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -33,6 +33,15 @@ try {
   mkdirSync(join(tmp, 'nodir'))
   ok('CLI FAIL (fail closed) without supabase/functions',
     spawnSync(process.execPath, [CLI, '--root', join(tmp, 'nodir')], { stdio: 'ignore' }).status === 1)
+  write('linked/supabase/functions/a-fn/index.ts')
+  write('linked-target/b-fn/index.ts')
+  symlinkSync(join(tmp, 'linked-target', 'b-fn'), join(tmp, 'linked/supabase/functions/b-fn'), 'junction')
+  let threw = false
+  try { findEntrypoints(join(tmp, 'linked')) } catch { threw = true }
+  ok('a symlinked function dir is refused, not skipped', threw)
+  symlinkSync(join(CLI, '..'), join(tmp, 'ci-link'), 'junction')
+  ok('CLI run through a symlinked path still judges',
+    spawnSync(process.execPath, [join(tmp, 'ci-link', 'check-deno.mjs'), '--root', join(tmp, 'none')], { stdio: 'ignore' }).status === 1)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }

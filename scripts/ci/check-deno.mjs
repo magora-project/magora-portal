@@ -6,14 +6,18 @@
 // excluded because the functions import `https://esm.sh/…` inline (out of scope, spec §9).
 // Run: node scripts/ci/check-deno.mjs [--root <dir>]   (needs Deno 2.9.5 on PATH)
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 export const FUNCTIONS_DIR = 'supabase/functions'
 
 export function findEntrypoints(root) {
-  return readdirSync(join(root, FUNCTIONS_DIR), { withFileTypes: true })
+  const entries = readdirSync(join(root, FUNCTIONS_DIR), { withFileTypes: true })
+  // A symlinked function directory would be skipped by isDirectory(): refuse it rather than omit it.
+  const link = entries.find((d) => d.isSymbolicLink())
+  if (link) throw new Error(`symlinks are not supported: ${FUNCTIONS_DIR}/${link.name}`)
+  return entries
     .filter((d) => d.isDirectory() && existsSync(join(root, FUNCTIONS_DIR, d.name, 'index.ts')))
     .map((d) => `${FUNCTIONS_DIR}/${d.name}/index.ts`)
     .sort()
@@ -46,4 +50,7 @@ function main(argv) {
   return 0
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(main(process.argv.slice(2)))
+// Compare real paths: Node resolves symlinks for import.meta.url but not for argv[1], so a plain
+// URL comparison silently skips main() when the script is run through a symlinked path.
+const invokedPath = (() => { try { return realpathSync(process.argv[1]) } catch { return process.argv[1] } })()
+if (invokedPath === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2)))

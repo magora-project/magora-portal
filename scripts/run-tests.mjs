@@ -3,9 +3,9 @@
 // any child fails to launch, or if it finds no tests at all, so it cannot pass vacuously.
 // Run: node scripts/run-tests.mjs [--root <dir>]
 import { spawnSync } from 'node:child_process'
-import { readdirSync } from 'node:fs'
+import { readdirSync, realpathSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 // `.claude` holds agent worktrees, which are whole extra checkouts of this repo.
 export const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.vercel', '.claude'])
@@ -14,6 +14,8 @@ export function findTests(root) {
   const found = []
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      // A symlink could hide a test (or a whole directory of them) from discovery: refuse it.
+      if (entry.isSymbolicLink()) throw new Error(`symlinks are not supported: ${relative(root, join(dir, entry.name))}`)
       if (entry.isDirectory()) {
         if (!SKIP_DIRS.has(entry.name)) walk(join(dir, entry.name))
       } else if (entry.isFile() && entry.name.endsWith('.test.mjs')) {
@@ -40,7 +42,11 @@ export function runTests(files, { root, nodePath = process.execPath, stdio = 'in
 function main(argv) {
   const i = argv.indexOf('--root')
   const root = resolve(i >= 0 ? argv[i + 1] : '.')
-  const files = findTests(root)
+  let files
+  try { files = findTests(root) } catch (e) {
+    console.error(`run-tests: FAIL (could not judge): ${e.message}`)
+    return 1
+  }
   const { ok, failures } = runTests(files, { root })
   if (ok) {
     console.log(`\nrun-tests: ${files.length} test file(s) passed`)
@@ -50,4 +56,7 @@ function main(argv) {
   return 1
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(main(process.argv.slice(2)))
+// Compare real paths: Node resolves symlinks for import.meta.url but not for argv[1], so a plain
+// URL comparison silently skips main() when the script is run through a symlinked path.
+const invokedPath = (() => { try { return realpathSync(process.argv[1]) } catch { return process.argv[1] } })()
+if (invokedPath === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2)))

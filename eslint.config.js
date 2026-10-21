@@ -22,9 +22,12 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
-  // Node code: Vercel functions under api/, scripts, and every .mjs (tests and tooling).
+  // Node code: Vercel functions under api/, scripts, and every .mjs outside the browser app (tests
+  // and tooling). `nodeBuiltin`, not `node`: the repo is ESM ("type": "module"), so CommonJS names
+  // such as `require` and `__dirname` are undefined at runtime and must stay lint errors.
   {
     files: ['api/**/*.{js,mjs}', 'scripts/**/*.{js,mjs}', '**/*.mjs'],
-    languageOptions: { globals: globals.node },
+    ignores: ['src/**'],
+    languageOptions: { globals: globals.nodeBuiltin },
   },
 ])

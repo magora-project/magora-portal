@@ -5,10 +5,10 @@
 // Run: node scripts/ci/lint-ratchet.mjs            (judge against the baseline)
 //      node scripts/ci/lint-ratchet.mjs --counts   (print current counts as baseline JSON)
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 export const BASELINE_PATH = '.github/lint-baseline.json'
 
@@ -26,6 +26,8 @@ export function parseBaseline(text) {
 
 export function countByRule(results) {
   if (!Array.isArray(results)) throw new Error('ESLint output is not a JSON array')
+  // The repo always has lintable files, so an empty result means ESLint linted nothing.
+  if (results.length === 0) throw new Error('ESLint linted no files')
   const counts = {}
   const unattributed = []
   for (const file of results) {
@@ -103,4 +105,7 @@ function main(argv) {
   return verdict.ok ? 0 : 1
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(main(process.argv.slice(2)))
+// Compare real paths: Node resolves symlinks for import.meta.url but not for argv[1], so a plain
+// URL comparison silently skips main() when the script is run through a symlinked path.
+const invokedPath = (() => { try { return realpathSync(process.argv[1]) } catch { return process.argv[1] } })()
+if (invokedPath === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2)))
