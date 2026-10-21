@@ -42,6 +42,14 @@ try {
   symlinkSync(join(CLI, '..'), join(tmp, 'ci-link'), 'junction')
   ok('CLI run through a symlinked path still judges',
     spawnSync(process.execPath, [join(tmp, 'ci-link', 'check-deno.mjs'), '--root', join(tmp, 'none')], { stdio: 'ignore' }).status === 1)
+  ok('CLI run through a symlinked path with --preserve-symlinks-main still judges',
+    spawnSync(process.execPath, ['--preserve-symlinks-main', join(tmp, 'ci-link', 'check-deno.mjs'), '--root', join(tmp, 'none')], { stdio: 'ignore' }).status === 1)
+  write('dangling/supabase/functions/a-fn/index.ts')
+  mkdirSync(join(tmp, 'dangling/supabase/functions/b-fn'))
+  symlinkSync(join(tmp, 'no-such-file.ts'), join(tmp, 'dangling/supabase/functions/b-fn/index.ts'))
+  let threwDangling = false
+  try { findEntrypoints(join(tmp, 'dangling')) } catch { threwDangling = true }
+  ok('a dangling symlinked index.ts is refused, not dropped', threwDangling)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }

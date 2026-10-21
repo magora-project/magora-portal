@@ -56,6 +56,8 @@ try {
   symlinkSync(join(fileURLToPath(import.meta.url), '..'), join(tmp, 'ci-link'), 'junction')
   ok('CLI run through a symlinked path still judges',
     spawnSync(process.execPath, [join(tmp, 'ci-link', 'lint-ratchet.mjs')], { cwd: tmp, stdio: 'ignore' }).status === 1)
+  ok('CLI run through a symlinked path with --preserve-symlinks-main still judges',
+    spawnSync(process.execPath, ['--preserve-symlinks-main', join(tmp, 'ci-link', 'lint-ratchet.mjs')], { cwd: tmp, stdio: 'ignore' }).status === 1)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }

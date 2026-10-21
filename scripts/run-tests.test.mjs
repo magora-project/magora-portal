@@ -66,6 +66,8 @@ try {
   symlinkSync(join(RUNNER, '..'), join(tmp, 'scripts-link'), 'junction')
   ok('CLI run through a symlinked path still judges',
     spawnSync(process.execPath, [join(tmp, 'scripts-link', 'run-tests.mjs'), '--root', join(tmp, 'empty')], { stdio: 'ignore' }).status === 1)
+  ok('CLI run through a symlinked path with --preserve-symlinks-main still judges',
+    spawnSync(process.execPath, ['--preserve-symlinks-main', join(tmp, 'scripts-link', 'run-tests.mjs'), '--root', join(tmp, 'empty')], { stdio: 'ignore' }).status === 1)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }

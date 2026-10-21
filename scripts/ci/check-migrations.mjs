@@ -56,6 +56,10 @@ function main(argv) {
     console.error(`check-migrations: FAIL (could not judge): ${e.message}`)
     return 1
   }
+  if (tree.forward.length === 0) {
+    console.error(`check-migrations: FAIL (could not judge): no ${MIGRATIONS_DIR}/*.sql found`)
+    return 1
+  }
   const problems = checkMigrations(tree)
   if (problems.length) {
     console.error(`check-migrations: FAIL\n  ${problems.join('\n  ')}`)
@@ -65,7 +69,9 @@ function main(argv) {
   return 0
 }
 
-// Compare real paths: Node resolves symlinks for import.meta.url but not for argv[1], so a plain
-// URL comparison silently skips main() when the script is run through a symlinked path.
-const invokedPath = (() => { try { return realpathSync(process.argv[1]) } catch { return process.argv[1] } })()
-if (invokedPath === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2)))
+// Compare real paths on both sides: Node resolves symlinks in import.meta.url (unless
+// --preserve-symlinks-main) and never in argv[1], and either mismatch would skip main() and exit 0
+// unjudged. A realpath error is left to throw, which exits non-zero.
+const isMain = process.argv[1] !== undefined &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+if (isMain) process.exit(main(process.argv.slice(2)))

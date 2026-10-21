@@ -24,14 +24,14 @@ ok('grandfather list ignores comments, blanks and CRLF',
 
 const CLI = fileURLToPath(new URL('./check-migrations.mjs', import.meta.url))
 const tmp = mkdtempSync(join(tmpdir(), 'check-migrations-selftest-'))
-const tree = (name, files, { cli = CLI, links = {} } = {}) => {
+const tree = (name, files, { cli = CLI, links = {}, nodeArgs = [] } = {}) => {
   const root = join(tmp, name)
   for (const [rel, body] of Object.entries(files)) {
     mkdirSync(join(root, rel, '..'), { recursive: true })
     writeFileSync(join(root, rel), body)
   }
   for (const [rel, target] of Object.entries(links)) symlinkSync(join(root, target), join(root, rel))
-  return spawnSync(process.execPath, [cli, '--root', root], { stdio: 'ignore' }).status
+  return spawnSync(process.execPath, [...nodeArgs, cli, '--root', root], { stdio: 'ignore' }).status
 }
 try {
   ok('CLI ok on a valid tree', tree('valid', {
@@ -60,6 +60,13 @@ try {
   ok('CLI run through a symlinked path still judges', tree('unpaired-via-link', {
     'supabase/migrations/1_old.sql': '',
   }, { cli: join(tmp, 'ci-link', 'check-migrations.mjs') }) === 1)
+  ok('CLI run through a symlinked path with --preserve-symlinks-main still judges', tree('unpaired-via-link-preserve', {
+    'supabase/migrations/1_old.sql': '',
+  }, { cli: join(tmp, 'ci-link', 'check-migrations.mjs'), nodeArgs: ['--preserve-symlinks-main'] }) === 1)
+  ok('CLI FAIL (fail closed) on zero migrations', tree('empty-tree', {
+    'supabase/migrations/rollbacks/.keep': '',
+    'scripts/ci/migrations-grandfathered.txt': '',
+  }) === 1)
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }
