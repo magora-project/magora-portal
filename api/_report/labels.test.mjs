@@ -75,6 +75,5 @@ ok('prompt still ends-on-wondering rule intact', /OPEN WONDERING/.test(prompt.se
 const quietHuman = { ...payload, human_activity: { count: 0, distinct_types: 0, types: [] } }
 ok('no human activity -> no human-presence line', !/human presence/.test(groundedReportFacts(quietHuman).join('\n')))
 
-ok('harness proof', false)
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
