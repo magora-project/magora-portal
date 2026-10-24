@@ -1,0 +1,41 @@
+# Advisory (repo harness spec §5.4): governed docs may not grow. The script and doc-size.conf are
+# read from BASE, never from the PR. On the PR that first adds them, BASE has neither, so the job
+# exits 2 ("base has no ratchet"); that is expected once (bootstrap, §6 step 5).
+name: doc-size-ratchet
+
+on:
+  pull_request:
+    # `edited` covers a base retarget, which changes what is judged.
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: doc-size-ratchet-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doc-size-ratchet:
+    name: doc-size-ratchet
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # BASE is HEAD^1 of the merge commit.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Judge governed doc sizes against BASE
+        shell: bash
+        run: |
+          fail() { echo "doc-size-ratchet: $*"; exit 2; }
+          HEAD_SHA=$(git rev-parse --verify 'HEAD^{commit}') || fail "cannot resolve HEAD"
+          BASE_SHA=$(git rev-parse --verify 'HEAD^1^{commit}') || fail "HEAD^1 is missing; the checkout needs fetch-depth: 2"
+          for p in scripts/doc-size-ratchet.py doc-size.conf; do
+            listed=$(git ls-tree --name-only "$BASE_SHA" -- "$p") || fail "git ls-tree failed at BASE for $p"
+            [ -n "$listed" ] || fail "base has no ratchet ($p is absent at BASE $BASE_SHA)"
+          done
+          tmp=$(mktemp -d "${RUNNER_TEMP:-/tmp}/doc-size-ratchet.XXXXXX") || fail "mktemp failed"
+          git show "${BASE_SHA}:scripts/doc-size-ratchet.py" > "$tmp/ratchet.py" || fail "cannot read the BASE copy of the script"
+          python3 "$tmp/ratchet.py" --repo . --base "$BASE_SHA" --head "$HEAD_SHA"
