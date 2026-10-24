@@ -1,0 +1,36 @@
+# label-gate (repo harness spec §5.3): exactly one depth label. The job's pass/fail IS the check;
+# it posts no commit status, because a fork PR's read-only token cannot write one.
+# Labels are read live from the API when the job runs (not from the event payload), so removing a
+# label re-evaluates. Concurrency is keyed on the head SHA: a run for an older head reports on that
+# older SHA and can never touch the current head's result.
+name: label-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: label-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  label-gate:
+    name: label-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/ci/label-gate.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
