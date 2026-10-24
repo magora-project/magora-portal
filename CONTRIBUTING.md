@@ -1,6 +1,6 @@
 # Contributing to magora-portal
 
-Licensing and the DCO/CLA question are **pending** (spec §8.1). Until they are settled, we are not
+Licensing and the DCO/CLA question are **pending** (`docs/superpowers/specs/2026-10-15-repo-harness-design.md` §8.1). Until they are settled, we are not
 inviting outside contributions.
 
 ## Workflow
@@ -29,8 +29,8 @@ macOS and Windows (PowerShell or cmd) use the same commands; every check is a No
 
 ## If label-gate shows "cancelled"
 
-The latest label-gate run on your head must finish. If it was cancelled, re-run the job from the
-PR's Checks tab, or ask a maintainer to remove and re-add the depth label.
+The latest label-gate run on your head must finish. If it was cancelled, ask a maintainer to re-run the job from the
+PR's Checks tab, or to remove and re-add the depth label.
 
 ## Agents
 
