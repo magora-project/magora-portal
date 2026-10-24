@@ -60,7 +60,8 @@ reported success, not that the original command ran. The controls for that:
 
 - **Fork and Dependabot PRs:** the maintainer who merges must first read any change to a *control
   file* — `.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`,
-  the migration grandfather list, `eslint.config.js`, `AGENTS.md`. The PR template
+  the migration grandfather list, `eslint.config.js`, `AGENTS.md`, `package.json`,
+  `scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`. The PR template
   asks the author to declare such changes.
 - **A maintainer's own PRs:** trusted (D-7). Nothing stops a maintainer weakening a check in their
   own PR; that is accepted with two maintainers. A control-file change should still be called out
@@ -451,3 +452,4 @@ pinning the Deno `esm.sh` import and lifting the `no-import-prefix` exclusion (w
 | 6 | Codex CLI (`codex exec -s read-only`, 42,121 tokens) on the rev 6→7 diff + full spec; reproduced the lint counts and both `deno check` passes; could not execute the CLI layout check (sandbox EPERM on `~/.supabase/telemetry.json`) | REWORK, 2 findings (1 P2, 1 P3) | Both accepted: removal condition for the `no-import-prefix` exclusion corrected (pinning alone does not lift it); D-5's finding count corrected. Grandfather-list move: no new hole. |
 | 7 | Codex CLI (`-s read-only`, 28,136 tokens), fix-verification on round 6 | PASS; both findings closed, no new inconsistency | — |
 | — | David, 2026-10-15 | Decisions | Post-arm proof: middle option (D-8). No required approval; each maintainer merges their own PRs (D-7) — supersedes the handoff's other-maintainer approval; CODEOWNERS and the bypass decision dropped as a result. Fork-preview rule (§2.2) kept. |
+| 8 | Opus subagent (final whole-branch review of PR B) + Codex CLI | With fixes | Control-file list extended with `package.json`, `scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf` (a merged weakening of these affects every later PR; `scripts/review/**` runs with `GEMINI_API_KEY`); AGENTS.md states the Dependabot `standard` exception. |

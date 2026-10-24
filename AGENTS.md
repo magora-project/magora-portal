@@ -29,10 +29,13 @@ Instructions for every agent and contributor working in this repo (Claude Code r
 
 If Codex wrote the change, route its review to an Anthropic model instead. An empty reviewer reply is an unrun review, not a pass. This review layer is discipline; the required CI checks are the control.
 
+Dependabot PRs arrive labelled `standard` (spec §5.2), including GitHub Actions bumps that edit `.github/**`; for those, the merging maintainer's control-file read (below) replaces the depth rule.
+
 ## Control files
 
 `.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`,
-`scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`.
+`scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`,
+`scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`.
 A PR can weaken a check by editing these. Say so in the PR description when you change one. On fork
 and Dependabot PRs, the merging maintainer reads every control-file change before merging.
 

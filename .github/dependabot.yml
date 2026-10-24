@@ -13,7 +13,7 @@ updates:
     open-pull-requests-limit: 5
     groups:
       patch-and-minor:
-        # ESLint and its plugins are excluded: a minor bump can ship new rules that add findings in
+        # ESLint, its plugins and `globals` are excluded: a minor bump can ship new rules that add findings in
         # untouched files, which the lint ratchet then (correctly) fails. Alone, that PR is
         # attributable; inside a group it would block every other bump.
         patterns:
@@ -22,6 +22,7 @@ updates:
           - "eslint"
           - "eslint-plugin-*"
           - "@eslint/*"
+          - "globals"
         update-types:
           - "patch"
           - "minor"

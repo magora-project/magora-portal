@@ -20,6 +20,6 @@
 
 ## Control files
 
-This PR changes control files (`.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`, `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`): **yes / no**
+This PR changes control files (`.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`, `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`, `scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`): **yes / no**
 
 <!-- If yes, say which and why. The merging maintainer reads every control-file change on fork and Dependabot PRs. -->
