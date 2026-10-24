@@ -27,14 +27,14 @@ export async function fetchLabels({ repo, pr, token, fetchImpl = fetch }) {
   }
 }
 
-async function main() {
-  const { GITHUB_TOKEN: token, GITHUB_REPOSITORY: repo, PR_NUMBER: pr } = process.env
+export async function main({ env = process.env, fetchImpl } = {}) {
+  const { GITHUB_TOKEN: token, GITHUB_REPOSITORY: repo, PR_NUMBER: pr } = env
   if (!token || !repo || !pr) {
     console.error('label-gate: FAIL (could not judge): GITHUB_TOKEN, GITHUB_REPOSITORY and PR_NUMBER are required')
     return 1
   }
   let names
-  try { names = await fetchLabels({ repo, pr, token }) } catch (e) {
+  try { names = await fetchLabels({ repo, pr, token, ...(fetchImpl ? { fetchImpl } : {}) }) } catch (e) {
     console.error(`label-gate: FAIL (could not judge): ${e.message}`)
     return 1
   }
