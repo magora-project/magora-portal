@@ -2048,3 +2048,4 @@ Expected: exactly the eight contexts, each with the Actions app id; `strict: tru
 - [ ] **Step 2: Tell the Magora Orchestrator session** the depth-label convention for the Software Roadmap (spec §6 step 10).
 
 - [ ] **Step 3: Record completion.** Check spec §1's four success criteria against the records from Tasks 16–20 and write the outcome into the session handoff.
+<!-- proof PR marker -->
