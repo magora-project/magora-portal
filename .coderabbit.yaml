@@ -1,0 +1,44 @@
+# CodeRabbit configuration (repo harness spec §5.3): advisory reviewer, never a required check.
+# Adapted from the fleet baseline. CI runs ESLint (the lint ratchet), so CodeRabbit's eslint tool
+# is disabled to avoid duplicate findings.
+reviews:
+  profile: chill
+  poem: false
+  high_level_summary: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+  path_filters:
+    - "!**/package-lock.json"
+    - "!**/dist/**"
+    - "!src/generated/**"
+  path_instructions:
+    - path: "**/*.{js,jsx,mjs}"
+      instructions: >-
+        Prioritize correctness, data integrity, security, and incorrect
+        assumptions about existing code. Treat style, formatting, and naming as
+        low priority — raise them only when they materially affect correctness.
+    - path: "**/*.test.mjs"
+      instructions: >-
+        Focus on missing edge cases, incorrect assertions, and untested error
+        paths. Do NOT flag test naming or structure preferences.
+    - path: "supabase/migrations/**"
+      instructions: >-
+        Flag destructive operations and applied-state-stability risks only. Do
+        NOT suggest renaming or reordering migrations that may already be applied.
+        Every new migration needs a paired rollbacks/<stem>.rollback.sql.
+    - path: "**/*.md"
+      instructions: >-
+        Flag only claims that are factually wrong about this repo, or internally
+        contradictory. Do not flag typography or style.
+  tools:
+    markdownlint:
+      enabled: false
+    eslint:
+      enabled: false
+tone_instructions: >-
+  Be concise and high-signal. Prioritize correctness, security, and data
+  integrity over style. Avoid nitpicks and subjective preferences.
