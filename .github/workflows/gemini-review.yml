@@ -1,9 +1,9 @@
 # Gemini second-vendor review on same-repo PRs labelled `subtle-correctness`.
 #
-# It posts a COMMENT and NO STATUS, deliberately. `coderabbit-review` is the
-# cautionary case sitting in this same repo: a required-looking check that
-# fail-opens, and whose green routinely means "not objecting" rather than
-# "reviewed". A new reviewer earns a status after it has been watched, never on
+# It posts a COMMENT and NO STATUS, deliberately. In method-project (where this
+# workflow originated), `coderabbit-review` was the cautionary case: a
+# required-looking check that fail-opens, and whose green routinely means "not
+# objecting" rather than "reviewed". A new reviewer earns a status after it has been watched, never on
 # the day it ships. Until then this informs a human and blocks nothing.
 #
 # FOUR DECISIONS, each of which a naive copy of Google's example gets wrong here
@@ -12,17 +12,16 @@
 #    in the BASE repo's context against untrusted PR code, which is the classic
 #    secret-exfiltration shape. With `pull_request` a fork PR simply receives no
 #    secret, so this fails CLOSED. The `if:` below makes that explicit rather
-#    than leaving it to a confusing empty-key failure, mirroring how
-#    `ci.yml` conditions NODE_AUTH_TOKEN on the same predicate.
+#    than leaving it to a confusing empty-key failure.
 #
 # 3. `synchronize` is included, so the review describes the FINAL head. A review
-#    is a property of a SHA: this repo has a recorded case of two PRs merging
+#    is a property of a SHA: method-project has a recorded case of two PRs merging
 #    with green reviewer checks that described commits the branches had already
 #    moved past. `concurrency` below cancels a superseded run so the extra
 #    trigger costs one job per head, not one per push.
 #
 # 4. A FAILED REVIEW IS LOUD. The job fails and comments saying so. The sharpest
-#    friction of 2026-09-20 was the Codex App declining SILENTLY on two PRs --
+#    friction of 2026-09-20 in method-project was the Codex App declining SILENTLY on two PRs --
 #    no "rate limited", no "already reviewed", just an absent submission, which
 #    is indistinguishable by inspection from one that has not run yet. An absent
 #    review must never be mistakable for a clean one.
@@ -33,19 +32,19 @@
 #    by a YAML parse, `bash -n`, or a dry-run of the comment builder, because all
 #    three exercise the happy path.
 #
-# 5. THE REVIEWER RUNS FROM THE TRUSTED BASE, NEVER FROM THE PR (#2747 H1). A
+# 5. THE REVIEWER RUNS FROM THE TRUSTED BASE, NEVER FROM THE PR (method-project#2747 H1). A
 #    `pull_request` workflow checks out the PR's merge ref, so the PR's OWN copy
 #    of `scripts/review/gemini_review.py` used to run with `GEMINI_API_KEY` in its
 #    environment -- a same-repo branch could rewrite the script to exfiltrate the
 #    key, and the checkout's persisted token besides. The script and the
 #    `AGENTS.md` it reads as review rules now come from `base.sha`, a commit on
-#    the protected base branch, mirroring `tier-classifier.yml`. The PR tree is
+#    the protected base branch. The PR tree is
 #    only ever DIFFED, never executed. `persist-credentials: false` on both
 #    checkouts keeps the job token out of `.git/config`. RESIDUAL, NOT MITIGATED
 #    BY REVIEW: this YAML runs from the PR ref on open, before any review, so a
-#    PR editing these steps can read the key. Bounded by push access; #2834.
+#    PR editing these steps can read the key. Bounded by push access; method-project#2834.
 #
-# COST: the repo's 2026-08-16 Actions audit cut two sweeps because GitHub bills
+# COST: method-project's 2026-08-16 Actions audit cut two sweeps because GitHub bills
 # every job rounded UP to a whole minute. This adds one job per PR head, and the
 # `concurrency` cancel is what keeps a rapid push sequence from paying per push.
 name: Gemini review
@@ -63,15 +62,17 @@ concurrency:
   # Per PR, not per repo: two PRs must review in parallel. Cancel-in-progress
   # drops a run whose head has already been superseded -- its verdict would
   # describe a SHA nobody will merge.
-  group: gemini-review-${{ github.event.pull_request.number }}
+  # A `labeled` event for any label other than `subtle-correctness` gets a unique
+  # group (suffix `-noop-<run_id>`), so its skipped run cannot cancel a review
+  # already in flight for the same PR.
+  group: gemini-review-${{ github.event.pull_request.number }}${{ (github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') && format('-noop-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
   gemini-review:
     name: gemini-review
     runs-on: ubuntu-latest
-    # Draft PRs are the working hold in this repo (`gh pr ready --undo`), so a
-    # draft is parked by intent; `ready_for_review` above is what fires when it
+    # A draft PR is parked by intent; `ready_for_review` above is what fires when it
     # is unparked. The fork predicate is decision 1: a fork PR has no secret, so
     # it is skipped explicitly rather than failing on an empty key.
     if: >-
@@ -113,7 +114,7 @@ jobs:
           # gained since the branch was cut. Scoped by COMMIT RANGE and never by
           # path -- a path filter hides a file the change depends on and yields a
           # confident finding about wiring that is present all along (measured
-          # 2026-09-20, recorded in docs/runbooks/repo-facts.md).
+          # in method-project, 2026-09-20).
           git diff "$BASE_SHA...$HEAD_SHA" > /tmp/review.diff
           echo "bytes=$(wc -c < /tmp/review.diff)" >> "$GITHUB_OUTPUT"
 
@@ -138,14 +139,13 @@ jobs:
           # the job before it can say so: "could not review" and "found nothing"
           # must not become the same signal.
           #
-          # Found by this workflow's own SECOND run (#2682). Its FIRST run's
+          # Found by this workflow's own SECOND run (method-project#2682). Its FIRST run's
           # finding about the post step was a FALSE POSITIVE for the same reason
           # -- it assumed `-e` was absent, when the runner supplies it.
           rc=0
           # Decision 5: the TRUSTED copy, and its rules too -- a PR editing
           # `AGENTS.md` must not also rewrite the rules it is reviewed against.
-          # Fail CLOSED if the base lacks the script (as `tier-classifier.yml`
-          # does): never fall back to the PR's own copy, which is the vector.
+          # Fail CLOSED if the base lacks the script: never fall back to the PR's own copy, which is the vector.
           if [ ! -f trusted/scripts/review/gemini_review.py ] || [ ! -f trusted/AGENTS.md ]; then
             echo "trusted base ${{ github.event.pull_request.base.sha }} lacks scripts/review/gemini_review.py or AGENTS.md; refusing to run the PR's own copy" > /tmp/review.err
             rc=1
@@ -170,11 +170,11 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -uo pipefail
-          # python3 + curl rather than actions/github-script. This repo has never
-          # used that action, so there is no vetted pin here to copy, and an
+          # python3 + curl rather than actions/github-script. method-project never
+          # used that action, so there was no vetted pin to copy, and an
           # unverified digest is worse than none: the run fails "unable to
           # resolve action" and reads as a config error. python3 and curl are
-          # already how this repo's other workflow logic talks to the API.
+          # already how method-project's other workflow logic talked to the API.
           #
           # 🔴 `-I` IS LOAD-BEARING. This step's working directory is the PR's
           # merge checkout and GH_TOKEN is in its env. `python3 -` puts '' (the
@@ -226,7 +226,7 @@ jobs:
           # the job log so the findings survive a rejected POST instead of dying
           # with it. Keep both; neither is what `-e` gives you for free.
           #
-          # ⚠️ THIS COMMENT SAID THE OPPOSITE UNTIL 5552e02's FOLLOW-UP -- that
+          # ⚠️ THIS COMMENT SAID THE OPPOSITE UNTIL A FOLLOW-UP COMMIT IN method-project -- that
           # the step ran WITHOUT `-e` and an unchecked curl failure would go
           # green. That is FALSE, and a reader who believed it would add error
           # handling the default shell already provides, or worse, trust the
