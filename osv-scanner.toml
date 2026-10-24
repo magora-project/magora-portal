@@ -1,0 +1,8 @@
+# osv-scanner config (repo harness spec §5.2). Each suppression MUST carry a one-line reason and an
+# ignoreUntil so it expires. Fixable direct-dependency advisories are bumped via Dependabot, never
+# suppressed. No suppressions yet.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-31
+# reason = "transitive via <parent>; not reachable in our runtime / fix tracked in <PR>"

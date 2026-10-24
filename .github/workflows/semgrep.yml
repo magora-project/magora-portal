@@ -1,0 +1,24 @@
+# Advisory SAST (repo harness spec §5.2); not a required check for G2.
+# Adapted from method-project (cf31b1bd): `--config auto` because there is no SEMGREP_APP_TOKEN
+# (and `semgrep ci` refuses --config while logged in); `--no-suppress-errors` so an analysis error
+# fails the job instead of passing green having scanned nothing; the image pinned by digest.
+# Checkout keeps its default credentials: logged-out `semgrep ci` fetches its own baseline commit.
+name: semgrep
+
+on:
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: semgrep/ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      # semgrep/semgrep:1.154.0
+      image: semgrep/semgrep@sha256:9fb6f44dc162b1e0aada85f072a95141844c61e3bfcedf40b8a46fecf208e986
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: semgrep ci --config auto --no-suppress-errors

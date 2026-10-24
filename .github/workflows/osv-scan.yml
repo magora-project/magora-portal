@@ -1,0 +1,78 @@
+# Advisory dependency scan (repo harness spec §5.2); not a required check for G2.
+# Adapted from method-project (cf31b1bd): adds pull_request, keeps the weekly schedule (which runs
+# on main, executes no PR code and uses no secret), drops the issue-filing step (public repo).
+# osv-scanner exit 0 = clean, 1 = findings (advisory); anything else fails the job.
+name: osv-sca
+
+on:
+  pull_request: {}
+  schedule:
+    - cron: "0 13 * * 1"  # Mondays 13:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: osv-sca-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  sca:
+    name: osv-sca
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Pinned by digest (captured 2026-06-30 in method-project). Re-pin deliberately.
+      OSV_IMAGE: "ghcr.io/google/osv-scanner:latest@sha256:5116601dedc01c1c580eb92371883ec052fc4c13c3fbc109d621a63ac416d475"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run osv-scanner (json)
+        id: scan
+        run: |
+          set -uo pipefail
+          mkdir -p "$PWD/osv-out"
+          test -f osv-scanner.toml || { echo "::error::osv-scanner.toml missing — refusing to scan without per-repo config"; exit 1; }
+          set +e
+          docker run --rm -v "$PWD:/src:ro" "$OSV_IMAGE" \
+            scan source --recursive --config=/src/osv-scanner.toml \
+            --format json /src \
+            > "$PWD/osv-out/osv.json" 2> "$PWD/osv-out/osv.log"
+          osv_exit=$?
+          set -e
+          echo "osv_exit=$osv_exit" >> "$GITHUB_OUTPUT"
+      - name: Coverage assertion + step summary
+        if: ${{ always() }}
+        env:
+          OSV_EXIT: ${{ steps.scan.outputs.osv_exit }}
+        run: |
+          set -uo pipefail
+          json="$PWD/osv-out/osv.json"
+          log="$PWD/osv-out/osv.log"
+          # `grep -c` prints 0 AND exits 1 on no match; `|| true` keeps a single "0".
+          scanned="$(grep -ciE 'scanned .*file' "$log" 2>/dev/null || true)"; scanned="${scanned:-0}"
+          advisories="$(python3 -c "import json;d=json.load(open('$json'));print(sum(len(p.get('groups',[])) for r in d.get('results',[]) for p in r.get('packages',[])))" 2>/dev/null || echo 0)"
+          {
+            echo "### osv-sca"
+            echo ""
+            echo "| metric | value |"
+            echo "|---|---|"
+            echo "| lockfiles scanned | $scanned |"
+            echo "| advisories (groups) | $advisories |"
+            echo "| osv exit code | $OSV_EXIT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          case "$OSV_EXIT" in
+            0|1) ;;
+            *) echo "::error::osv-scanner exited '$OSV_EXIT'"; exit 1 ;;
+          esac
+          if [ "$scanned" -lt 1 ]; then
+            echo "::error::coverage collapse — 0 lockfiles scanned"; exit 1
+          fi
+      - name: Upload report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: osv-sca-report
+          path: osv-out/
+          retention-days: 30

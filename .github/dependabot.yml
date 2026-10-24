@@ -1,0 +1,52 @@
+# Dependabot (repo harness spec §5.2). Every PR arrives labelled `standard`, so label-gate passes
+# with exactly one depth label. Cooldown: a newly published version waits 7 days (security updates
+# are exempt and still arrive immediately).
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    cooldown:
+      default-days: 7
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    open-pull-requests-limit: 5
+    groups:
+      patch-and-minor:
+        # ESLint and its plugins are excluded: a minor bump can ship new rules that add findings in
+        # untouched files, which the lint ratchet then (correctly) fails. Alone, that PR is
+        # attributable; inside a group it would block every other bump.
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "eslint"
+          - "eslint-plugin-*"
+          - "@eslint/*"
+        update-types:
+          - "patch"
+          - "minor"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    labels:
+      - "standard"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    cooldown:
+      default-days: 7
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+          - "minor"
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - "standard"
