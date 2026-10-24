@@ -103,3 +103,4 @@ Deno.serve(async (req) => {
   // --- return credentials to wizard ---
   return json({ node_id: userId, email, password })
 })
+export const harnessProof: number = "not a number"
