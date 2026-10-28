@@ -1,7 +1,7 @@
 # magora-portal staging, backups and secrets — design (Spec 2)
 
 - **Date:** 2026-10-28
-- **Status:** draft rev 2 (Codex round 1 applied, §10); not yet approved
+- **Status:** draft rev 3 (Codex rounds 1–2 applied, §10); not yet approved
 - **Plan task:** E1 of the Magora Consolidated Action Plan (the staging half of G2 that Spec 1 deferred)
 - **Predecessor:** `docs/superpowers/specs/2026-10-15-repo-harness-design.md` (Spec 1, done 2026-10-28). Its §9 lists this spec's scope.
 - **Successor:** Spec 3, regression suite (§9). Not designed here.
@@ -21,19 +21,24 @@ restore from.
 1. Production Supabase is on Pro with daily backups, and one restore (database plus a sample of
    Storage objects from R2) has been rehearsed into a scratch project (not production) and read back.
 2. Vercel Preview and local `vite dev` reach the staging project only. Proven by reading back every
-   Preview-scoped env var name and value source, and by a preview request that shows the staging
-   project ref. `staging.themagoraportal.org` serves `main` against staging, read back as in §5.9.
+   Preview-scoped env var name and value source, by a preview request that shows the staging
+   project ref, and on a maintainer's machine by a `vite dev` session whose browser Supabase
+   requests and proxied `/api` requests both reach staging (read from the network log).
+   `staging.themagoraportal.org` serves `main` against staging, read back as in §5.9.
 3. The migration gate (§5.5) has been shown to go red on each defect it exists to catch, before it
    is made required, and a migration has been applied to production by the after-merge job.
 4. Every secret the portal uses exists in 1Password, and both maintainers have run `op run` against
    the staging vault on their own machine (macOS and Windows).
 5. A simulated node has registered, signed in and uploaded against staging.
 6. A phone recording made on staging has been processed by the staging listen worker (§5.7).
-7. Each production login (§5.5) has been proven, as that login, to read what it needs and to be
-   refused every write and every function it was not granted.
+7. Each read-only production login (§5.10) has been proven, as that login, to read what it needs
+   and to hold no write privilege and no unlisted `EXECUTE`; the proof also runs after every
+   production migration.
 8. Every production write path reachable without a production credential that was known when
    this spec was approved has been closed. Those paths are tracked privately under `SECURITY.md`
-   (the repo is public) and are not listed here.
+   (the repo is public) and are not listed here. The private advisory holds the inventory as of
+   approval and, for each path, the evidence that an unauthenticated request no longer changes
+   production; this criterion is met when every entry has that evidence.
 
 ## 2. Goals, non-goals, anti-goals
 
@@ -49,7 +54,8 @@ migration gate that tests each migration on staging before production and applie
 - The regression suite: browser flow tests, screenshot comparison, `/api` contract tests (Spec 3).
 
 **Anti-goals (failure even if it works):**
-- Real users' emails, sign-ins or phone-recording coordinates in staging.
+- Real users' emails, sign-ins or phone-recording coordinates in staging. Maintainers' own
+  staging accounts and recordings are the exception (§5.3, §5.7).
 - A staging result trusted while staging's schema differs from production's.
 - A secret value printed by an agent, written to a file in the repo, or held by a fork preview.
 - Production broken by a preview, a local session or a test.
@@ -191,6 +197,13 @@ policies) under their historical names.
   It refuses to write to the production project ref. It ends by storing a snapshot of staging's
   loaded data inside the staging project, so a gate run can **reset** staging (rebuild the
   schema, reload that snapshot) without any production credential.
+- **What a reset guarantees.** Previews, laptops and the staging worker keep writing to staging
+  while the gate runs; nothing suspends them. So a reset guarantees staging's **schema** (the
+  baseline plus the base's migrations) and the copied and transformed tables' contents. It does
+  not reset `auth`, Storage objects or the `audio_inference` queue, and it discards rows other
+  writers added to app tables. Gate checks therefore assert schema, and assert data only on rows
+  the gate itself wrote. A migration that changes the queue or Storage policies is tested against
+  their live staging state.
 - **Who can reach staging.** Staging's anon key ships in the staging bundle, so its API is as
   public as production's. The guarantee is therefore: staging exposes to an anonymous caller no
   more than production already does, and holds nothing private. RLS is identical (same
@@ -228,15 +241,26 @@ policies) under their historical names.
 
 One new required check, `migration-gate`, runs on **every** PR and always reports:
 
-- PR touches nothing under `supabase/migrations/`: it checks only that production's ledger holds
-  every migration on the PR's base (below, *ledger current*) and succeeds.
+- PR touches nothing under `supabase/migrations/`: it checks only *production current* (below)
+  and succeeds. This needs no secret, so it works the same on fork and Dependabot PRs.
 - PR from a fork touching migrations: it fails with a message. A maintainer reviews the fork's
   change and re-opens it as a same-repo branch; re-running the fork's job never helps, because a
   fork run gets no secrets.
 - PR from a same-repo branch touching migrations: the steps below.
 
-**Pre-merge steps.** Every job that changes staging (gate runs, refreshes, staging deploys of
-migrations) shares one GitHub concurrency group, so they queue and never interleave.
+**Production current.** The after-merge job (below), when every step including the staging
+refresh has succeeded, records a GitHub Deployment to an environment `production-schema` whose
+payload lists the migration versions now applied and verified. Every PR's check reads the newest
+successful `production-schema` deployment with the job's own read-only `GITHUB_TOKEN` (the repo
+is public) and fails if the PR's base holds any migration that deployment does not list. Ledger
+rows alone are not the signal: they are written before verification and refresh, which can still
+fail.
+
+**Staging lock.** Every job that changes staging (gate runs, refreshes, staging deploys of
+migrations) first takes a lease row in a lock table in the staging project, waits for it up to a
+bound, and fails loudly on timeout; it releases the lease at the end, and a lease past its expiry
+counts as free. GitHub concurrency groups are not used for this, because by default a newer
+pending run cancels an older one, which would silently drop a refresh.
 
 1. **Reset staging** from the last refresh's snapshot (§5.3): schema rebuilt from the baseline
    plus every migration on the PR's base, data reloaded. Every run starts here, so an earlier
@@ -249,6 +273,8 @@ migrations) shares one GitHub concurrency group, so they queue and never interle
    then compare the schema after the undo with the schema from step 2.
 4. **Old code on new schema.** Using the migrated staging: run the simulated node (§5.6), and build
    the production code (below) with staging's public env values and load its main pages.
+   Then run the privilege check (§5.10) against staging's counterparts of the read-only logins,
+   so a migration that would widen what they can do fails here.
 5. **Leave staging clean:** run the rollback files, so previews keep seeing production's schema.
    Not relied upon; step 1 of the next run resets anyway.
 
@@ -262,16 +288,18 @@ itself with staging's `VITE_` values, since Vite bakes the Supabase URL into the
 serves it inside the job. Edge Functions and the listen worker deploy on their own schedules;
 the gate exercises whatever staging currently runs and records which versions those were.
 
-**Ledger current, and deploy ordering.** A merge to `main` also starts Vercel's production
-deploy, which races the production migration. So:
-- A PR that adds a migration may contain no app code (`src/`, `api/`, `shared/`,
-  `supabase/functions/`); the gate fails it otherwise. The schema lands first, the code that uses
-  it in a later PR (expand/contract, AGENTS.md, made mechanical).
-- Every PR's `migration-gate` fails while production's ledger lacks any migration present on the
-  PR's base. With branch protection requiring branches to be up to date before merge (a repo
-  setting, changed with the operator's approval), no PR can merge between a migration's merge
-  and its successful production apply, and none can merge while a failed apply is unresolved.
-  This keeps E-10: the approval click and stop-on-failure are unchanged; they just hold the queue.
+**Deploy ordering.** A merge to `main` also starts Vercel's production deploy, which races the
+production migration. So:
+- A PR that adds a migration may change only files under `supabase/migrations/` (including
+  `rollbacks/` and `checks/`), the table manifest (§5.3) and `docs/`; the gate fails it
+  otherwise. An allowlist, not a list of app directories, because files such as `package.json`,
+  `vite.config.js`, `public/` and build scripts also change what production serves. The schema
+  lands first, the code that uses it in a later PR (expand/contract, AGENTS.md, made mechanical).
+- Every PR's `migration-gate` fails while *production current* is false. With branch protection
+  requiring branches to be up to date before merge (a repo setting, changed with the operator's
+  approval), no PR can merge between a migration's merge and its fully successful after-merge
+  job, and none can merge while a failure is unresolved. This keeps E-10: the approval click and
+  stop-on-failure are unchanged; they just hold the queue.
 
 **Migration files are immutable once merged.** The existing `migrations` check (rollback
 presence) stays and gains: a PR may not modify, rename or delete an existing
@@ -291,18 +319,25 @@ the SHA-256 of its recorded `statements`, and stops on a mismatch.
    merge and approval, so no PR job can run SQL against private production data. A constraint
    on a copied table is already caught by step 3 of the pre-merge gate. CI cannot tell whether a
    check is needed, so a missing check is a review item.
-4. Take an on-demand backup (or `pg_dump`).
+4. **Backup.** `pg_dump` of the whole database, `auth` and `storage` schemas included, using the
+   migrate login (§5.10), written to the private R2 bucket under a path named for the merged SHA,
+   then read back (listed and size-checked) before continuing. It must survive the runner, so a
+   runner-local file is not a backup. The plan confirms the migrate login can dump `auth` and
+   `storage`; if it cannot, the backup gets its own login in the same environment.
 5. Apply each new migration, in one transaction per file where the DDL allows, writing its
    ledger row in the same transaction.
 6. **Read-only production verification.** Re-run the drift check (production now equals the
-   baseline plus every migration on `main`), load the production site's main pages with GET
-   requests, and run anon reads of the tables the node path and the pages read. The simulated
-   node never runs against production (§5.6).
+   baseline plus every migration on `main`), re-run the privilege check (§5.10) on the read-only
+   logins, load the production site's main pages with GET requests, and run anon reads of the
+   tables the node path and the pages read. The simulated node never runs against production
+   (§5.6).
 7. Refresh staging (§5.3).
+8. Record the `production-schema` deployment (*production current*).
 
 **On any failure it stops and alerts** (Slack, production channel) and changes nothing further:
 no automatic rollback (David, 2026-10-28). A maintainer chooses between the rollback file and
-restoring the backup. Until it is resolved, *ledger current* keeps every PR red.
+restoring the backup. Step 8 never runs, so *production current* stays false and every PR stays
+red until a maintainer finishes the job.
 
 **How migrations are applied (staging and production).** Never `supabase db push`,
 `migration repair` or `db pull` (architect charter, "Supabase branch-behind-remote migrations": they
@@ -338,7 +373,10 @@ Production's worker keeps pulling from production only. The worker code lives in
 `magora-acoustic-biodiversity/worker/`; the plan first confirms that its Supabase target comes
 from environment variables, and if it is hard-coded that change is a PR in that repo.
 Improving phone-recording accuracy is **not** in this spec; staging is where that work will be
-tested. Staging phone detections are synthetic-user rows, so `mobile_detections` stays uncopied.
+tested. A phone recording on staging stores the recorder's real high-accuracy location
+(`src/lib/listen.js`) under their own account. Maintainers may do this (David, 2026-10-28): it is
+their own data, readable only by them under the same owner-only policy as production. No other
+user's recordings reach staging, so `mobile_detections` stays uncopied.
 
 ### 5.8 1Password (E-7)
 
@@ -387,23 +425,35 @@ boundary. Hence:
 
 | Credential | Store | Readable by |
 |---|---|---|
-| PR login (production): catalog read plus `SELECT` on the migration ledger, nothing else | Repository secret | Every same-repo PR job |
-| Staging database owner and staging keys | Repository secret | Every same-repo PR job (staging holds nothing private, §5.3) |
-| Refresh login (production): `SELECT` on copied and transformed tables | Environment `production-read`, deployments from `main` only | Refresh workflow |
-| Migrate login (production): DDL owner | Environment `production-migrate`, `main` only, required reviewer | After-merge job |
-| Storage read and R2 write (backups) | Environment `backup`, `main` only | Nightly backup job |
+| PR login (production, read-only): catalog read, nothing else | Repository secret | Same-repo PR jobs that touch migrations |
+| Staging database owner and staging keys | Repository secret | Same-repo PR jobs (staging holds nothing private, §5.3) |
+| Refresh login (production, read-only): `SELECT` on copied and transformed tables | Environment `production-read`, deployments from `main` only | Refresh workflow |
+| Migrate login (production, writer): DDL owner, ledger writer, dump | Environment `production-migrate`, `main` only, required reviewer | After-merge job |
+| R2 write (pre-migration backups) | Environment `production-migrate` | After-merge job |
+| Storage read and R2 write (nightly backups) | Environment `backup`, `main` only | Nightly backup job |
 | Vercel token (staging deploy) | Environment `staging-deploy`, `main` only | Staging deploy workflow |
 
-Jobs that hold an environment secret check out `main` only and never run code from a PR.
+Jobs that hold an environment secret check out `main` only and never run code from a PR. The
+*production current* check uses no secret at all.
 
-**Effective privileges, proven (success criterion 7).** Table grants alone do not make a login
-read-only: functions are executable by `PUBLIC` unless revoked, roles inherit from their
-memberships, and RLS policies written for `anon, authenticated` match no other role, so a reader
-can silently see zero rows. Each production login is a dedicated role with no memberships and no
-`BYPASSRLS` unless the plan shows it is needed. Before a workflow receives one, a test connects
-**as that login** and shows: each allowed read returns the row count production has; a write to
-every table is refused; `EXECUTE` on every function in exposed schemas is refused except the
-listed ones. Any `PUBLIC` grant that test finds on a writing function is a production fix,
+**Effective privileges, proven (success criterion 7).** This applies to the **read-only** logins
+(PR and refresh); the migrate login is the writer by design and is bounded by its environment
+and required reviewer instead. Table grants alone do not make a login read-only: functions are
+executable by `PUBLIC` unless revoked, roles inherit from their memberships, and RLS policies
+written for `anon, authenticated` match no other role, so a reader can silently see zero rows.
+Each read-only login is a dedicated role with no memberships and no `BYPASSRLS` unless the plan
+shows it is needed.
+
+The **privilege check** connects as each read-only login and reads the catalog, attempting no
+write: `has_table_privilege` shows no `INSERT`, `UPDATE`, `DELETE` or `TRUNCATE` anywhere;
+`has_function_privilege` shows `EXECUTE` on no function in exposed schemas outside a reviewed
+allowlist; role membership is empty. A positive part runs each allowed read and compares its row
+count with the count the migrate login sees. It runs before a workflow first receives a login, in
+every migration gate on staging (step 4) and after every production apply (step 6). Because
+functions are created executable by `PUBLIC` unless revoked, the baseline's precondition step
+sets default privileges so that functions created in `public` by the migration owner are not
+executable by `PUBLIC`, and the gate fails any new function whose grants exceed the allowlist.
+Any `PUBLIC` grant the first run finds on an existing writing function is a production fix,
 reported privately per `SECURITY.md`, not in this spec.
 
 ## 6. Constraints
@@ -450,4 +500,5 @@ tests, built on this spec's staging and simulated node. Also everything listed a
 |---|---|---|---|
 | 0 | Builder check: Opus subagent, fresh context, read-only on the repo, on rev 1 | 8 questions | 1 answered from the repo (the node contract comes from `magora-acoustic-biodiversity`'s `release` branch; corrected the `storage-upload` claim, §5.6). 4 settled as my calls and marked: migrations applied file by file with a hand-written ledger row, never `db push` (the charter forbids it); migration PRs carry no app code; three production logins; author-written data-check queries (§5.5). 3 went to David: on production failure, stop and alert; a required approval before production migrations; a staging listen worker, plus the domain (§5.5, §5.7, §5.9). |
 | — | Semgrep (`semgrep-artifact-scan.sh`) on rev 1 | UNRUN | No fenced code blocks, so there was nothing to scan (exit 1). |
-| 1 | Codex CLI, read-only at `f449784`, on rev 1 | REWORK, 19 findings | #1 (no Method embed) stale: PR #42 added it; §3 now records it. #16 (Storage) already handled by E-13. The other 17 applied as builder calls in rev 2: service-role inventory by source (#2, §3); real table manifest, `species_whitelist` as a `nodes` column, `node_habitat` copied (#3, §5.3); staging sign-in arrangement (#4, §5.3); reconstructed pre-history baseline, ledger-only production record (#5, §5.2); identity mapping and load order (#6, §5.3); serialized staging, reset per run from a refresh snapshot (#7, §5.3, §5.5); data checks moved after merge, no PR SQL against production (#8, §5.5); *ledger current* blocks merges until applied (#9, §5.5); production SHA from GitHub Deployments, staging build of it (#10, §5.5); targeted staging deploy per `main` push (#11, §5.9); effective-privilege proof per login (#12, §5.10); credentials table with protected environments (#13, §5.10); a production write path reachable without credentials, tracked privately (#14, success criterion 8); staging exposure restated and verified (#15, §5.3); always-reporting check, fork handling, AGENTS.md wording (#17, §5.5); immutable migrations with hashes (#18, §5.5); read-only production verification, simulator staging-only (#19, §5.5, §5.6). |
+| 1 | Codex CLI, read-only at `f449784`, on rev 1 | REWORK, 19 findings | #1 (no Method embed) stale: PR #42 added it; §3 now records it. #16 (Storage) already handled by E-13. The other 17 applied as builder calls in rev 2: service-role inventory by source (#2, §3); real table manifest, `species_whitelist` as a `nodes` column, `node_habitat` copied (#3, §5.3); staging sign-in arrangement (#4, §5.3); reconstructed pre-history baseline, ledger-only production record (#5, §5.2); identity mapping and load order (#6, §5.3); reset per run from a refresh snapshot (#7, §5.3, §5.5); data checks moved after merge, no PR SQL against production (#8, §5.5); *ledger current* blocks merges until applied (#9, §5.5); production SHA from GitHub Deployments, staging build of it (#10, §5.5); targeted staging deploy per `main` push (#11, §5.9); effective-privilege proof per login (#12, §5.10); credentials table with protected environments (#13, §5.10); a production write path reachable without credentials, tracked privately (#14, success criterion 8); staging exposure restated and verified (#15, §5.3); always-reporting check, fork handling, AGENTS.md wording (#17, §5.5); immutable migrations with hashes (#18, §5.5); read-only production verification, simulator staging-only (#19, §5.5, §5.6). |
+| 2 | Codex CLI, read-only at `725e7e8`, on rev 2, prompt carrying round 1's dispositions | REWORK, 10 findings | All applied in rev 3; #2 and #5–#8 were defects in rev 2's own fixes. #1 (staging phone recordings store the recorder's real location) went to David: maintainers' own recordings allowed (§2, §5.7). Builder calls: *production current* as a secret-free GitHub Deployment record, so fork and Dependabot PRs can be checked, written only after verification and refresh (#2, #7, §5.5); reset guarantees schema and copied data only, other writers not suspended (#3, §5.3); pre-migration `pg_dump` to R2, read back (#4, §5.5); privilege check by catalog, on read-only logins only, on every gate and production apply, with `PUBLIC`-execute default revoked (#5, #6, §5.10); a lease lock in staging instead of a GitHub concurrency group (#8, §5.5); migration PRs limited to an allowlist of paths (#9, §5.5); local `vite dev` proof and private evidence for criterion 8 (#10, §1). Codex confirmed the baseline approach and the AGENTS.md wording change. |
