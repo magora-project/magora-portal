@@ -14,7 +14,7 @@ For agents and contributors (Claude Code via `CLAUDE.md`, Codex CLI directly). D
 ## Flow
 
 - Trunk: branch from and PR to `main`. No long-lived branches.
-- Squash merge only. Maintainers merge their own PRs once required checks are green; no approval. A maintainer reviews then merges fork/Dependabot PRs.
+- Squash merge only. Maintainers merge own PRs once required checks are green; no approval needed. A maintainer reviews then merges fork/Dependabot PRs.
 - Resolve each review thread before merge, after reading bot findings.
 - **Agents never push, merge, or change repo settings without their operator's explicit approval.**
 
