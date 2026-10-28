@@ -1,6 +1,13 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
-const ZEFFY_URL = 'https://www.zeffy.com/en-US/donation-form/magora'
+// Donations run through The Method Project, Magora's fiscal sponsor. The widget script turns
+// <tmp-donate> into Method's checkout iframe and sizes it to fit; Method only lets it frame on
+// origins listed under Magora's "Embed origins" in Method's admin. Without the script (blocked
+// or failed), the fallback link inside <tmp-donate> opens the hosted page instead.
+const METHOD_WIDGET_SRC = 'https://give.themethodproject.org/widget/v1.js'
+const METHOD_ORG = 'themagoraproject'
+const METHOD_GIVE_URL = `https://give.themethodproject.org/${METHOD_ORG}`
 
 const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
@@ -27,6 +34,14 @@ const WAYS = [
 ]
 
 export default function DonatePage() {
+  useEffect(() => {
+    if (document.querySelector(`script[src="${METHOD_WIDGET_SRC}"]`)) return
+    const s = document.createElement('script')
+    s.src = METHOD_WIDGET_SRC
+    s.async = true
+    document.body.appendChild(s)
+  }, [])
+
   return (
     <div style={{ maxWidth: '640px', margin: '0 auto', paddingBottom: '56px' }}>
 
@@ -64,21 +79,15 @@ export default function DonatePage() {
         ))}
       </div>
 
-      {/* CTAs */}
+      {/* Donation form */}
+      <h2 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: '20px', color: C.text, textTransform: 'uppercase', letterSpacing: '0.02em', margin: '0 0 16px' }}>
+        ♥ Support the project
+      </h2>
+      <tmp-donate org={METHOD_ORG} style={{ display: 'block', minHeight: '760px', marginBottom: '20px' }}>
+        <a href={METHOD_GIVE_URL} style={{ color: C.accentLight }}>Donate to The Magora Project</a>
+      </tmp-donate>
+
       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '28px' }}>
-        <a
-          href={ZEFFY_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            flex: 1, minWidth: '200px', textAlign: 'center', padding: '15px 22px',
-            background: C.accent, color: '#fff', borderRadius: '10px', textDecoration: 'none',
-            fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '1.05rem', fontWeight: 700,
-            letterSpacing: '0.05em', textTransform: 'uppercase',
-          }}
-        >
-          ♥ Support the project
-        </a>
         <Link
           to="/add-node"
           style={{
