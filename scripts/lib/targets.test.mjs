@@ -109,5 +109,18 @@ ok('api: userinfo refused', throws(() => assertStaging(`https://u:p@${STAGING_RE
 ok('api: explicit port refused', throws(() => assertStaging(`https://${STAGING_REF}.supabase.co:8443`, 'api')))
 ok('fix messages hide password', !messageOf(() => assertStaging(`postgresql://${STG_USER}:s3cret@evil.example/p?host=x`, 'db')).includes('s3cret'))
 
+// Fix round 2: strict raw-URL grammar (libpq vs WHATWG parser differentials)
+const H_STG = `db.${STAGING_REF}.supabase.co`, H_PROD = `db.${PRODUCTION_REF}.supabase.co`
+ok('db: hash-hidden query override refused', throws(() => assertStaging(`postgresql://postgres:PW@${H_STG}/postgres#?host=${H_PROD}&dbname=postgres`, 'db')))
+ok('db: hash-hidden userinfo split refused', throws(() => assertStaging(`postgresql://${H_STG}#:PW@${H_PROD}/postgres?user=postgres`, 'db')))
+ok('db: two raw @ refused', throws(() => assertStaging(`postgresql://postgres:p@ss@${H_STG}/postgres`, 'db')))
+ok('db: duplicate sslmode refused', throws(() => assertStaging(`postgresql://postgres:pw@${H_STG}/postgres?sslmode=require&sslmode=disable`, 'db')))
+ok('db: sslmode=disable refused', throws(() => assertStaging(`postgresql://postgres:pw@${H_STG}/postgres?sslmode=disable`, 'db')))
+ok('db: trailing hash refused', throws(() => assertStaging(`postgresql://postgres:pw@${H_STG}/postgres#x`, 'db')))
+ok('db: percent-encoded @ in password with pooler accepted', !throws(() => assertStaging(`postgresql://${STG_USER}:p%40ss@${POOL}:5432/postgres?sslmode=require`, 'db')))
+ok('db: verify-full accepted', !throws(() => assertStaging(`postgres://postgres:pw@${H_STG}/postgres?sslmode=verify-full`, 'db')))
+ok('db: dbname with slash refused', throws(() => assertStaging(`postgresql://postgres:pw@${H_STG}/a/b`, 'db')))
+ok('db: grammar messages hide password', !messageOf(() => assertStaging(`postgresql://postgres:s3cret@${H_STG}/postgres#x`, 'db')).includes('s3cret'))
+
 console.log(`${pass} passed, ${fail} failed`)
 if (fail) process.exit(1)

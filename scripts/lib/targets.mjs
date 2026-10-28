@@ -58,8 +58,22 @@ function shapeProblem(url, kind) {
   return null
 }
 
+// Raw-string grammar for db URLs, checked BEFORE any WHATWG parsing. libpq and WHATWG disagree on
+// '#', '@' and repeated parameters, so anything outside this exact shape is refused unparsed.
+const DB_GRAMMAR = new RegExp(
+  '^postgres(?:ql)?://[^@/?#]+@' +
+  '(?:db\\.[a-z]{20}\\.supabase\\.co|aws-\\d+-[a-z]+-[a-z]+-\\d+\\.pooler\\.supabase\\.com)' +
+  '(?::\\d+)?/[A-Za-z0-9_]+(?:\\?sslmode=(?:require|verify-ca|verify-full))?$',
+)
+
 export function assertStaging(url, kind) {
   if (kind !== 'db' && kind !== 'api') throw new Error('assertStaging: unknown kind')
+  if (kind === 'db' && !(typeof url === 'string' && DB_GRAMMAR.test(url))) {
+    // The WHATWG parse below only labels the message; it never admits a URL.
+    let ref = null
+    try { ref = refFromDbUrl(url) } catch { /* ambiguous: report no ref */ }
+    throw new Error(`refusing: db target does not match the strict URL grammar (ref found: ${ref ?? 'no ref'})`)
+  }
   const ref = kind === 'db' ? refFromDbUrl(url) : refFromSupabaseUrl(url)
   if (ref !== STAGING_REF) {
     throw new Error(`refusing: ${kind} target is not the staging project (ref found: ${ref ?? 'no ref'})`)
