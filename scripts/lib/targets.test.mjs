@@ -88,5 +88,26 @@ ok('validateTargets message names variable, not secret', (() => {
 })())
 ok('validateTargets missing message names variable', messageOf(() => validateTargets({ STAGING_SUPABASE_URL: STG_API })).includes('STAGING_DB_URL'))
 
+// Fix round 1: query overrides, host whitelist, scheme checks
+const POOL = 'aws-0-us-west-1.pooler.supabase.com'
+const STG_USER = 'postgres.mujiqtvwtsbaakfcsjkp'
+ok('db: query user override refused', throws(() => assertStaging(`postgresql://${STG_USER}:pw@${POOL}:5432/postgres?user=postgres.${PRODUCTION_REF}`, 'db')))
+ok('db: query host override refused', throws(() => assertStaging(`postgresql://postgres:pw@db.${STAGING_REF}.supabase.co/postgres?host=db.${PRODUCTION_REF}.supabase.co`, 'db')))
+ok('db: query options override refused', throws(() => assertStaging(`postgresql://postgres:pw@db.${STAGING_REF}.supabase.co/postgres?options=reference%3D${PRODUCTION_REF}`, 'db')))
+ok('db: query service override refused', throws(() => assertStaging(`postgresql://postgres:pw@db.${STAGING_REF}.supabase.co/postgres?service=prod`, 'db')))
+ok('db: ?sslmode=require accepted', !throws(() => assertStaging(`postgresql://postgres:pw@db.${STAGING_REF}.supabase.co/postgres?sslmode=require`, 'db')))
+ok('db: sslmode plus another param refused', throws(() => assertStaging(`postgresql://postgres:pw@db.${STAGING_REF}.supabase.co/postgres?sslmode=require&host=x`, 'db')))
+ok('db: staging pooler host with staging username accepted', !throws(() => assertStaging(`postgresql://${STG_USER}:pw@${POOL}:5432/postgres`, 'db')))
+ok('db: trailing-dot host refused', throws(() => assertStaging(`postgresql://${STG_USER}:pw@db.${PRODUCTION_REF}.supabase.co./postgres`, 'db')))
+ok('db: percent-encoded host refused', throws(() => assertStaging(`postgresql://${STG_USER}:pw@db.%77qxmmuwrfltpaxnuddwk.supabase.co/postgres`, 'db')))
+ok('db: comma multi-host refused', throws(() => assertStaging(`postgresql://${STG_USER}:pw@db.${PRODUCTION_REF}.supabase.co,${POOL}/postgres`, 'db')))
+ok('db: unknown host refused even with staging username', throws(() => assertStaging(`postgresql://${STG_USER}:pw@evil.example/postgres`, 'db')))
+ok('db: bad pooler region refused', throws(() => assertStaging(`postgresql://${STG_USER}:pw@aws-0-us.pooler.supabase.com/postgres`, 'db')))
+ok('db: https scheme refused', throws(() => assertStaging(`https://${STG_USER}:pw@x/`, 'db')))
+ok('api: http refused', throws(() => assertStaging(`http://${STAGING_REF}.supabase.co`, 'api')))
+ok('api: userinfo refused', throws(() => assertStaging(`https://u:p@${STAGING_REF}.supabase.co`, 'api')))
+ok('api: explicit port refused', throws(() => assertStaging(`https://${STAGING_REF}.supabase.co:8443`, 'api')))
+ok('fix messages hide password', !messageOf(() => assertStaging(`postgresql://${STG_USER}:s3cret@evil.example/p?host=x`, 'db')).includes('s3cret'))
+
 console.log(`${pass} passed, ${fail} failed`)
 if (fail) process.exit(1)

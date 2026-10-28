@@ -34,12 +34,38 @@ export function refFromDbUrl(url) {
   return fromUser || fromHost
 }
 
+const DB_SCHEMES = new Set(['postgres:', 'postgresql:'])
+const POOLER_HOST = /^aws-\d+-[a-z]+-[a-z]+-\d+\.pooler\.supabase\.com$/
+
+// Structural checks that the ref extraction alone cannot make. Returns a reason or null.
+function shapeProblem(url, kind) {
+  const u = parse(url)
+  if (!u) return null // unparseable: the ref check reports it
+  if (kind === 'api') {
+    if (u.protocol !== 'https:') return 'api target must use https'
+    if (u.username || u.password) return 'api target must not carry credentials'
+    if (u.port) return 'api target must not set a port'
+    return null
+  }
+  if (!DB_SCHEMES.has(u.protocol)) return 'db target must use a postgres scheme'
+  // libpq lets query parameters override the authority; only sslmode is allowed.
+  for (const key of u.searchParams.keys()) {
+    if (key !== 'sslmode') return 'db target carries a query override'
+  }
+  if (!DB_HOST.test(u.hostname) && !POOLER_HOST.test(u.hostname)) {
+    return 'db target host is not a recognised Supabase host'
+  }
+  return null
+}
+
 export function assertStaging(url, kind) {
   if (kind !== 'db' && kind !== 'api') throw new Error('assertStaging: unknown kind')
   const ref = kind === 'db' ? refFromDbUrl(url) : refFromSupabaseUrl(url)
   if (ref !== STAGING_REF) {
     throw new Error(`refusing: ${kind} target is not the staging project (ref found: ${ref ?? 'no ref'})`)
   }
+  const problem = shapeProblem(url, kind)
+  if (problem) throw new Error(`refusing: ${problem} (ref found: ${ref})`)
 }
 
 export function assertStagingSite(url) {
