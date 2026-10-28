@@ -19,7 +19,9 @@ Production's project ref is `wqxmmuwrfltpaxnuddwk`. The scratch project has a di
   The scratch project is reached the same way with its own ref.
 - `pg_dump`, `pg_restore` and `psql` must be major version 17, matching the server.
 - The dumps hold production data. They live in a `mktemp -d` directory and are deleted at the end.
-- **On any stop or error, run "Clean up" step 2 now**, before anything else.
+- **On any stop or error, run "Clean up" step 2 now**, before anything else. Once anything has been restored
+  into the scratch project, run "Clean up" steps 1 and 2: the scratch project then holds production
+  `auth.users`, so delete it too.
 
 ## What this rehearsal proves
 
@@ -76,20 +78,30 @@ two scoped dumps are taken:
    ```
 
    Do not add a `RESTORE_TARGET_ENDPOINT` line; the endpoint is written on each command.
-4. Write the ref guard. Every command that touches the scratch project calls it first, and refuses to run
-   if the target is production or is not the ref you pass:
+4. Write the ref guard and the path encoder (the next block, which is unindented so it pastes as is).
+   Every command that touches the scratch project calls the guard first, and it refuses to run if the
+   target is production or is not the ref you pass. If any command prints `REFUSED`, stop and run
+   "Clean up" step 2 (and step 1 if anything was restored).
 
-   ```sh
-   cat > "$RESTORE_DIR/guard.sh" <<'GUARD'
-   guard() {
-     case "$SCRATCH_DB_URL" in *wqxmmuwrfltpaxnuddwk*) echo "REFUSED: scratch URL names production" >&2; return 1;; esac
-     case "$1" in ""|wqxmmuwrfltpaxnuddwk) echo "REFUSED: bad scratch ref" >&2; return 1;; esac
-     case "$SCRATCH_DB_URL" in *"//postgres.$1:"*) ;; *) echo "REFUSED: scratch URL username is not postgres.$1" >&2; return 1;; esac
-   }
-   GUARD
-   ```
+Paste at the shell, as is:
 
-   If any command prints `REFUSED`, stop and run "Clean up" step 2.
+```sh
+cat > "$RESTORE_DIR/guard.sh" <<'GUARD'
+guard() {
+  case "$SCRATCH_DB_URL" in *wqxmmuwrfltpaxnuddwk*) echo "REFUSED: scratch URL names production" >&2; return 1;; esac
+  case "$1" in ""|wqxmmuwrfltpaxnuddwk) echo "REFUSED: bad scratch ref" >&2; return 1;; esac
+  case "$SCRATCH_DB_URL" in *"//postgres.$1:"*) ;; *) echo "REFUSED: scratch URL username is not postgres.$1" >&2; return 1;; esac
+}
+guard_ep() {
+  case "$1" in *wqxmmuwrfltpaxnuddwk*) echo "REFUSED: endpoint names production" >&2; return 1;; esac
+  case "$2" in ""|wqxmmuwrfltpaxnuddwk) echo "REFUSED: bad scratch ref" >&2; return 1;; esac
+  case "$1" in "https://$2.supabase.co/"*) ;; *) echo "REFUSED: endpoint is not the scratch ref $2" >&2; return 1;; esac
+}
+GUARD
+cat > "$RESTORE_DIR/enc.js" <<'ENC'
+process.stdout.write(process.argv[2].split("/").map(encodeURIComponent).join("/"));
+ENC
+```
 
 ## 1. Create the scratch project
 
@@ -177,7 +189,7 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    op run --env-file="$RESTORE_DIR/refs.env" -- sh -c '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -c "select id from storage.buckets order by id"' _ <scratch-ref> "$RESTORE_DIR"
    ```
 
-   If a bucket named in the sample is missing, stop and run "Clean up" step 2.
+   If a bucket named in the sample (step 3 below) is missing, stop and run "Clean up" step 2.
 3. Record 20 rows (`id|bucket_id|name`) from `storage.objects`, only objects created before the latest
    nightly date (`<latest>`), so the R2 copy contains them:
 
@@ -195,11 +207,12 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    ```
 
 4. Read the `<scratch-ref>` in the endpoint aloud and match it against the dashboard, as in step 3. Then,
-   for each bucket in the sample, copy only its listed objects:
+   for each bucket in the sample, copy only its listed objects. The guard runs in the same command and refuses
+   if the endpoint names production or lacks the scratch ref you typed:
 
    ```sh
-   RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<scratch-ref>.supabase.co/storage/v1/s3' op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore-target:<bucket>" --files-from "$RESTORE_DIR/<bucket>.files" --checksum
-   RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<scratch-ref>.supabase.co/storage/v1/s3' op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore-target:<bucket>" --files-from "$RESTORE_DIR/<bucket>.files" --checksum --one-way
+   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore-target:<bucket>" --files-from "$RESTORE_DIR/<bucket>.files" --checksum
+   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore-target:<bucket>" --files-from "$RESTORE_DIR/<bucket>.files" --checksum --one-way
    ```
 
    Use `rclone copy`, never `rclone sync`.
@@ -212,19 +225,22 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
      '. "$3/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -At -c "select count(*) from storage.objects where id in ($2)"' _ <scratch-ref> "$IDS" "$RESTORE_DIR"
    ```
 
-6. Download each of the 20 through the Storage API with the scratch service role key and count the HTTP
-   200s; expected result: `20`. The key is passed to curl on stdin, not on the command line:
+6. Download each of the 20 through the Storage API with the scratch service-role key and count the HTTP
+   200s; expected result: `20`. Each path segment is percent-encoded (names with spaces, `#`, `?` or `%`
+   are real and stay in the sample). The key goes to curl as the `Authorization` and `apikey` headers on
+   stdin (`-K -`), never on a command line:
 
    ```sh
    op run --env-file="$RESTORE_DIR/refs.env" -- sh -c '
      . "$2/guard.sh" && guard "$1" || exit 1
      while IFS="|" read -r id bucket name; do
-       printf "header = \"Authorization: Bearer %s\"\n" "$SCRATCH_SERVICE_KEY" |
-         curl -s -K - -o /dev/null -w "%{http_code}\n" "https://$1.supabase.co/storage/v1/object/authenticated/$bucket/$name"
+       path="$(node "$2/enc.js" "$bucket/$name")"
+       printf "header = \"Authorization: Bearer %s\"\nheader = \"apikey: %s\"\n" "$SCRATCH_SERVICE_KEY" "$SCRATCH_SERVICE_KEY" |
+         curl -s -K - -o /dev/null -w "%{http_code}\n" "https://$1.supabase.co/storage/v1/object/authenticated/$path"
      done < "$2/sample.txt" | grep -c "^200$"' _ <scratch-ref> "$RESTORE_DIR"
    ```
 
-   Anything other than `20` is a failed rehearsal: record which objects failed and run "Clean up" step 2.
+   Anything other than `20` is a failed rehearsal: record which objects failed and run "Clean up" steps 1 and 2.
 
 ## 6. Clean up
 
