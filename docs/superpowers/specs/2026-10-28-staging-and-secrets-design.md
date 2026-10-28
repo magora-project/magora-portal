@@ -180,7 +180,10 @@ policies) under their historical names. Staging is built from it (§5.3); Spec 2
 ### 5.3 Staging project and data (E-2, E-3)
 
 - A second Supabase project in the same Pro organization, built from the baseline plus all
-  migrations on `main`. Same region as production.
+  migrations on `main`. Same region as production. Created by David on 2026-10-28: name
+  `magora-staging`, project ref `mujiqtvwtsbaakfcsjkp`, Micro compute, sign-ups off, empty
+  (nothing linked, migrated or deployed). Scripts that write staging name this ref explicitly
+  and refuse any other.
 - **Every table in `public` is classified** in a checked-in table manifest as *copied*,
   *transformed*, *synthetic* or *excluded*. The refresh refuses to run while any table in the
   rebuilt schema is missing from the manifest, so a new table forces a classification. The
