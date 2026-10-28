@@ -37,12 +37,13 @@ two scoped dumps are taken:
 
 ## Before you start
 
-1. Check the tool versions. All must report 17:
+1. Check the tool versions. The three Postgres tools must report 17; `node` must be installed (any current version):
 
    ```sh
    pg_dump --version
    pg_restore --version
    psql --version
+   node --version
    ```
 
    If not, stop and install PostgreSQL 17 client tools.
@@ -149,7 +150,7 @@ op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
 
 Expected errors: `schema "public" already exists` on (a) is benign. No other error is expected. If
 the restore reports any other error, David records it (text only, no connection strings) in the
-Rehearsals table, the agent beside him adjusts this runbook, and you run "Clean up" step 2. Retry only
+Rehearsals table, the agent beside him adjusts this runbook, and you run "Clean up" steps 1 and 2. Retry only
 after deleting and recreating the scratch project, with a fresh dump.
 
 ## 4. Compare row counts
@@ -170,7 +171,7 @@ op run --env-file="$RESTORE_DIR/refs.env" -- sh -c '. "$2/guard.sh" && guard "$1
 
 Equality is expected, give or take rows production wrote after the dump started. Record every difference.
 An unexplained difference (scratch higher than production, or a missing table) is a failed rehearsal;
-record it and run "Clean up" step 2.
+record it and run "Clean up" steps 1 and 2.
 
 ## 5. Restore 20 objects from R2
 
@@ -189,7 +190,7 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    op run --env-file="$RESTORE_DIR/refs.env" -- sh -c '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -c "select id from storage.buckets order by id"' _ <scratch-ref> "$RESTORE_DIR"
    ```
 
-   If a bucket named in the sample (step 3 below) is missing, stop and run "Clean up" step 2.
+   If a bucket named in the sample (step 3 below) is missing, stop and run "Clean up" steps 1 and 2.
 3. Record 20 rows (`id|bucket_id|name`) from `storage.objects`, only objects created before the latest
    nightly date (`<latest>`), so the R2 copy contains them:
 
