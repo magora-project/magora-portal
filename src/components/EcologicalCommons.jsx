@@ -78,7 +78,7 @@ export default function EcologicalCommons() {
             title="Support open ecological infrastructure"
             text="Magora is community-owned and open source. Your support keeps the network growing and the data free."
             cta="Support the project"
-            href="#"
+            to="/donate"
           />
         </div>
       </div>
