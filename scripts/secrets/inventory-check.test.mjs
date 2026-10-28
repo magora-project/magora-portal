@@ -1,4 +1,5 @@
 // Tests for scripts/secrets/inventory-check.mjs. Run: node scripts/secrets/inventory-check.test.mjs
+import { readFileSync } from 'node:fs'
 import { parseInventory, compareNames, listStoreNames, storesOf } from './inventory-check.mjs'
 
 let pass = 0, fail = 0
@@ -22,6 +23,19 @@ ok('parse: injected flag', rows[1].injected === true && rows[0].injected === fal
 ok('parse: header and separator skipped', !rows.some((r) => r.name === 'Name' || r.name.startsWith('-')))
 ok('parse: TBD copies dropped', parseInventory('| X | production | op://Magora Project/s/X | TBD (David) | no |').every((r) => r.copies.length === 0))
 
+// unrecorded or malformed Copies must be problems, not silent passes
+const rowOf = (copies, inj = 'no') => parseInventory(`| X_KEY | production | op://Magora Project/s/X_KEY | ${copies} | ${inj} |`)
+const tbd = compareNames(rowOf('TBD (David)'), [])
+ok('compare: TBD row -> no copies recorded', tbd.some((p) => p.includes('X_KEY') && p.includes('no copies recorded')))
+ok('compare: TBD token named', tbd.some((p) => p.includes('X_KEY') && p.includes('TBD (David)')))
+const typo = compareNames(rowOf('vercel:prod; github :staging'), [])
+ok('compare: typo tokens each named', typo.some((p) => p.includes('vercel:prod')) && typo.some((p) => p.includes('github :staging')))
+ok('compare: typo-only row -> no copies recorded', typo.some((p) => p.includes('no copies recorded')))
+ok('compare: empty copies -> no copies recorded', compareNames(rowOf(''), []).some((p) => p.includes('no copies recorded')))
+ok('compare: injected row with no copies is fine', compareNames(rowOf('', 'yes'), []).length === 0)
+ok('compare: valid + typo -> only the typo', compareNames(rowOf('vercel:production; vercel:prod'), [{ store: 'vercel:production', names: ['X_KEY'] }]).length === 1)
+ok('shipped doc is not clean while copies are TBD', compareNames(parseInventory(readFileSync(new URL('../../docs/runbooks/secrets-inventory.md', import.meta.url), 'utf8')), []).length > 0)
+
 ok('stores: union', JSON.stringify(storesOf(rows)) === JSON.stringify(['github:staging-sync', 'supabase-fn:abc', 'vercel:preview', 'vercel:production']))
 
 const full = [
@@ -40,6 +54,14 @@ ok('compare: extra -> one problem', extra.length === 1 && extra[0].includes('STR
 
 const injectedListed = compareNames(rows, full.map((l) => (l.store === 'supabase-fn:abc' ? { ...l, names: ['SUPABASE_URL'] } : l)))
 ok('compare: injected name listed is not extra', injectedListed.length === 0)
+
+// listStoreNames must never write to any output stream
+let writes = 0
+const origLog = console.log, origErr = console.error, origWrite = process.stdout.write
+console.log = () => { writes++ }
+console.error = () => { writes++ }
+process.stdout.write = () => { writes++; return true }
+const restore = () => { console.log = origLog; console.error = origErr; process.stdout.write = origWrite }
 
 // listStoreNames with an injected runner
 const calls = []
@@ -63,6 +85,18 @@ ok('list: bad json throws without output', msg !== '' && !msg.includes('SECRETVA
 let unk = false
 try { listStoreNames('bogus:x', runner('[]')) } catch { unk = true }
 ok('list: unknown store throws', unk)
+
+restore()
+ok('list: nothing written to any output stream', writes === 0)
+
+// win32 ENOENT hint
+const enoent = (extra) => () => ({ status: null, error: Object.assign(new Error('spawn ENOENT ' + extra), { code: 'ENOENT' }) })
+let w = ''
+try { listStoreNames('vercel:preview', enoent('SECRETVALUE'), 'win32') } catch (e) { w = String(e.message) }
+ok('list: win32 ENOENT mentions .cmd shim', w.includes('.cmd') && w.includes('vercel:preview') && !w.includes('SECRETVALUE'))
+let n = ''
+try { listStoreNames('vercel:preview', enoent('x'), 'darwin') } catch (e) { n = String(e.message) }
+ok('list: darwin ENOENT has no shim hint', n !== '' && !n.includes('.cmd'))
 
 console.log(`${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

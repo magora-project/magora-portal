@@ -1,7 +1,7 @@
 // Compares docs/runbooks/secrets-inventory.md against the NAME listings of every store it names.
 // Names only: raw CLI output is never printed, and value/digest fields are dropped at parse time.
 // Run: node scripts/secrets/inventory-check.mjs
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -15,11 +15,13 @@ export function parseInventory(markdown) {
     if (cells.length < 5) continue
     const [name, environment, reference, copies, injected] = cells
     if (!/^[A-Z][A-Z0-9_]*$/.test(name)) continue // header, separator, prose
+    const tokens = copies.split(';').map((t) => t.trim()).filter(Boolean)
     rows.push({
       name,
       environment,
       reference,
-      copies: copies.split(';').map((s) => s.trim()).filter((s) => STORE_RE.test(s)),
+      copies: tokens.filter((t) => STORE_RE.test(t)),
+      badCopies: tokens.filter((t) => !STORE_RE.test(t)),
       injected: /^yes/i.test(injected),
     })
   }
@@ -32,6 +34,10 @@ export function storesOf(rows) {
 
 export function compareNames(rows, listings) {
   const problems = []
+  for (const r of rows) {
+    for (const t of r.badCopies ?? []) problems.push(`${r.name}: unrecognised Copies entry "${t}"`)
+    if (!r.injected && r.copies.length === 0) problems.push(`${r.name}: no copies recorded`)
+  }
   const injectedNames = new Set(rows.filter((r) => r.injected).map((r) => r.name))
   for (const { store, names } of listings) {
     const have = new Set(names)
@@ -53,7 +59,7 @@ const namesFromTable = (text) =>
 
 const defaultRunner = (cmd, args) => spawnSync(cmd, args, { shell: false, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
 
-export function listStoreNames(store, run = defaultRunner) {
+export function listStoreNames(store, run = defaultRunner, platform = process.platform) {
   if (!STORE_RE.test(store)) throw new Error(`unknown store: ${store}`)
   const [kind, id] = [store.slice(0, store.indexOf(':')), store.slice(store.indexOf(':') + 1)]
   const cmd = {
@@ -64,6 +70,8 @@ export function listStoreNames(store, run = defaultRunner) {
   }[kind]
   const r = run(cmd[0], cmd[1])
   // Messages carry the store and exit status only: CLI output may hold values.
+  if (r && r.error && r.error.code === 'ENOENT' && platform === 'win32')
+    throw new Error(`${cmd[0]} could not be started for ${store}; on Windows a .cmd shim is the likely cause`)
   if (!r || r.error || r.status !== 0) throw new Error(`${cmd[0]} listing failed for ${store} (status ${r && r.status})`)
   const out = String(r.stdout ?? '')
   try {
@@ -92,4 +100,8 @@ function main() {
   process.exit(problems.length ? 1 : 0)
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()
+const isMain = () => {
+  if (!process.argv[1]) return false
+  try { return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]) } catch { return false }
+}
+if (isMain()) main()
