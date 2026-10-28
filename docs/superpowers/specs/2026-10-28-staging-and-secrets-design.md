@@ -1,7 +1,7 @@
 # magora-portal staging, backups and secrets — design (Spec 2)
 
 - **Date:** 2026-10-28
-- **Status:** draft rev 5 (migration gate extracted to Spec 2b; review rounds 1–4 in §10); not yet approved
+- **Status:** draft rev 6 (migration gate extracted to Spec 2b; review rounds 1–5 in §10); not yet approved
 - **Plan task:** E1 of the Magora Consolidated Action Plan (the staging half of G2 that Spec 1 deferred)
 - **Predecessor:** `docs/superpowers/specs/2026-10-15-repo-harness-design.md` (Spec 1, done 2026-10-28). Its §9 lists this spec's scope.
 - **Successors:** Spec 2b, the automated migration gate
@@ -205,7 +205,9 @@ policies) under their historical names. Staging is built from it (§5.3); Spec 2
     fresh each refresh. The mapping exists only in the refresh's memory and is not written
     anywhere.
 - **Refresh order.** (1) Read production in one repeatable-read snapshot (or `pg_dump
-  --snapshot`) so the copied tables agree with each other. (2) Delete auth users as above. (3)
+  --snapshot`) so the copied tables agree with each other. (2) Delete every Storage object owned by
+  a user about to be deleted (Supabase refuses to delete a user who owns objects), then delete
+  auth users as above. (3)
   Drop and rebuild the app schemas: the §5.10 roles exist first (they are cluster-level and
   survive), then the baseline and `main`'s migrations are applied. (4) **Drift check:** compare
   staging's rebuilt schema with production's (refresh login, catalog read); stop and alert on any
@@ -267,9 +269,9 @@ policies) under their historical names. Staging is built from it (§5.3); Spec 2
   successful deploy it records the deployed git SHA in a row of a staging-only `ops` table
   (created by the staging setup, never by a migration). A maintainer runs it (through `op run`)
   once when staging is created, after setting staging's function secrets (`PROVISION_SECRET`),
-  and whenever `supabase/functions/` changes on `main`. The refresh smoke (§5.3 step 9) fails if
-  that recorded SHA is older than the newest `main` commit touching `supabase/functions/`, so a
-  forgotten deploy shows up. Not automated, because a Supabase access token can reach every
+  and whenever `supabase/functions/` or `supabase/config.toml` (which sets each function's
+  `verify_jwt`) changes on `main`. The refresh smoke (§5.3 step 9) fails if that recorded SHA is
+  older than the newest `main` commit touching either path, so a forgotten deploy shows up. Not automated, because a Supabase access token can reach every
   project the account can, production included.
 - Fork previews remain unauthorized (Spec 1 §2.2) until a re-measure shows Preview holds staging
   values only; this spec does not lift that rule.
@@ -283,10 +285,13 @@ The automated gate is Spec 2b. Until it lands, a migration reaches production by
 written as a runbook in `docs/`. It is today's practice (applied by hand from a laptop) with
 staging and a backup added.
 
-1. **Before merge**, a maintainer applies the PR's migration to staging, then its rollback file,
-   then the migration again, with staging's ref explicit (never through the laptop's link), and
-   runs the simulated node against staging. This writes staging outside the refresh; the next
-   refresh resets it.
+1. **Before merge**, a maintainer starts a test session: they post in the maintainers' channel
+   that staging is theirs, pause the nightly refresh workflow, and run a refresh, which must pass
+   its drift check, so staging starts equal to production. They then apply the PR's migration to
+   staging, then its rollback file, then the migration again, with staging's ref explicit (never
+   through the laptop's link), and run the simulated node against staging. They end the session
+   by running a refresh (which drops the test migration) and re-enabling the nightly workflow.
+   One session at a time, so one migration never passes because another is still applied.
 2. **After merge**, they take a backup (`pg_dump` to the private R2 bucket, read back, or confirm
    that day's daily backup exists), then apply the migration to production by the current method.
 3. They run the refresh (§5.3), whose drift check confirms production and the repo agree.
@@ -406,10 +411,13 @@ privately per `SECURITY.md`, not in this spec.
 
 1. Backups and the restore rehearsal (§5.1). 1Password entry (§5.8) and the private fixes behind
    success criterion 8 can proceed in parallel from the start.
-2. The baseline PR merges, `subtle-correctness`, with the §5.2 proof attached.
+2. The baseline PR merges, `subtle-correctness`, with the §5.2 proof attached. It is accepted on
+   that proof; the interim procedure's staging test (§5.5) cannot apply, since staging does not
+   exist yet. Applying nothing to production, it needs no backup or production step either.
 3. Staging project: setup script (roles, `ops` schema), Edge Functions deployed (§5.4), first
-   refresh (§5.3) with its drift check passing.
-4. Staging deployment and domain (§5.9).
+   refresh (§5.3) with steps 1–8 passing, including the drift check. The smoke (step 9) waits
+   for step 4.
+4. Staging deployment and domain (§5.9), then a full refresh with the smoke passing.
 5. Previews and local development switch to staging (§5.4).
 6. Staging listen worker (§5.7).
 7. Secret rotation (§5.8).
@@ -471,3 +479,4 @@ Also everything listed as a non-goal in §2.
 | 2 | Codex CLI, read-only at `725e7e8`, on rev 2, prompt carrying round 1's dispositions | REWORK, 10 findings | All applied in rev 3; #2 and #5–#8 were defects in rev 2's own fixes. #1 (staging phone recordings store the recorder's real location) went to David: maintainers' own recordings allowed (§2, §5.7). Builder calls: *production current* as a secret-free GitHub Deployment record, so fork and Dependabot PRs can be checked, written only after verification and refresh (#2, #7, §5.5); reset guarantees schema and copied data only, other writers not suspended (#3, §5.3); pre-migration `pg_dump` to R2, read back (#4, §5.5); privilege check by catalog, on read-only logins only, on every gate and production apply, with `PUBLIC`-execute default revoked (#5, #6, §5.10); a lease lock in staging instead of a GitHub concurrency group (#8, §5.5); migration PRs limited to an allowlist of paths (#9, §5.5); local `vite dev` proof and private evidence for criterion 8 (#10, §1). Codex confirmed the baseline approach and the AGENTS.md wording change. |
 | 3 | Completeness pass: Fable subagent, fresh context, read-only, on rev 3 (`af63ed3`); fitness and executability, a different question from Codex's. Fable is an Anthropic model, so this gives a fresh context, not model diversity | REWORK, 19 findings | Second consecutive round whose findings traced mainly to the previous round's fixes, all in §5.5, so I stopped and offered three options. David chose option 1: pre-merge gate on a throwaway stack in the runner, staging written only from `main` (§5.3, §5.5). That removed #1 (lease lock in the reset schema) and #4 (reset against Storage, queue and seed statements), along with round 2's #3 and #8. The rest were applied in rev 4 (`edb25d6`); those concerning the gate now live in Spec 2b's starting design. Applied to what remains here: hand-deployed staging Edge Functions (#7, §5.4); bypass secret (#6, §5.3, §5.10); Storage backup credential as open decision 4 (#11, §8); rollout order (#14, §5.11); success-criterion definitions (#16, §1); `op run --env-file`, pre-created maintainer accounts (#17); same-named roles and `BYPASSRLS` for refresh (#8, §5.10). New success criterion 9 (Fable Q1). |
 | 4 | Codex CLI, read-only at `edb25d6`, on rev 4, prompt naming where earlier reviewers were wrong | REWORK, 13 findings | Third consecutive round led by the previous round's fixes, again in the gate. I stopped and offered three options; David chose to extract the gate into Spec 2b (E-14). Gate findings #1–#4, #6–#9 and the default-privilege note stay **open** in Spec 2b §3. Applied here in rev 5: bypass secret valid on every deployment, acknowledged (#5, §5.3, §5.10); staging `PROVISION_SECRET` assigned (#10, §5.10); per-refresh identity rules (#11, §5.3); staging Edge Function SHA recorded and checked (#12, §5.4); CLI targeting described correctly (#13, §3, §5.4); roles created before replay (#7, §5.2, §5.10); `supabase start` workspace holds exactly the baseline and 32 files (#6, §5.2); privilege check widened (#3, §5.10); rollout reordered so the domain precedes previews (#9, §5.11). |
+| 5 | Codex CLI, read-only at `501ff28`, on rev 5, gate findings excluded | REWORK, 4 findings, all P2; no safety finding | All applied in rev 6: an exclusive test session that starts and ends with a refresh (#1, §5.5); bootstrap order, baseline accepted on its proof, smoke after the domain (#2, §5.11); `config.toml` counts as an Edge Function deploy input (#3, §5.4); Storage objects owned by a user deleted before the user (#4, §5.3). |
