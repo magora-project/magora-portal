@@ -1,7 +1,7 @@
 # magora-portal staging, backups and secrets — design (Spec 2)
 
 - **Date:** 2026-10-28
-- **Status:** draft rev 6 (migration gate extracted to Spec 2b; review rounds 1–5 in §10); not yet approved
+- **Status:** rev 7, approved by David on 2026-10-28 (migration gate extracted to Spec 2b; review rounds in §10)
 - **Plan task:** E1 of the Magora Consolidated Action Plan (the staging half of G2 that Spec 1 deferred)
 - **Predecessor:** `docs/superpowers/specs/2026-10-15-repo-harness-design.md` (Spec 1, done 2026-10-28). Its §9 lists this spec's scope.
 - **Successors:** Spec 2b, the automated migration gate
@@ -145,7 +145,7 @@ the core tables with production, delete the scratch project. Record the procedur
 **Storage objects (E-13).** Supabase database backups and `pg_dump` do not include Storage object
 bytes (audio, avatars, banners), so a database restore alone would bring back rows pointing at
 missing files. A nightly job copies every production Storage bucket to a Cloudflare R2 bucket
-(David, 2026-10-28). The job holds a Storage credential (open decision 4, §8) and a write-only
+(David, 2026-10-28). The job holds Storage's S3 access keys (decision 4, §8) and a write-only
 R2 credential, both in a protected `main`-only GitHub environment (§5.10). The rehearsal above
 also restores a sample of objects from R2 into the scratch project and checks that rows
 referencing them resolve. Retention and versioning are left to the builder, but must cover at
@@ -384,7 +384,7 @@ boundary. Hence:
 | Refresh login (production, read-only): `SELECT` on copied and transformed tables, catalog read | Environment `staging-sync`, `main` only | Refresh workflow |
 | Staging database owner, staging service-role key, staging `PROVISION_SECRET`, staging Slack webhook | Environment `staging-sync`; also the staging vault | Refresh workflow; maintainers (interim procedure, Edge Function deploys) |
 | Vercel automation-bypass secret (valid on every deployment in the project, §5.3) | Environment `staging-sync`; also the staging vault, for `vite dev` | Refresh workflow; maintainers' laptops |
-| Storage read and R2 write (nightly backups) | Environment `backup`, `main` only; the Storage credential is open decision 4 (§8) | Nightly backup job |
+| Storage read and R2 write (nightly backups) | Environment `backup`, `main` only; Storage's S3 access keys (decision 4, §8) | Nightly backup job |
 | Vercel token (staging deploy) | Environment `staging-deploy`, `main` only | Staging deploy workflow |
 
 Jobs that hold an environment secret check out `main` only and never run code from a PR. No PR
@@ -453,14 +453,12 @@ production ref), within §5.3's definition.
    production cutover from `magora-portal.vercel.app` happens later, not in this spec; staging's
    domain is set up in this spec (§5.9).
 3. ~~Staging keys~~ — resolved as my call: create them (§5.4).
-4. **Open: the nightly Storage backup's credential (§5.1).** Supabase Storage has no read-only
-   key that I know of (to verify in the plan): the choices are the service-role key or Storage's
-   S3 access keys, both able to write. Either one, held in a `main`-only environment with no
-   required reviewer (a nightly job cannot wait for a click), is a production-writing credential
-   used unattended. My recommendation: S3 access keys in the `backup` environment, accepted as
-   such, with the job checking out `main` only. The alternative is no automated Storage backup.
+4. ~~Nightly Storage backup credential (§5.1)~~ — resolved (David, 2026-10-28): Storage's S3
+   access keys in the `main`-only `backup` environment, with no required reviewer, accepted as a
+   production-writing credential used unattended; the job checks out `main` only. Whether
+   Supabase offers a read-only Storage key is still to verify in the plan; if it does, use it.
 
-For David's review (not new decisions, but changes to what he approved in rev 1): real node
+Accepted by David on 2026-10-28 (changes to what he approved in rev 1): real node
 locations on staging now rest on production's policies, not on staging being private (§5.3); the
 automated gate (E-5, E-6, E-10) moved to Spec 2b, and migrations meanwhile follow the interim
 procedure (§5.5); staging Edge Functions are deployed by hand, not by CI (§5.4); the bypass
@@ -484,3 +482,4 @@ Also everything listed as a non-goal in §2.
 | 4 | Codex CLI, read-only at `edb25d6`, on rev 4, prompt naming where earlier reviewers were wrong | REWORK, 13 findings | Third consecutive round led by the previous round's fixes, again in the gate. I stopped and offered three options; David chose to extract the gate into Spec 2b (E-14). Gate findings #1–#4, #6–#9 and the default-privilege note stay **open** in Spec 2b §3. Applied here in rev 5: bypass secret valid on every deployment, acknowledged (#5, §5.3, §5.10); staging `PROVISION_SECRET` assigned (#10, §5.10); per-refresh identity rules (#11, §5.3); staging Edge Function SHA recorded and checked (#12, §5.4); CLI targeting described correctly (#13, §3, §5.4); roles created before replay (#7, §5.2, §5.10); `supabase start` workspace holds exactly the baseline and 32 files (#6, §5.2); privilege check widened (#3, §5.10); rollout reordered so the domain precedes previews (#9, §5.11). |
 | 5 | Codex CLI, read-only at `501ff28`, on rev 5, gate findings excluded | REWORK, 4 findings, all P2; no safety finding | All applied in rev 6: an exclusive test session that starts and ends with a refresh (#1, §5.5); bootstrap order, baseline accepted on its proof, smoke after the domain (#2, §5.11); `config.toml` counts as an Edge Function deploy input (#3, §5.4); Storage objects owned by a user deleted before the user (#4, §5.3). |
 | 6 | Codex CLI, read-only, on the rev 5 → rev 6 diff (`501ff28..d0c682a`) with the full file read, asked whether each fix closes its finding and what the fixes broke | PASS, no findings | Each of the four fixes closes its finding; no new contradiction or unexecutable step. A diff-scoped confirmation, not a full-artifact review; rounds 1–5 were full-artifact. |
+| 7 | Codex CLI, read-only, on the rev 6 → rev 7 diff (from `1b80f00`) with the full file read: decisions recorded (staging ref, decision 4, rev-1 changes accepted, status approved). Semgrep UNRUN: the spec has no code blocks | PASS, no findings | Decision 4 consistent across §§1, 5.1, 5.10, 5.11, 7, 8; the staging ref contradicts no refusal. Output: `~/.local/state/claude-close-task/magora-spec2-codex-round7.out`. |
