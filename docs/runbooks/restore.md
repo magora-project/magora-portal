@@ -32,8 +32,14 @@ two scoped dumps are taken:
 - (a) the `public` schema, structure and data;
 - (b) data only for `auth.users`, `storage.buckets` and `storage.objects`.
 
-(b) is restored first because `public` has foreign keys to `auth.users`. `--no-privileges` drops the
-`anon` and `authenticated` GRANTs, so this proves the data restores, not that the app would run on it.
+(b) is restored first because `public` has foreign keys to `auth.users`. `public` also depends on
+extensions installed outside it (PostGIS types and functions, `pgmq`), so production's extensions are
+created in the scratch project, in the same schemas, before the restore.
+
+`--no-privileges` leaves production's GRANT statements out of the dump. It is not known whether the new
+project's default privileges grant `anon` and `authenticated` access to the restored tables anyway, so
+after the restore that access is revoked on everything in `public`. This proves the data restores, not
+that the app would run on it.
 
 ## Before you start
 
@@ -131,15 +137,45 @@ Storage S3 keys in the vault items referenced above.
 
 ## 2. Dump production
 
-(a) the `public` schema, then (b) the data of the three Supabase-owned tables:
+Everything in this step only reads production. Save the row-count query and the extension list query:
 
 ```sh
+cat > "$RESTORE_DIR/counts.sql" <<'SQL'
+select (select count(*) from public.nodes),
+       (select count(*) from public.detections),
+       (select count(*) from public.aci_logs),
+       (select count(*) from public.species),
+       (select count(*) from public.node_habitat);
+SQL
+cat > "$RESTORE_DIR/list-extensions.sql" <<'SQL'
+select format('create extension if not exists %I with schema %I;', e.extname, n.nspname)
+from pg_extension e join pg_namespace n on n.oid = e.extnamespace
+order by e.oid;
+SQL
+```
+
+Count production's rows immediately before the dump, list its extensions (one `create extension if not
+exists <name> with schema <schema>;` line each, in creation order so dependencies come first), take
+(a) the `public` schema and (b) the data of the three Supabase-owned tables, then count again
+immediately after:
+
+```sh
+op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+  'psql "$PROD_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -f "$1/counts.sql"' _ "$RESTORE_DIR" > "$RESTORE_DIR/counts-before.txt"
+op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+  'psql "$PROD_DB_URL" -X -At -v ON_ERROR_STOP=1 -f "$1/list-extensions.sql"' _ "$RESTORE_DIR" > "$RESTORE_DIR/extensions.sql"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
   'pg_dump --format=custom --no-owner --no-privileges --schema=public --file="$1/public.dump" "$PROD_DB_URL"' _ "$RESTORE_DIR"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
   'pg_dump --format=custom --data-only --table=auth.users --table=storage.buckets --table=storage.objects --file="$1/supabase-data.dump" "$PROD_DB_URL"' _ "$RESTORE_DIR"
+op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+  'psql "$PROD_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -f "$1/counts.sql"' _ "$RESTORE_DIR" > "$RESTORE_DIR/counts-after.txt"
 ls -l "$RESTORE_DIR"/*.dump
+cat "$RESTORE_DIR/counts-before.txt" "$RESTORE_DIR/counts-after.txt" "$RESTORE_DIR/extensions.sql"
 ```
+
+Expect one line of five numbers in each counts file, and one line per extension (for example
+`create extension if not exists postgis with schema extensions;`).
 
 ## 3. Restore into the scratch project
 
@@ -158,39 +194,59 @@ ls -l "$RESTORE_DIR"/*.dump
 The restore commands take only `SCRATCH_DB_URL`, never the production URL. Its username must carry the
 scratch ref, and the guard enforces that in the same command.
 
-### Restore, (b) first
+### Extensions, then the restore with (b) first, then revoke
+
+Create production's extensions, restore (b) then (a), and revoke `anon` and `authenticated` access to
+`public`. The Storage API in step 5 uses the service role key, which these revokes do not touch:
 
 ```sh
+cat > "$RESTORE_DIR/revoke.sql" <<'SQL'
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+revoke all on all functions in schema public from anon, authenticated;
+SQL
+op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+  '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -v ON_ERROR_STOP=1 -f "$2/extensions.sql"' _ <scratch-ref> "$RESTORE_DIR"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
   '. "$2/guard.sh" && guard "$1" && pg_restore --no-owner --no-privileges --dbname="$SCRATCH_DB_URL" "$2/supabase-data.dump"' _ <scratch-ref> "$RESTORE_DIR"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
   '. "$2/guard.sh" && guard "$1" && pg_restore --no-owner --no-privileges --dbname="$SCRATCH_DB_URL" "$2/public.dump"' _ <scratch-ref> "$RESTORE_DIR"
+op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+  '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -v ON_ERROR_STOP=1 -f "$2/revoke.sql"' _ <scratch-ref> "$RESTORE_DIR"
 ```
 
-Expected errors: `schema "public" already exists` on (a) is benign. No other error is expected. If
-the restore reports any other error, David records it (text only, no connection strings) in the
-Rehearsals table, the agent beside him adjusts this runbook, and you run "Clean up" steps 1 and 2. Retry only
-after deleting and recreating the scratch project, with a fresh dump.
+Expected messages: `extension "..." already exists, skipping` notices from the extensions step, and
+`schema "public" already exists` on (a), are benign. No other error is expected. If the extensions
+step or the revoke step fails, or the restore reports any other error, David records it (text only, no
+connection strings) in the Rehearsals table, the agent beside him adjusts this runbook, and you run
+"Clean up" steps 1 and 2. Retry only after deleting and recreating the scratch project, with a fresh dump.
 
 ## 4. Compare row counts
 
-Take both counts within the same hour. One statement, saved once:
+Count the scratch project with the same query, then compare. Each table passes only if
+before <= scratch <= after, using the production counts taken around the dump in step 2:
 
 ```sh
-cat > "$RESTORE_DIR/counts.sql" <<'SQL'
-select (select count(*) from public.nodes)        as nodes,
-       (select count(*) from public.detections)   as detections,
-       (select count(*) from public.aci_logs)     as aci_logs,
-       (select count(*) from public.species)      as species,
-       (select count(*) from public.node_habitat) as node_habitat;
-SQL
-op run --env-file="$RESTORE_DIR/refs.env" -- sh -c 'psql "$PROD_DB_URL" -X -f "$1/counts.sql"' _ "$RESTORE_DIR"
-op run --env-file="$RESTORE_DIR/refs.env" -- sh -c '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -f "$2/counts.sql"' _ <scratch-ref> "$RESTORE_DIR"
+op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+  '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -f "$2/counts.sql"' _ <scratch-ref> "$RESTORE_DIR" > "$RESTORE_DIR/counts-scratch.txt"
+awk -F'|' '
+  FNR == 1 { f++ }
+  { lines++; if ($0 !~ /^[0-9]+[|][0-9]+[|][0-9]+[|][0-9]+[|][0-9]+$/) bad = 1; for (i = 1; i <= 5; i++) v[f, i] = $i + 0 }
+  END {
+    if (f != 3 || lines != 3 || bad) { print "FAIL: each counts file must hold one line of five numbers"; exit 1 }
+    split("nodes detections aci_logs species node_habitat", t, " ")
+    for (i = 1; i <= 5; i++) {
+      ok = (v[1, i] <= v[3, i] && v[3, i] <= v[2, i])
+      printf "%-13s before %s  scratch %s  after %s  %s\n", t[i], v[1, i], v[3, i], v[2, i], (ok ? "PASS" : "FAIL")
+      if (!ok) failed = 1
+    }
+    exit failed + 0
+  }' "$RESTORE_DIR/counts-before.txt" "$RESTORE_DIR/counts-after.txt" "$RESTORE_DIR/counts-scratch.txt"
 ```
 
-Equality is expected, give or take rows production wrote after the dump started. Record every difference.
-An unexplained difference (scratch higher than production, or a missing table) is a failed rehearsal;
-record it and run "Clean up" steps 1 and 2.
+Record the three numbers for every table. Any `FAIL` line (a table outside its before/after range, an
+empty or malformed counts file, or a failed count) is a failed rehearsal: record it and run "Clean up"
+steps 1 and 2.
 
 ## 5. Restore 20 objects from R2
 
@@ -278,6 +334,6 @@ The first daily backup appeared in the Supabase dashboard on: `<YYYY-MM-DD, fill
 
 ## Rehearsals
 
-| Date | Who | Counts (prod / scratch: nodes, detections, aci_logs, species, node_habitat) | Objects resolved (of 20) | Result |
+| Date | Who | Counts (before / scratch / after: nodes, detections, aci_logs, species, node_habitat) | Objects resolved (of 20) | Result |
 |---|---|---|---|---|
 |  |  |  |  |  |
