@@ -91,8 +91,8 @@ It uses the same convention as `docs/runbooks/restore.md`:
   these runbooks that allows production, because this is the only procedure that writes to it.
 
 The destination bucket must already exist in production. Use `rclone copy`, never `rclone sync`. If
-any command prints `REFUSED` or fails, stop and run step 6. There are two exceptions, and each step
-says what to check instead: step 5a's `rclone check`, and step 5b's single-object `rclone cat`.
+any command prints `REFUSED` or fails, stop and run step 6. The one exception is step 5a's
+`rclone check`; step 5a says what to check instead.
 
 1. Make the working directory and write its path in your notes, then write the references file. It
    holds `op://` references only; replace the placeholders with the vault items and fields:
@@ -189,22 +189,12 @@ GUARD
       cat "$RESTORE_DIR/<bucket>.errors"; echo "error list: $(wc -l < "$RESTORE_DIR/<bucket>.errors")"
       ```
 
-      A `!` object is never restored on the strength of the check alone: a permission or network error
-      reads the same as lost bytes, and restoring a healthy object reverts it. If the error list is not
-      empty, run step a again and then this step b again, so both lists are rebuilt from the new
-      comparison, and review both lists afresh; a transient error clears. For each path still in the
-      rebuilt error list, read that object from production alone, with the path typed between the quotes:
-
-      ```sh
-      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone cat "restore_target:<bucket>/<path>" > /dev/null; echo "cat exit $?"
-      ```
-
-      This command is expected to fail for a lost object, and its exit status is not the test: the
-      `cat exit` line and rclone's error message are. Add the path to `<bucket>.files` only if it fails
-      with a plain not-found error (`NoSuchKey`, or HTTP 404), which means the bytes are gone. If it
-      succeeds, the object is readable now and the earlier error, on either side, has cleared: run steps a
-      and b again. On any other error, stop. Which error Supabase returns
-      for a row whose bytes are missing has not been observed; if it is not plainly not-found, stop.
+      This runbook never restores a `!` object: `!` means a read failed on either side, a permission or
+      network error reads the same as lost bytes, and restoring a healthy object reverts it. If the error
+      list is not empty, run step a and this step b once more, which rebuilds both lists; a transient error
+      clears. If the rebuilt error list is still not empty, stop and run step 6. David investigates those
+      paths by hand and decides any restore of them outside this procedure. An object whose bytes are lost
+      in production can appear here, because reading it from production fails.
 
       If both lists are empty, the bucket needs no restore; skip to the next bucket. Otherwise David
       reviews every line of `<bucket>.files`. A `+` object may have been deleted on purpose after
@@ -222,7 +212,8 @@ GUARD
    live row, or one a database restore put back), and Supabase's S3 API answers listings and HEAD
    requests from those rows, not from the stored bytes. So a size or hash comparison can report a lost
    object as present, and a plain `rclone copy` would skip it; only a content comparison (`--download`)
-   tells them apart. `--ignore-times` uploads unconditionally (rclone decides this before any size or
+   tells them apart. Such an object shows as `*` if production returns the wrong bytes, and as `!` if the
+   read fails, in which case step b stops and leaves it to David. `--ignore-times` uploads unconditionally (rclone decides this before any size or
    checksum comparison), but over a whole bucket it would rewrite every live object and revert any that
    changed after `<YYYY-MM-DD>`. The reviewed list limits it to the objects that need restoring. Cost:
    step a downloads up to the whole bucket from both R2 and production (a full bucket's worth of Supabase
