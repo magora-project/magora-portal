@@ -63,6 +63,7 @@ function shapeProblem(url, kind) {
 const DB_GRAMMAR = new RegExp(
   '^postgres(?:ql)?://[^@/?#]+@' +
   '(?:db\\.[a-z]{20}\\.supabase\\.co|aws-\\d+-[a-z]+-[a-z]+-\\d+\\.pooler\\.supabase\\.com)' +
+  // The /dbname segment is required: a URL with no database path is refused, not defaulted.
   '(?::\\d+)?/[A-Za-z0-9_]+(?:\\?sslmode=(?:require|verify-ca|verify-full))?$',
 )
 

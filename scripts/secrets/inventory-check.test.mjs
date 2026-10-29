@@ -1,5 +1,7 @@
 // Tests for scripts/secrets/inventory-check.mjs. Run: node scripts/secrets/inventory-check.test.mjs
-import { parseInventory, compareNames, listStoreNames, storesOf } from './inventory-check.mjs'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { parseInventory, inventoryProblems, compareNames, listStoreNames, storesOf } from './inventory-check.mjs'
 
 let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
@@ -60,13 +62,55 @@ ok('compare: extra -> one problem', extra.length === 1 && extra[0].includes('STR
 const injectedListed = compareNames(rows, full.map((l) => (l.store === 'supabase-fn:abc' ? { ...l, names: ['SUPABASE_URL'] } : l)))
 ok('compare: injected name listed is not extra', injectedListed.length === 0)
 
+// A1: an injected name is exempt only in the stores the platform injects it into
+const inj = parseInventory(`| SUPABASE_URL | production | op://Magora Project/supabase/SUPABASE_URL | supabase-fn:abc | yes |
+| A_KEY | production | op://Magora Project/s/A_KEY | vercel:preview | no |`)
+const leak = compareNames(inj, [{ store: 'supabase-fn:abc', names: ['SUPABASE_URL'] }, { store: 'vercel:preview', names: ['A_KEY', 'SUPABASE_URL'] }])
+ok('injected: unrecorded copy in another store is flagged', leak.length === 1 && leak[0].includes('SUPABASE_URL') && leak[0].includes('vercel:preview'))
+ok('injected: exempt in its own listed store', !compareNames(inj, [{ store: 'supabase-fn:abc', names: ['SUPABASE_URL'] }, { store: 'vercel:preview', names: ['A_KEY'] }]).length)
+const injBare = parseInventory(`| SUPABASE_URL | production | op://Magora Project/supabase/SUPABASE_URL | | yes |
+| A_KEY | production | op://Magora Project/s/A_KEY | vercel:preview; supabase-fn:abc | no |`)
+ok('injected, no stores listed: exempt in supabase-fn only', compareNames(injBare, [{ store: 'supabase-fn:abc', names: ['A_KEY', 'SUPABASE_URL'] }, { store: 'vercel:preview', names: ['A_KEY'] }]).length === 0)
+ok('injected, no stores listed: flagged in vercel', compareNames(injBare, [{ store: 'supabase-fn:abc', names: ['A_KEY'] }, { store: 'vercel:preview', names: ['A_KEY', 'SUPABASE_URL'] }]).some((p) => p.includes('SUPABASE_URL') && p.includes('vercel:preview')))
+
+// A5: github:repo is the repo-level store, not an environment named "repo"
+const grepo = []
+const gnames = listStoreNames('github:repo', (c, a) => { grepo.push([c, ...a].join(' ')); return { status: 0, stdout: '[{"name":"R"}]' } })
+ok('list: github:repo args have no --env', grepo[0] === 'gh secret list --json name' && JSON.stringify(gnames) === '["R"]')
+ok('stores: github:repo recognised', parseInventory('| R_KEY | production | op://Magora Project/s/R_KEY | github:repo | no |')[0].copies[0] === 'github:repo')
+
+// A2: vercel falls back to the table output when the CLI rejects --format json
+const vcalls = []
+const vrun = (results) => (c, a) => { vcalls.push(a.join(' ')); return results.shift() }
+const vt = listStoreNames('vercel:preview', vrun([{ status: 1, stdout: '' }, { status: 0, stdout: 'name  value  environments\nT1  Encrypted  Preview\n' }]))
+ok('vercel: retry without --format json parses table', JSON.stringify(vt) === '["T1"]' && vcalls.length === 2 && vcalls[0].includes('--format json') && !vcalls[1].includes('--format'))
+let vboth = ''
+try { listStoreNames('vercel:preview', vrun([{ status: 1, stdout: 'SECRETVALUE' }, { status: 1, stdout: 'SECRETVALUE' }])) } catch (e) { vboth = String(e.message) }
+ok('vercel: both attempts fail -> throws without output', vboth !== '' && !vboth.includes('SECRETVALUE'))
+let ghCalls = 0
+try { listStoreNames('github:repo', () => { ghCalls++; return { status: 1, stdout: '' } }) } catch { /* expected */ }
+ok('non-vercel failure is not retried', ghCalls === 1)
+
+// A3: a malformed inventory is a problem, not a silent pass
+const HDR = '| Name | Environment (production/staging) | 1Password reference | Copies | Injected? |\n|---|---|---|---|---|\n'
+ok('doc: well-formed doc has no problems', inventoryProblems(MD).length === 0)
+ok('doc: backticked Name is a problem', inventoryProblems(HDR + '| `X_KEY` | production | op://Magora Project/s/X_KEY | vercel:production | no |\n').length >= 1)
+ok('doc: zero parsed rows is a problem', inventoryProblems(HDR).some((p) => p.includes('no inventory rows')))
+ok('doc: no table at all is a problem', inventoryProblems('# nothing\n').some((p) => p.includes('no inventory rows')))
+ok('doc: short row is a problem', inventoryProblems(HDR + '| X_KEY | production |\n').some((p) => p.includes('could not be parsed')))
+ok('doc: good row beside bad row still reports the bad one', inventoryProblems(HDR + '| X_KEY | production | op://a/b/X_KEY | vercel:production | no |\n| bad name | production | op://a/b/c | vercel:production | no |\n').length === 1)
+const shipped = readFileSync(fileURLToPath(new URL('../../docs/runbooks/secrets-inventory.md', import.meta.url)), 'utf8')
+ok('shipped doc: parses with no structural problems', inventoryProblems(shipped).length === 0)
+ok('shipped doc: expected row count', parseInventory(shipped).length === 14)
+
 // listStoreNames must never write to any output stream
 let writes = 0
-const origLog = console.log, origErr = console.error, origWrite = process.stdout.write
+const origLog = console.log, origErr = console.error, origWrite = process.stdout.write, origErrWrite = process.stderr.write
 console.log = () => { writes++ }
 console.error = () => { writes++ }
 process.stdout.write = () => { writes++; return true }
-const restore = () => { console.log = origLog; console.error = origErr; process.stdout.write = origWrite }
+process.stderr.write = () => { writes++; return true }
+const restore = () => { console.log = origLog; console.error = origErr; process.stdout.write = origWrite; process.stderr.write = origErrWrite }
 
 // listStoreNames with an injected runner
 const calls = []
