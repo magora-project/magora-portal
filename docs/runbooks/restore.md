@@ -84,19 +84,38 @@ two scoped dumps are taken:
    target is production or is not the ref you pass. If any command prints `REFUSED`, stop and run
    "Clean up" step 2 (and step 1 if anything was restored).
 
+   `guard` accepts only this shape of `SCRATCH_DB_URL`, and refuses everything else:
+   `postgresql://postgres.<scratch-ref>:<password>@<host>:5432/postgres`, optionally followed by
+   `?sslmode=require` (or `verify-ca`, `verify-full`) and nothing more. `<host>` is
+   `aws-<N>-<region>.pooler.supabase.com` or `db.<scratch-ref>.supabase.co`. The URL may contain exactly
+   one `@` and no `%`, `#`, space or other query parameter, because libpq decodes `%` escapes and
+   lets query parameters such as `user=` or `host=` override the parts before them. If the vault's
+   password needs percent-encoding, reset the scratch project's database password to one without
+   `@ / ? # %`. `guard_ep` accepts only the endpoint `https://<scratch-ref>.supabase.co/storage/v1/s3`.
+
 Paste at the shell, as is:
 
 ```sh
 cat > "$RESTORE_DIR/guard.sh" <<'GUARD'
+guard_ref() {
+  case "$1" in ""|wqxmmuwrfltpaxnuddwk) echo "REFUSED: bad scratch ref" >&2; return 1;; esac
+  case "$1" in *[!abcdefghijklmnopqrstuvwxyz0123456789]*) echo "REFUSED: scratch ref has a character other than a-z 0-9" >&2; return 1;; esac
+  [ "${#1}" -eq 20 ] || { echo "REFUSED: scratch ref is not 20 characters" >&2; return 1; }
+}
 guard() {
   case "$SCRATCH_DB_URL" in *wqxmmuwrfltpaxnuddwk*) echo "REFUSED: scratch URL names production" >&2; return 1;; esac
-  case "$1" in ""|wqxmmuwrfltpaxnuddwk) echo "REFUSED: bad scratch ref" >&2; return 1;; esac
-  case "$SCRATCH_DB_URL" in *"//postgres.$1:"*) ;; *) echo "REFUSED: scratch URL username is not postgres.$1" >&2; return 1;; esac
+  guard_ref "$1" || return 1
+  [ -z "${PGHOSTADDR-}" ] || { echo "REFUSED: PGHOSTADDR is set" >&2; return 1; }
+  case "$SCRATCH_DB_URL" in *[![:graph:]]*) echo "REFUSED: scratch URL has a space or control character" >&2; return 1;; esac
+  case "$SCRATCH_DB_URL" in *@*@*) echo "REFUSED: scratch URL has more than one @" >&2; return 1;; esac
+  case "$SCRATCH_DB_URL" in *%*|*#*) echo "REFUSED: scratch URL has a % or #" >&2; return 1;; esac
+  re='^postgres(ql)?://postgres\.'"$1"'(:[^@/?#%]+)?@(db\.'"$1"'\.supabase\.co|aws-[0-9]+-[a-z]+-[a-z]+-[0-9]+\.pooler\.supabase\.com)(:5432)?/postgres(\?sslmode=(require|verify-ca|verify-full))?$'
+  printf '%s\n' "$SCRATCH_DB_URL" | grep -Eq "$re" || { echo "REFUSED: scratch URL is not postgresql://postgres.$1:<password>@<scratch host>:5432/postgres[?sslmode=require]" >&2; return 1; }
 }
 guard_ep() {
   case "$1" in *wqxmmuwrfltpaxnuddwk*) echo "REFUSED: endpoint names production" >&2; return 1;; esac
-  case "$2" in ""|wqxmmuwrfltpaxnuddwk) echo "REFUSED: bad scratch ref" >&2; return 1;; esac
-  case "$1" in "https://$2.supabase.co/"*) ;; *) echo "REFUSED: endpoint is not the scratch ref $2" >&2; return 1;; esac
+  guard_ref "$2" || return 1
+  [ "$1" = "https://$2.supabase.co/storage/v1/s3" ] || { echo "REFUSED: endpoint is not https://$2.supabase.co/storage/v1/s3" >&2; return 1; }
 }
 GUARD
 cat > "$RESTORE_DIR/enc.js" <<'ENC'
