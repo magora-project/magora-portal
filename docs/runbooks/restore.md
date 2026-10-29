@@ -95,12 +95,14 @@ that the app would run on it.
 
    `guard` accepts only this shape of `SCRATCH_DB_URL`, and refuses everything else:
    `postgresql://postgres.<scratch-ref>:<password>@<host>:5432/postgres`, optionally followed by
-   `?sslmode=require` (or `verify-ca`, `verify-full`) and nothing more. `<host>` is
+   `?sslmode=require` (or `verify-ca`, `verify-full`) and nothing more; `:5432` is required. `<host>` is
    `aws-<N>-<region>.pooler.supabase.com` or `db.<scratch-ref>.supabase.co`. The URL may contain exactly
    one `@` and no `%`, `#`, space or other query parameter, because libpq decodes `%` escapes and
    lets query parameters such as `user=` or `host=` override the parts before them. If the vault's
    password needs percent-encoding, reset the scratch project's database password to one without
-   `@ / ? # %`. `guard_ep` accepts only the endpoint `https://<scratch-ref>.supabase.co/storage/v1/s3`.
+   `@ / ? # %`. `guard` also refuses if any of `PGSERVICE`, `PGSERVICEFILE`, `PGOPTIONS`, `PGHOSTADDR`,
+   `PGHOST`, `PGPORT`, `PGUSER` or `PGDATABASE` is set, since libpq reads them; unset them first.
+   `guard_ep` accepts only the endpoint `https://<scratch-ref>.supabase.co/storage/v1/s3`.
 
 Paste at the shell, as is:
 
@@ -114,11 +116,13 @@ guard_ref() {
 guard() {
   case "$SCRATCH_DB_URL" in *wqxmmuwrfltpaxnuddwk*) echo "REFUSED: scratch URL names production" >&2; return 1;; esac
   guard_ref "$1" || return 1
-  [ -z "${PGHOSTADDR-}" ] || { echo "REFUSED: PGHOSTADDR is set" >&2; return 1; }
+  for _g_n in PGSERVICE PGSERVICEFILE PGOPTIONS PGHOSTADDR PGHOST PGPORT PGUSER PGDATABASE; do
+    eval "_g_v=\${$_g_n-}"; [ -z "$_g_v" ] || { echo "REFUSED: $_g_n is set; unset it" >&2; return 1; }
+  done
   case "$SCRATCH_DB_URL" in *[![:graph:]]*) echo "REFUSED: scratch URL has a space or control character" >&2; return 1;; esac
   case "$SCRATCH_DB_URL" in *@*@*) echo "REFUSED: scratch URL has more than one @" >&2; return 1;; esac
   case "$SCRATCH_DB_URL" in *%*|*#*) echo "REFUSED: scratch URL has a % or #" >&2; return 1;; esac
-  re='^postgres(ql)?://postgres\.'"$1"'(:[^@/?#%]+)?@(db\.'"$1"'\.supabase\.co|aws-[0-9]+-[a-z]+-[a-z]+-[0-9]+\.pooler\.supabase\.com)(:5432)?/postgres(\?sslmode=(require|verify-ca|verify-full))?$'
+  re='^postgres(ql)?://postgres\.'"$1"'(:[^@/?#%]+)?@(db\.'"$1"'\.supabase\.co|aws-[0-9]+-[a-z]+-[a-z]+-[0-9]+\.pooler\.supabase\.com):5432/postgres(\?sslmode=(require|verify-ca|verify-full))?$'
   printf '%s\n' "$SCRATCH_DB_URL" | grep -Eq "$re" || { echo "REFUSED: scratch URL is not postgresql://postgres.$1:<password>@<scratch host>:5432/postgres[?sslmode=require]" >&2; return 1; }
 }
 guard_ep() {
