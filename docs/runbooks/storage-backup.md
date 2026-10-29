@@ -91,8 +91,8 @@ It uses the same convention as `docs/runbooks/restore.md`:
   these runbooks that allows production, because this is the only procedure that writes to it.
 
 The destination bucket must already exist in production. Use `rclone copy`, never `rclone sync`. If
-any command prints `REFUSED` or fails, stop and run step 6 (step 5a's first command is the one
-exception; it says what to check instead).
+any command prints `REFUSED` or fails, stop and run step 6 (step 5a's `rclone check` is the one
+exception; step 5a says what to check instead).
 
 1. Make the working directory and write its path in your notes, then write the references file. It
    holds `op://` references only; replace the placeholders with the vault items and fields:
@@ -166,27 +166,48 @@ GUARD
 
    a. Compare the backup with production by content. This writes one line per backed-up object to
       `<bucket>.combined`: `=` identical, `+` missing in production, `*` present but different, `!` could
-      not be read. It exits non-zero whenever anything is not identical, so its exit status is not the
-      test here. Stop if it prints `REFUSED`, or if the two counts after it differ (then the comparison did
-      not cover every object):
+      not be read. The first command deletes any `<bucket>.combined` left by an earlier run. The check exits
+      non-zero whenever anything is not identical, so its exit status is not the test here. The listing
+      must print `lsf exit 0`. Stop if anything prints `REFUSED`, if the listing exit is not 0, or if the
+      two counts at the end differ (then the comparison did not cover every object):
 
       ```sh
+      rm -f "$RESTORE_DIR/<bucket>.combined" "$RESTORE_DIR/<bucket>.src"
       EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --download --one-way --combined "$RESTORE_DIR/<bucket>.combined"; echo "check exit $?"
-      op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" | wc -l
+      op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" > "$RESTORE_DIR/<bucket>.src"; echo "lsf exit $?"
+      wc -l < "$RESTORE_DIR/<bucket>.src"
       wc -l < "$RESTORE_DIR/<bucket>.combined"
       ```
 
-   b. List every object that is not identical, and show it:
+   b. Split the objects that are not identical into a restore list (`+` and `*`) and an error list (`!`),
+      and show both. `sed` exits 0 when it matches nothing, so an empty list is not a failure:
 
       ```sh
-      grep -v '^= ' "$RESTORE_DIR/<bucket>.combined" | cut -c3- > "$RESTORE_DIR/<bucket>.files"
-      grep -v '^= ' "$RESTORE_DIR/<bucket>.combined"
+      sed -n 's/^[+*] //p' "$RESTORE_DIR/<bucket>.combined" > "$RESTORE_DIR/<bucket>.files"
+      sed -n 's/^! //p' "$RESTORE_DIR/<bucket>.combined" > "$RESTORE_DIR/<bucket>.errors"
+      cat "$RESTORE_DIR/<bucket>.files"; echo "restore list: $(wc -l < "$RESTORE_DIR/<bucket>.files")"
+      cat "$RESTORE_DIR/<bucket>.errors"; echo "error list: $(wc -l < "$RESTORE_DIR/<bucket>.errors")"
       ```
 
-      If nothing prints, the bucket needs no restore; skip to the next bucket. Otherwise David reviews
-      every line. A `+` object may have been deleted on purpose after `<YYYY-MM-DD>`, and a `*` object may
-      have been changed on purpose after it; restoring either undoes that change. David deletes those
-      paths from `<bucket>.files` and records which paths were kept and that David approved them.
+      A `!` object is never restored on the strength of the check alone: a permission or network error
+      reads the same as lost bytes, and restoring a healthy object reverts it. If the error list is not
+      empty, run step a again; a transient error clears. For each path still in it, read that object from
+      production alone, with the path typed between the quotes:
+
+      ```sh
+      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone cat "restore_target:<bucket>/<path>" > /dev/null; echo "cat exit $?"
+      ```
+
+      Add the path to `<bucket>.files` only if this fails with a plain not-found error (`NoSuchKey`, or
+      HTTP 404), which means the bytes are gone. If it succeeds, the error was on the R2 side: stop and
+      find out why the backup copy cannot be read. On any other error, stop. Which error Supabase returns
+      for a row whose bytes are missing has not been observed; if it is not plainly not-found, stop.
+
+      If both lists are empty, the bucket needs no restore; skip to the next bucket. Otherwise David
+      reviews every line of `<bucket>.files`. A `+` object may have been deleted on purpose after
+      `<YYYY-MM-DD>`, and a `*` object may have been changed on purpose after it; restoring either undoes
+      that change. David deletes those paths from `<bucket>.files` and records which paths were kept and
+      that David approved them.
    c. Copy only the listed objects, then check them by content. The check must exit 0:
 
       ```sh
@@ -201,7 +222,7 @@ GUARD
    tells them apart. `--ignore-times` uploads unconditionally (rclone decides this before any size or
    checksum comparison), but over a whole bucket it would rewrite every live object and revert any that
    changed after `<YYYY-MM-DD>`. The reviewed list limits it to the objects that need restoring. Cost:
-   step a downloads the whole bucket from both R2 and production (a full bucket's worth of Supabase
+   step a downloads up to the whole bucket from both R2 and production (a full bucket's worth of Supabase
    egress); step c downloads only the listed objects. A path containing a newline breaks the list
    format; if step b shows a line that is not a whole path, stop.
 
