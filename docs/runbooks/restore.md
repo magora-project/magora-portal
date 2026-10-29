@@ -40,10 +40,13 @@ extensions (PostGIS types and functions, `pgmq`), and a `--schema=public` dump d
 production's extensions are created in the scratch project, each in the schema production has it in,
 before the restore.
 
-`--no-privileges` leaves production's GRANT statements out of the dump. It is not known whether the new
-project's default privileges grant `anon` and `authenticated` access to the restored tables anyway, so
-after the restore that access is revoked on everything in `public`. This proves the data restores, not
-that the app would run on it.
+`--no-privileges` leaves production's GRANT and REVOKE statements out of the dump. So on scratch, every
+restored function keeps PostgreSQL's default `EXECUTE` for `PUBLIC` (production's `revoke ... from
+public` is not restored), and it is not known whether the new project's default privileges also grant
+`anon` and `authenticated` access to the restored objects. After the restore, all privileges on every
+table, sequence and function in schema `public` are therefore revoked from `PUBLIC`, `anon` and
+`authenticated`. Grants to other roles, and objects outside `public`, are not changed. This proves the
+data restores, not that the app would run on it.
 
 ## Before you start
 
@@ -208,14 +211,15 @@ scratch ref, and the guard enforces that in the same command.
 
 ### Extensions, then the restore with (b) first, then revoke
 
-Create production's extensions, restore (b) then (a), and revoke `anon` and `authenticated` access to
-`public`. The Storage API in step 5 uses the service role key, which these revokes do not touch:
+Create production's extensions, restore (b) then (a), and revoke all privileges on the tables,
+sequences and functions in `public` from `PUBLIC`, `anon` and `authenticated`. Step 5 reads objects
+through the Storage API with the service role key; these revokes change nothing outside schema `public`:
 
 ```sh
 cat > "$RESTORE_DIR/revoke.sql" <<'SQL'
-revoke all on all tables in schema public from anon, authenticated;
-revoke all on all sequences in schema public from anon, authenticated;
-revoke all on all functions in schema public from anon, authenticated;
+revoke all on all tables in schema public from public, anon, authenticated;
+revoke all on all sequences in schema public from public, anon, authenticated;
+revoke all on all functions in schema public from public, anon, authenticated;
 SQL
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
   '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -v ON_ERROR_STOP=1 -f "$2/extensions.sql"' _ <scratch-ref> "$RESTORE_DIR"
