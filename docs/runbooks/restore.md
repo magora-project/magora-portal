@@ -355,6 +355,29 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    awk -F'|' -v d="$RESTORE_DIR" '{print $3 > (d "/" $2 ".files")}' "$RESTORE_DIR/sample.txt"
    ```
 
+   Then rehearse the production comparison (`docs/runbooks/storage-backup.md`, "Restoring objects into
+   production", steps 5a and 5b) on the sampled objects, so it has run before an incident needs it. The
+   commands are the production ones with the scratch guard, the `<latest>` date, and
+   `--files-from-raw` to keep the download to the sample. The restore and error lists are written to
+   `.restore` and `.errors`, so they do not overwrite the sample's `.files`. For each bucket in the
+   sample:
+
+   ```sh
+   rm -f "$RESTORE_DIR/<bucket>.combined" "$RESTORE_DIR/<bucket>.src"
+   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore_target:<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" --download --one-way --combined "$RESTORE_DIR/<bucket>.combined"; echo "check exit $?"
+   op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" > "$RESTORE_DIR/<bucket>.src"; echo "lsf exit $?"
+   wc -l < "$RESTORE_DIR/<bucket>.files"; wc -l < "$RESTORE_DIR/<bucket>.src"; wc -l < "$RESTORE_DIR/<bucket>.combined"
+   sed -n 's/^[+*] //p' "$RESTORE_DIR/<bucket>.combined" > "$RESTORE_DIR/<bucket>.restore"
+   sed -n 's/^! //p' "$RESTORE_DIR/<bucket>.combined" > "$RESTORE_DIR/<bucket>.errors"
+   cut -c1 "$RESTORE_DIR/<bucket>.combined" | sort | uniq -c
+   ```
+
+   The check exits non-zero here, as in production. Expect `lsf exit 0`, three equal counts, and no `=`
+   line: the rows were restored but the bytes were not. Record how many objects came out as `*`, `+`
+   and `!` in the Rehearsals table; which symbol Supabase gives an object that has a row but no bytes
+   has not been observed before. A `REFUSED`, a listing exit other than 0, unequal counts, or any `=`
+   line is a failed rehearsal: record it and run "Clean up" steps 1 and 2.
+
 4. Read the `<scratch-ref>` in the endpoint aloud and match it against the dashboard, as in step 3. Then,
    for each bucket in the sample, copy only its listed objects. The guard runs in the same command and refuses
    if the endpoint names production or lacks the scratch ref you typed:
@@ -371,6 +394,10 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    every listed object unconditionally (rclone decides this before any size or checksum comparison), and
    `rclone check --download` reads the content of each object from both sides and compares it, so it
    never trusts the destination's metadata.
+
+   Then run step 3's comparison block again for each bucket. Now every line must be `=`: this shows
+   the production comparison reports a restored object as identical. Any other line is a failed
+   rehearsal: record it and run "Clean up" steps 1 and 2.
 5. An upload through Supabase S3 can upsert the `storage.objects` row, so check the rows are the ones
    restored from the dump. The same 20 ids must still exist; expected result: `20`:
 
@@ -413,6 +440,6 @@ The first daily backup appeared in the Supabase dashboard on: `<YYYY-MM-DD, fill
 
 ## Rehearsals
 
-| Date | Who | Counts (before / scratch / after: nodes, detections, aci_logs, species, node_habitat) | Objects resolved (of 20) | Result |
-|---|---|---|---|---|
-|  |  |  |  |  |
+| Date | Who | Counts (before / scratch / after: nodes, detections, aci_logs, species, node_habitat) | Pre-copy comparison (`*` / `+` / `!`) | Objects resolved (of 20) | Result |
+|---|---|---|---|---|---|
+|  |  |  |  |  |  |

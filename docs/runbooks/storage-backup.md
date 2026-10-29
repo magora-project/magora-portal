@@ -36,10 +36,14 @@ environment (deployment branches: `main` only):
   `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID`, `R2_BUCKET`
 - variable (not a secret): `SUPABASE_S3_REGION`, set from the Supabase dashboard (Storage, S3 connection)
 
+In the vault's R2 item, also store the account endpoint, `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`,
+as its own field. The restore procedures read it as `<account endpoint field>`.
+
 Read back: `gh api repos/{owner}/{repo}/environments/backup` shows the branch policy, and
 `gh secret list --env backup` shows the six names.
 
-After the workflow merges, trigger it once with `workflow_dispatch` and read the `rclone check` output.
+After the workflow merges, run the checksum probe below, then trigger the workflow once with
+`workflow_dispatch` and read the `rclone check` output.
 
 First-dispatch checksum note: the job uses `--checksum`, and an object without an MD5 is compared by
 size only. Before the first dispatch, count each bucket's objects without an MD5. This only reads
@@ -164,7 +168,16 @@ GUARD
 5. For each bucket to restore, find what needs restoring, have David review it, then copy and check only
    those objects. Replace every `<production ref>` placeholder with the bare ref, typed.
 
-   a. Compare the backup with production by content. This writes one line per backed-up object to
+   a. Confirm the bucket exists in production. A missing bucket does not make the comparison fail: rclone
+      treats it as empty, reports every object as `+`, and downloads the whole backup first. Stop if
+      this does not print `lsf exit 0` and then `bucket exists`:
+
+      ```sh
+      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf --dirs-only "restore_target:" > "$RESTORE_DIR/buckets.txt"; echo "lsf exit $?"
+      grep -qx '<bucket>/' "$RESTORE_DIR/buckets.txt" && echo "bucket exists" || echo "REFUSED: production has no bucket <bucket>"
+      ```
+
+      Then compare the backup with production by content. This writes one line per backed-up object to
       `<bucket>.combined`: `=` identical, `+` missing in production, `*` present but different, `!` could
       not be read. The first command deletes any `<bucket>.combined` left by an earlier run. The check exits
       non-zero whenever anything is not identical, so its exit status is not the test here. The listing
@@ -192,7 +205,8 @@ GUARD
       This runbook never restores a `!` object: `!` means a read failed on either side, a permission or
       network error reads the same as lost bytes, and restoring a healthy object reverts it. If the error
       list is not empty, run step a and this step b once more, which rebuilds both lists; a transient error
-      clears. If the rebuilt error list is still not empty, stop and run step 6. David investigates those
+      clears. If the rebuilt error list is still not empty, copy it (printed above) into your notes, because
+      step 6 deletes `<bucket>.errors`, then stop and run step 6. David investigates those
       paths by hand and decides any restore of them outside this procedure. An object whose bytes are lost
       in production can appear here, because reading it from production fails.
 
