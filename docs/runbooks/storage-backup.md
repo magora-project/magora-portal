@@ -91,7 +91,8 @@ It uses the same convention as `docs/runbooks/restore.md`:
   these runbooks that allows production, because this is the only procedure that writes to it.
 
 The destination bucket must already exist in production. Use `rclone copy`, never `rclone sync`. If
-any command prints `REFUSED` or fails, stop and run step 6.
+any command prints `REFUSED` or fails, stop and run step 6 (step 5a's first command is the one
+exception; it says what to check instead).
 
 1. Make the working directory and write its path in your notes, then write the references file. It
    holds `op://` references only; replace the placeholders with the vault items and fields:
@@ -105,6 +106,7 @@ any command prints `REFUSED` or fails, stop and run step 6.
      'RCLONE_CONFIG_RESTORE_TARGET_REGION=<SUPABASE_S3_REGION>' \
      'RCLONE_CONFIG_RESTORE_TARGET_ACCESS_KEY_ID="op://Magora Project/<supabase s3 item>/<key id field>"' \
      'RCLONE_CONFIG_RESTORE_TARGET_SECRET_ACCESS_KEY="op://Magora Project/<supabase s3 item>/<secret field>"' \
+     'RCLONE_CONFIG_RESTORE_TARGET_NO_CHECK_BUCKET=true' \
      'RCLONE_CONFIG_R2_TYPE=s3' \
      'RCLONE_CONFIG_R2_PROVIDER=Cloudflare' \
      'RCLONE_CONFIG_R2_ENDPOINT="op://Magora Project/<r2 item>/<account endpoint field>"' \
@@ -113,7 +115,9 @@ any command prints `REFUSED` or fails, stop and run step 6.
      > "$RESTORE_DIR/rclone.env"
    ```
 
-   Do not add a `RESTORE_TARGET_ENDPOINT` line; the endpoint is written on each command.
+   Do not add a `RESTORE_TARGET_ENDPOINT` line; the endpoint is written on each command. Keep the
+   `NO_CHECK_BUCKET` line: without it, `rclone copy` creates a destination bucket that does not exist, so
+   a mistyped bucket name is created in production and filled instead of failing.
 2. Write the production guard (the next block, which is unindented so it pastes as is).
 
 Paste at the shell, as is:
@@ -157,22 +161,49 @@ GUARD
      printf "%s\n" "$out"' _ "<R2_BUCKET>"
    ```
 
-5. For each bucket to restore, copy and then check. Replace both `<production ref>` placeholders on each
-   line with the bare ref, typed:
+5. For each bucket to restore, find what needs restoring, have David review it, then copy and check only
+   those objects. Replace every `<production ref>` placeholder with the bare ref, typed.
 
-   ```sh
-   EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --checksum --ignore-times
-   EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --download --one-way
-   ```
+   a. Compare the backup with production by content. This writes one line per backed-up object to
+      `<bucket>.combined`: `=` identical, `+` missing in production, `*` present but different, `!` could
+      not be read. It exits non-zero whenever anything is not identical, so its exit status is not the
+      test here. Stop if it prints `REFUSED`, or if the two counts after it differ (then the comparison did
+      not cover every object):
 
-   The database restore already put each object's size and ETag in `storage.objects`, and Supabase's S3
-   API answers listings and HEAD requests from those rows, not from the stored bytes. Without
-   `--ignore-times`, `rclone copy` would see a matching object and skip the upload, and a hash-based
-   `rclone check` would pass with the bytes missing. `--ignore-times` uploads every object
-   unconditionally (rclone decides this before any size or checksum comparison), and
-   `rclone check --download` reads each object's content from both R2 and production and compares it,
-   so it never trusts the destination's metadata. Cost: the check downloads the whole bucket from both
-   sides, so it takes about as long as the copy and adds a full bucket's worth of Supabase egress.
+      ```sh
+      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --download --one-way --combined "$RESTORE_DIR/<bucket>.combined"; echo "check exit $?"
+      op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" | wc -l
+      wc -l < "$RESTORE_DIR/<bucket>.combined"
+      ```
+
+   b. List every object that is not identical, and show it:
+
+      ```sh
+      grep -v '^= ' "$RESTORE_DIR/<bucket>.combined" | cut -c3- > "$RESTORE_DIR/<bucket>.files"
+      grep -v '^= ' "$RESTORE_DIR/<bucket>.combined"
+      ```
+
+      If nothing prints, the bucket needs no restore; skip to the next bucket. Otherwise David reviews
+      every line. A `+` object may have been deleted on purpose after `<YYYY-MM-DD>`, and a `*` object may
+      have been changed on purpose after it; restoring either undoes that change. David deletes those
+      paths from `<bucket>.files` and records which paths were kept and that David approved them.
+   c. Copy only the listed objects, then check them by content. The check must exit 0:
+
+      ```sh
+      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" --checksum --ignore-times
+      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" --download --one-way
+      ```
+
+   Why this shape: production's `storage.objects` can hold a row for an object whose bytes are gone (the
+   live row, or one a database restore put back), and Supabase's S3 API answers listings and HEAD
+   requests from those rows, not from the stored bytes. So a size or hash comparison can report a lost
+   object as present, and a plain `rclone copy` would skip it; only a content comparison (`--download`)
+   tells them apart. `--ignore-times` uploads unconditionally (rclone decides this before any size or
+   checksum comparison), but over a whole bucket it would rewrite every live object and revert any that
+   changed after `<YYYY-MM-DD>`. The reviewed list limits it to the objects that need restoring. Cost:
+   step a downloads the whole bucket from both R2 and production (a full bucket's worth of Supabase
+   egress); step c downloads only the listed objects. A path containing a newline breaks the list
+   format; if step b shows a line that is not a whole path, stop.
 
 6. Clean up, and confirm:
 

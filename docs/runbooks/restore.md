@@ -91,6 +91,7 @@ data restores, not that the app would run on it.
      'RCLONE_CONFIG_RESTORE_TARGET_REGION=<region>' \
      'RCLONE_CONFIG_RESTORE_TARGET_ACCESS_KEY_ID="op://Magora Project/<scratch s3 item>/<key id field>"' \
      'RCLONE_CONFIG_RESTORE_TARGET_SECRET_ACCESS_KEY="op://Magora Project/<scratch s3 item>/<secret field>"' \
+     'RCLONE_CONFIG_RESTORE_TARGET_NO_CHECK_BUCKET=true' \
      'RCLONE_CONFIG_R2_TYPE=s3' \
      'RCLONE_CONFIG_R2_PROVIDER=Cloudflare' \
      'RCLONE_CONFIG_R2_ENDPOINT="op://Magora Project/<r2 item>/<account endpoint field>"' \
@@ -99,7 +100,9 @@ data restores, not that the app would run on it.
      > "$RESTORE_DIR/rclone.env"
    ```
 
-   Do not add a `RESTORE_TARGET_ENDPOINT` line; the endpoint is written on each command.
+   Do not add a `RESTORE_TARGET_ENDPOINT` line; the endpoint is written on each command. Keep the
+   `NO_CHECK_BUCKET` line: without it, `rclone copy` creates a destination bucket that does not exist, so
+   a mistyped bucket name is created and filled instead of failing.
 4. Write the ref guard and the path encoder (the next block, which is unindented so it pastes as is).
    Every command that touches the scratch project calls the guard first, and it refuses to run if the
    target is production or is not the ref you pass. If any command prints `REFUSED`, stop and run
