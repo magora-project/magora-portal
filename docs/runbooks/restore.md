@@ -36,8 +36,9 @@ two scoped dumps are taken:
 - (b) data only for `auth.users`, `storage.buckets` and `storage.objects`.
 
 (b) is restored first because `public` has foreign keys to `auth.users`. `public` also depends on
-extensions installed outside it (PostGIS types and functions, `pgmq`), so production's extensions are
-created in the scratch project, in the same schemas, before the restore.
+extensions (PostGIS types and functions, `pgmq`), and a `--schema=public` dump does not create them, so
+production's extensions are created in the scratch project, each in the schema production has it in,
+before the restore.
 
 `--no-privileges` leaves production's GRANT statements out of the dump. It is not known whether the new
 project's default privileges grant `anon` and `authenticated` access to the restored tables anyway, so
@@ -155,16 +156,18 @@ select (select count(*) from public.nodes),
        (select count(*) from public.node_habitat);
 SQL
 cat > "$RESTORE_DIR/list-extensions.sql" <<'SQL'
-select format('create extension if not exists %I with schema %I;', e.extname, n.nspname)
+select case when n.nspname like 'pg\_%' then '' else format('create schema if not exists %I; ', n.nspname) end
+       || format('create extension if not exists %I with schema %I;', e.extname, n.nspname)
 from pg_extension e join pg_namespace n on n.oid = e.extnamespace
 order by e.oid;
 SQL
 ```
 
-Count production's rows immediately before the dump, list its extensions (one `create extension if not
-exists <name> with schema <schema>;` line each, in creation order so dependencies come first), take
-(a) the `public` schema and (b) the data of the three Supabase-owned tables, then count again
-immediately after:
+Count production's rows immediately before the dump, list its extensions (one line each, in creation
+order so dependencies come first; the schema is created first because `create extension ... with schema`
+requires it to exist, except a reserved `pg_` schema such as `pg_catalog`, which always exists and
+cannot be named in `create schema`), take (a) the `public` schema and (b) the data of the three Supabase-owned
+tables, then count again immediately after:
 
 ```sh
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
@@ -181,8 +184,10 @@ ls -l "$RESTORE_DIR"/*.dump
 cat "$RESTORE_DIR/counts-before.txt" "$RESTORE_DIR/counts-after.txt" "$RESTORE_DIR/extensions.sql"
 ```
 
-Expect one line of five numbers in each counts file, and one line per extension (for example
-`create extension if not exists postgis with schema extensions;`).
+Expect one line of five numbers in each counts file, and one line per production extension, of the
+form `create schema if not exists <schema>; create extension if not exists <extension> with schema <schema>;`
+(for a `pg_` schema, the `create extension` part only).
+Check that `postgis` and `pgmq` appear.
 
 ## 3. Restore into the scratch project
 
@@ -222,7 +227,8 @@ op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
   '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -v ON_ERROR_STOP=1 -f "$2/revoke.sql"' _ <scratch-ref> "$RESTORE_DIR"
 ```
 
-Expected messages: `extension "..." already exists, skipping` notices from the extensions step, and
+Expected messages: `schema "..." already exists, skipping` and `extension "..." already exists, skipping`
+notices from the extensions step, and
 `schema "public" already exists` on (a), are benign. No other error is expected. If the extensions
 step or the revoke step fails, or the restore reports any other error, David records it (text only, no
 connection strings) in the Rehearsals table, the agent beside him adjusts this runbook, and you run
