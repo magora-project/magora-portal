@@ -11,8 +11,9 @@ Only when every bucket's copy and check passed does the job write a completion m
 `complete/<YYYY-MM-DD>` (holding the run id), named for the prefix it wrote. A prefix with a marker is a
 complete copy; a prefix without one may be partial. The marker is outside `nightly/`, so no restore copies
 it, and it is not under the lock or the lifecycle rule. Markers outlive their prefixes, so a restore
-needs both, and uses a date less than 13 days old (the lifecycle rule may already be deleting an older
-prefix).
+needs both, and uses a date less than 13 days old: every object in `nightly/<date>/` was written on or
+after that date, the lifecycle rule deletes it 14 days after it was written, and the extra day is margin
+for the restore. Both restore pickers apply this filter.
 An object uploaded between a bucket's copy and its check is missing from R2, so that night's check fails loudly; the next night copies it.
 
 ## Retention and lock
@@ -131,16 +132,29 @@ GUARD
 4. Pick `<YYYY-MM-DD>`: a date that has a completion marker `complete/<date>` and a matching
    `nightly/<date>/` prefix, never just the newest prefix. The job writes the marker only after every
    bucket's copy and check passed, under the date of the prefix it actually wrote; a failed night leaves
-   a partial prefix and no marker. This lists the marked dates that have a prefix, oldest first. Pick
-   one less than 13 days old. If nothing prints, there is no complete backup: stop.
+   a partial prefix and no marker. Markers never expire, but the lifecycle rule deletes `nightly/`
+   objects after 14 days, so the list keeps only dates less than 13 days old (UTC calendar days) and
+   leaves a day's margin for the restore itself. This lists the marked dates that have a prefix and are
+   less than 13 days old, oldest first; pick one of them. If nothing prints (it then exits non-zero),
+   there is no usable complete backup: stop.
 
    ```sh
    op run --env-file="$RESTORE_DIR/rclone.env" -- sh -c '
+     dn() { y=$((1${1%%-*} - 10000)); m=${1#*-}; m=$((1${m%-*} - 100)); d=$((1${1##*-} - 100))
+       if [ "$m" -le 2 ]; then y=$((y - 1)); fi; e=$((y / 400)); o=$((y - e * 400))
+       echo $((e * 146097 + o * 365 + o / 4 - o / 100 + (153 * ((m + 9) % 12) + 2) / 5 + d - 1 - 719468)); }
+     re="[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])"
+     today="$(date -u +%Y-%m-%d)" || exit 1
+     printf "%s\n" "$today" | grep -Eqx "$re" || exit 1
+     t=$(dn "$today")
      marks="$(rclone lsf --files-only "r2:$1/complete/")" || exit 1
      dirs="$(rclone lsf --dirs-only "r2:$1/nightly/")" || exit 1
-     printf "%s\n" "$marks" | grep -Ex "[0-9]{4}-[0-9]{2}-[0-9]{2}" | sort | while IFS= read -r d; do
-       printf "%s\n" "$dirs" | grep -qx "$d/" && echo "$d"
-     done' _ "<R2_BUCKET>"
+     out="$(printf "%s\n" "$marks" | grep -Ex "$re" | sort | while IFS= read -r d; do
+       a=$((t - $(dn "$d")))
+       if [ "$a" -ge 0 ] && [ "$a" -lt 13 ] && printf "%s\n" "$dirs" | grep -qx "$d/"; then echo "$d"; fi
+     done)"
+     [ -n "$out" ] || { echo "no complete backup less than 13 days old" >&2; exit 1; }
+     printf "%s\n" "$out"' _ "<R2_BUCKET>"
    ```
 
 5. For each bucket to restore, copy and then check. Replace both `<production ref>` placeholders on each

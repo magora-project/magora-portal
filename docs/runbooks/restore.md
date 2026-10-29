@@ -299,16 +299,29 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
 1. Pick `<latest>`: the newest date that has a completion marker `complete/<date>` and a matching
    `nightly/<date>/` prefix, never just the newest prefix. The job writes the marker only after every
    bucket's copy and check passed, under the date of the prefix it actually wrote; a failed night leaves
-   a partial prefix and no marker. This lists the marked dates that have a prefix, oldest first; take
-   the last line. If nothing prints, there is no complete backup: stop and run "Clean up" step 2.
+   a partial prefix and no marker. Markers never expire, but the lifecycle rule deletes `nightly/`
+   objects after 14 days, so the list keeps only dates less than 13 days old (UTC calendar days) and
+   leaves a day's margin for the restore itself. This lists the marked dates that have a prefix and are
+   less than 13 days old, oldest first; take the last line. If nothing prints (it then exits non-zero),
+   there is no usable complete backup: stop and run "Clean up" step 2.
 
    ```sh
    op run --env-file="$RESTORE_DIR/rclone.env" -- sh -c '
+     dn() { y=$((1${1%%-*} - 10000)); m=${1#*-}; m=$((1${m%-*} - 100)); d=$((1${1##*-} - 100))
+       if [ "$m" -le 2 ]; then y=$((y - 1)); fi; e=$((y / 400)); o=$((y - e * 400))
+       echo $((e * 146097 + o * 365 + o / 4 - o / 100 + (153 * ((m + 9) % 12) + 2) / 5 + d - 1 - 719468)); }
+     re="[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])"
+     today="$(date -u +%Y-%m-%d)" || exit 1
+     printf "%s\n" "$today" | grep -Eqx "$re" || exit 1
+     t=$(dn "$today")
      marks="$(rclone lsf --files-only "r2:$1/complete/")" || exit 1
      dirs="$(rclone lsf --dirs-only "r2:$1/nightly/")" || exit 1
-     printf "%s\n" "$marks" | grep -Ex "[0-9]{4}-[0-9]{2}-[0-9]{2}" | sort | while IFS= read -r d; do
-       printf "%s\n" "$dirs" | grep -qx "$d/" && echo "$d"
-     done' _ "<R2_BUCKET>"
+     out="$(printf "%s\n" "$marks" | grep -Ex "$re" | sort | while IFS= read -r d; do
+       a=$((t - $(dn "$d")))
+       if [ "$a" -ge 0 ] && [ "$a" -lt 13 ] && printf "%s\n" "$dirs" | grep -qx "$d/"; then echo "$d"; fi
+     done)"
+     [ -n "$out" ] || { echo "no complete backup less than 13 days old" >&2; exit 1; }
+     printf "%s\n" "$out"' _ "<R2_BUCKET>"
    ```
 
 2. Check the buckets exist in the scratch project. They came from dump (b); none are created by hand:
