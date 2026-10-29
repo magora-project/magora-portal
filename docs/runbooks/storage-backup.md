@@ -91,8 +91,8 @@ It uses the same convention as `docs/runbooks/restore.md`:
   these runbooks that allows production, because this is the only procedure that writes to it.
 
 The destination bucket must already exist in production. Use `rclone copy`, never `rclone sync`. If
-any command prints `REFUSED` or fails, stop and run step 6 (step 5a's `rclone check` is the one
-exception; step 5a says what to check instead).
+any command prints `REFUSED` or fails, stop and run step 6. There are two exceptions, and each step
+says what to check instead: step 5a's `rclone check`, and step 5b's single-object `rclone cat`.
 
 1. Make the working directory and write its path in your notes, then write the references file. It
    holds `op://` references only; replace the placeholders with the vault items and fields:
@@ -191,16 +191,19 @@ GUARD
 
       A `!` object is never restored on the strength of the check alone: a permission or network error
       reads the same as lost bytes, and restoring a healthy object reverts it. If the error list is not
-      empty, run step a again; a transient error clears. For each path still in it, read that object from
-      production alone, with the path typed between the quotes:
+      empty, run step a again and then this step b again, so both lists are rebuilt from the new
+      comparison, and review both lists afresh; a transient error clears. For each path still in the
+      rebuilt error list, read that object from production alone, with the path typed between the quotes:
 
       ```sh
       EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone cat "restore_target:<bucket>/<path>" > /dev/null; echo "cat exit $?"
       ```
 
-      Add the path to `<bucket>.files` only if this fails with a plain not-found error (`NoSuchKey`, or
-      HTTP 404), which means the bytes are gone. If it succeeds, the error was on the R2 side: stop and
-      find out why the backup copy cannot be read. On any other error, stop. Which error Supabase returns
+      This command is expected to fail for a lost object, and its exit status is not the test: the
+      `cat exit` line and rclone's error message are. Add the path to `<bucket>.files` only if it fails
+      with a plain not-found error (`NoSuchKey`, or HTTP 404), which means the bytes are gone. If it
+      succeeds, the object is readable now and the earlier error, on either side, has cleared: run steps a
+      and b again. On any other error, stop. Which error Supabase returns
       for a row whose bytes are missing has not been observed; if it is not plainly not-found, stop.
 
       If both lists are empty, the bucket needs no restore; skip to the next bucket. Otherwise David
