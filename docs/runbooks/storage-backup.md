@@ -39,7 +39,7 @@ is compared by size only. If any appear, David decides whether those buckets dro
 
 ## Restoring objects
 
-Restore with a remote named `restore-target`. Never reuse the backup job's `supabase` remote.
+Restore with a remote named `restore_target`. Never reuse the backup job's `supabase` remote.
 The remote is configured only through environment variables, and the endpoint is written on the
 same line as every command that uses it, so nothing stays exported in the shell afterwards. Set the
 keys (from the vault; never paste them into a command line or file) and the R2 remote once per shell:
@@ -70,8 +70,8 @@ the target project. Use `rclone copy`, never `rclone sync`.
 Replace `<scratch-ref>` with the scratch project's ref, pick `<YYYY-MM-DD>` and `<bucket>`:
 
 ```sh
-RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<scratch-ref>.supabase.co/storage/v1/s3' rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore-target:<bucket>" --checksum
-RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<scratch-ref>.supabase.co/storage/v1/s3' rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore-target:<bucket>" --checksum --one-way
+RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<scratch-ref>.supabase.co/storage/v1/s3' rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --checksum
+RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<scratch-ref>.supabase.co/storage/v1/s3' rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --checksum --one-way
 ```
 
 ### Real restore into production
@@ -80,8 +80,8 @@ David approves this restore. Record the approval (who, when, which date and buck
 Read the production ref aloud and match it against the production project in the dashboard, then:
 
 ```sh
-RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<production ref = wqxmmuwrfltpaxnuddwk>.supabase.co/storage/v1/s3' rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore-target:<bucket>" --checksum
-RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<production ref = wqxmmuwrfltpaxnuddwk>.supabase.co/storage/v1/s3' rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore-target:<bucket>" --checksum --one-way
+RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<production ref = wqxmmuwrfltpaxnuddwk>.supabase.co/storage/v1/s3' rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --checksum
+RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT='https://<production ref = wqxmmuwrfltpaxnuddwk>.supabase.co/storage/v1/s3' rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --checksum --one-way
 ```
 
 Replace the whole `<production ref = ...>` placeholder with the bare ref before running.

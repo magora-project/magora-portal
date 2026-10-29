@@ -3,7 +3,7 @@
 This proves production can be restored: production data goes into a scratch project, and objects come
 back from the R2 Storage backup. Run it once to establish the procedure, then again after any change to
 the backup jobs. Storage object details are in `docs/runbooks/storage-backup.md`; this runbook uses its
-`restore-target` convention (endpoint written on the command line, never exported) and defines no other.
+`restore_target` convention (endpoint written on the command line, never exported) and defines no other.
 
 It needs a POSIX shell (macOS, Linux, or Git Bash or WSL on Windows).
 
@@ -231,8 +231,8 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    if the endpoint names production or lacks the scratch ref you typed:
 
    ```sh
-   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore-target:<bucket>" --files-from "$RESTORE_DIR/<bucket>.files" --checksum
-   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore-target:<bucket>" --files-from "$RESTORE_DIR/<bucket>.files" --checksum --one-way
+   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore_target:<bucket>" --files-from "$RESTORE_DIR/<bucket>.files" --checksum
+   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore_target:<bucket>" --files-from "$RESTORE_DIR/<bucket>.files" --checksum --one-way
    ```
 
    Use `rclone copy`, never `rclone sync`.
