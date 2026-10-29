@@ -174,7 +174,7 @@ GUARD
 
       ```sh
       EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf --dirs-only "restore_target:" > "$RESTORE_DIR/buckets.txt"; echo "lsf exit $?"
-      grep -qx '<bucket>/' "$RESTORE_DIR/buckets.txt" && echo "bucket exists" || echo "REFUSED: production has no bucket <bucket>"
+      grep -Fqx -- '<bucket>/' "$RESTORE_DIR/buckets.txt" && echo "bucket exists" || echo "REFUSED: production has no bucket <bucket>"
       ```
 
       Then compare the backup with production by content. This writes one line per backed-up object to
