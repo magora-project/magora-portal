@@ -5,9 +5,14 @@
 `.github/workflows/storage-backup.yml` runs every night at 07:30 UTC (and on manual dispatch, `main` only).
 It lists every Supabase Storage bucket and copies each one into the R2 bucket
 under `nightly/<YYYY-MM-DD>/<bucket>/` (UTC date). The R2 bucket name is held in the `R2_BUCKET` secret and is `magora-storage-backup`; below it is written `<R2_BUCKET>`. Unchanged objects are server-side copied from the
-newest earlier dated prefix (`--copy-dest`). The prefix of a night whose run succeeded is a complete
-copy; a failed night's prefix may be partial. The job ends with
+newest earlier dated prefix (`--copy-dest`). The job ends with
 `rclone check --one-way` per bucket (source objects must exist and match in R2; extra objects in R2 are ignored); any failure fails the job. The job never deletes anything.
+Only when every bucket's copy and check passed does the job write a completion marker,
+`complete/<YYYY-MM-DD>` (holding the run id), named for the prefix it wrote. A prefix with a marker is a
+complete copy; a prefix without one may be partial. The marker is outside `nightly/`, so no restore copies
+it, and it is not under the lock or the lifecycle rule. Markers outlive their prefixes, so a restore
+needs both, and uses a date less than 13 days old (the lifecycle rule may already be deleting an older
+prefix).
 An object uploaded between a bucket's copy and its check is missing from R2, so that night's check fails loudly; the next night copies it.
 
 ## Retention and lock
@@ -123,17 +128,19 @@ GUARD
 
 3. Confirm the ref: read the production ref aloud, character by character, and match it against the
    production project in the Supabase dashboard. If they differ, stop. Do not run the copy.
-4. Pick `<YYYY-MM-DD>`: a date whose `storage-backup` run succeeded, never just the newest prefix. A
-   failed night's prefix may be partial. List the successful runs and the prefixes, and pick a run date
-   that appears in both. `startedAt` is when the run's latest attempt started (GitHub's `run_started_at`, which a re-run
-   resets), and the job names its prefix after the UTC date a few minutes later. So a run's date is
-   the first 10 characters of its `startedAt`, and a run whose `startedAt` is after 23:00 UTC is not
-   used: its prefix may carry the next day's date. `createdAt` is not used: it keeps the first
-   attempt's date when a failed night is re-run successfully after midnight.
+4. Pick `<YYYY-MM-DD>`: a date that has a completion marker `complete/<date>` and a matching
+   `nightly/<date>/` prefix, never just the newest prefix. The job writes the marker only after every
+   bucket's copy and check passed, under the date of the prefix it actually wrote; a failed night leaves
+   a partial prefix and no marker. This lists the marked dates that have a prefix, oldest first. Pick
+   one less than 13 days old. If nothing prints, there is no complete backup: stop.
 
    ```sh
-   gh run list --workflow storage-backup.yml --branch main --status success --limit 20 --json startedAt,attempt --jq '.[] | "\(.startedAt) attempt \(.attempt)"'
-   op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf "r2:<R2_BUCKET>/nightly/" --dirs-only
+   op run --env-file="$RESTORE_DIR/rclone.env" -- sh -c '
+     marks="$(rclone lsf --files-only "r2:$1/complete/")" || exit 1
+     dirs="$(rclone lsf --dirs-only "r2:$1/nightly/")" || exit 1
+     printf "%s\n" "$marks" | grep -Ex "[0-9]{4}-[0-9]{2}-[0-9]{2}" | sort | while IFS= read -r d; do
+       printf "%s\n" "$dirs" | grep -qx "$d/" && echo "$d"
+     done' _ "<R2_BUCKET>"
    ```
 
 5. For each bucket to restore, copy and then check. Replace both `<production ref>` placeholders on each

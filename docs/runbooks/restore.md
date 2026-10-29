@@ -269,18 +269,19 @@ steps 1 and 2.
 
 The data restore brought back the `storage.buckets` and `storage.objects` rows, not the bytes.
 
-1. Pick `<latest>`: the newest date whose `storage-backup` run succeeded, never just the newest prefix.
-   A prefix is a complete copy only for a night whose run succeeded; a failed night leaves a partial
-   one. List the successful runs, then the prefixes, and take the newest run date that appears in
-   both. `startedAt` is when the run's latest attempt started (GitHub's `run_started_at`, which a re-run
-   resets), and the job names its prefix after the UTC date a few minutes later. So a run's date is
-   the first 10 characters of its `startedAt`, and a run whose `startedAt` is after 23:00 UTC is not
-   used: its prefix may carry the next day's date. `createdAt` is not used: it keeps the first
-   attempt's date when a failed night is re-run successfully after midnight.
+1. Pick `<latest>`: the newest date that has a completion marker `complete/<date>` and a matching
+   `nightly/<date>/` prefix, never just the newest prefix. The job writes the marker only after every
+   bucket's copy and check passed, under the date of the prefix it actually wrote; a failed night leaves
+   a partial prefix and no marker. This lists the marked dates that have a prefix, oldest first; take
+   the last line. If nothing prints, there is no complete backup: stop and run "Clean up" step 2.
 
    ```sh
-   gh run list --workflow storage-backup.yml --branch main --status success --limit 20 --json startedAt,attempt --jq '.[] | "\(.startedAt) attempt \(.attempt)"'
-   op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf "r2:<R2_BUCKET>/nightly/" --dirs-only
+   op run --env-file="$RESTORE_DIR/rclone.env" -- sh -c '
+     marks="$(rclone lsf --files-only "r2:$1/complete/")" || exit 1
+     dirs="$(rclone lsf --dirs-only "r2:$1/nightly/")" || exit 1
+     printf "%s\n" "$marks" | grep -Ex "[0-9]{4}-[0-9]{2}-[0-9]{2}" | sort | while IFS= read -r d; do
+       printf "%s\n" "$dirs" | grep -qx "$d/" && echo "$d"
+     done' _ "<R2_BUCKET>"
    ```
 
 2. Check the buckets exist in the scratch project. They came from dump (b); none are created by hand:

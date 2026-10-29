@@ -102,4 +102,11 @@ jobs:
             fi
           done <<< "$buckets"
 
-          exit "$failed"
+          if [ "$failed" -ne 0 ]; then
+            exit "$failed"
+          fi
+
+          # Every bucket copied and checked: mark nightly/${today}/ complete. The marker is
+          # outside nightly/, so no restore copies it. Restores pick only marked dates.
+          printf '%s\n' "${GITHUB_RUN_ID:-}" | rclone rcat "r2:${R2_BUCKET}/complete/${today}"
+          echo "Marked complete: complete/${today} (prefix nightly/${today}/)"
