@@ -221,8 +221,9 @@ Implements Decision R2, option 1.
   - A first step fails unless `github.ref == 'refs/heads/main'`. Checkout is not needed.
   - Install rclone from the Ubuntu package (pinned version printed).
   - Configure both remotes through `RCLONE_CONFIG_*` environment variables, never a config file written with values.
-  - For each bucket that `rclone lsd supabase:` lists, run `rclone copy supabase:<bucket> r2:$R2_BUCKET/nightly/$(date -u +%F)/<bucket> --copy-dest r2:$R2_BUCKET/nightly/<previous date>/<bucket> --checksum`. Take the previous date from the newest existing `nightly/` prefix. On the first night there is none, so omit `--copy-dest`.
-  - Finish with `rclone check` between source and destination for each bucket. A failure fails the job.
+  - For each bucket that `rclone lsd supabase:` lists, run `rclone copy supabase:<bucket> r2:$R2_BUCKET/nightly/$(date -u +%F)/<bucket> --copy-dest r2:$R2_BUCKET/nightly/<previous date>/<bucket> --checksum`. Take the previous date from the newest existing `nightly/` prefix **strictly earlier than today**, never today's own (rclone refuses a `--copy-dest` equal to the destination). On the first night there is none, so omit `--copy-dest`.
+  - Finish with `rclone check` between source and destination for each bucket. A failure fails the job. Only after every bucket's copy and check pass does the job write the marker `complete/<date>`; restores pick only marked dates.
+  - A same-day re-run writes into the same prefix. Objects that already match are skipped; an object that changed in Supabase since the first attempt would need an overwrite, which the 8-day lock refuses, so that re-run fails and writes no marker. The next night starts a new prefix. Accepted cost: at most one day without a complete backup, never a partial one marked complete. A unique prefix per attempt would remove the gap and is not adopted, because the restore pickers and the lifecycle rule key on one prefix per date.
 - [ ] **Step 3: Test before merge.** `actionlint` is clean. Read the YAML to confirm there is no `pull_request` trigger, `persist-credentials` is not used, and no `${{ secrets.* }}` appears in a `run:` line (secrets reach steps through `env:` only).
 - [ ] **Step 4: Runbook.** Write `docs/runbooks/storage-backup.md`: what the job copies, where it goes, the retention and the lock. Restoring an object uses a remote named `restore-target`, never the backup job's `supabase` remote. Its endpoint is written out in full in the command (`https://<ref>.supabase.co/storage/v1/s3`), and the runbook has the operator read the ref aloud and match it against the scratch project before running anything. The rehearsal (Task 5) targets the scratch ref. A real restore into production is a separate section that starts with "David approves this restore", and its command is otherwise identical.
 - [ ] **Step 5: Commit.** After merge, the first run is an operator step: David triggers `workflow_dispatch` and reads the job's `rclone check` output.
@@ -400,11 +401,14 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 - [ ] **Step 2: Run it.** Expected: FAIL.
 - [ ] **Step 3: Implement.** The `executeAllowlist` lives in `supabase/migrations/checks/refresh-execute-allowlist.txt`, a reviewed file where every line is `<schema>.<function>(<args>)  # <reason>`, or `<schema>.*  # <reason>` for `pg_catalog` and `information_schema` only.
   The allowlist's real contents are derived in Task 15b Step 4, once the full schema and grants exist. Here it holds only the `pg_catalog.*` and `information_schema.*` lines.
+  - A wildcard does not cover functions that write without any table privilege. `judge` keeps a fixed list, `WRITES_WITHOUT_TABLE_PRIVILEGE`, and reports `EXECUTE` on any of them **whatever the allowlist says**, so no allowlist line, wildcard or derived, can admit one. It starts with the large-object writers: `lo_create`, `lo_creat`, `lo_from_bytea`, `lo_import` (both forms), `lo_open`, `lowrite`, `lo_put`, `lo_truncate`, `lo_truncate64` and `lo_unlink`. Any of them lets a "read-only" login create or change large objects in production, and `default_transaction_read_only` is a session default the login can switch off, not a boundary.
+  - A unit case: a `Facts` with `EXECUTE` on `pg_catalog.lo_create` under an allowlist holding `pg_catalog.*` gives exactly one violation naming it.
 - [ ] **Step 4: Run it.** Expected: PASS.
 - [ ] **Step 5: Write the itest, which sabotages the check.**
   The fixture is self-contained, so this task does not wait for the baseline:
   - Start a bare local stack, apply `roles.sql`, then run `create table public.t(id int primary key, owner uuid)` and `grant select on public.t to magora_refresh`.
   - Run the check once. Its `EXECUTE` violations on this bare stack (extension functions callable through `PUBLIC`) become the fixture's allowlist. Every further step must add **exactly one** new violation.
+  - Record whether that first run reports any `WRITES_WITHOUT_TABLE_PRIVILEGE` function (stock PostgreSQL grants `EXECUTE` on most large-object functions to `PUBLIC`; whether Supabase revokes them is not yet observed). Then, as `magora_refresh`, run `select lo_create(0)`: if it succeeds, the check must have reported `lo_create`; if it is refused, record the error. Either way, the bare-stack allowlist must not have absorbed it.
   - `GRANT INSERT ON public.t TO magora_refresh`: it fails naming that grant. Revoke it.
   - `GRANT UPDATE (one column) …`: it fails. Revoke it.
   - `GRANT authenticated TO magora_refresh`: it fails on membership. Revoke it.
@@ -576,6 +580,7 @@ This is a spec exception, for David to approve. The migration changes production
 - [ ] **Step 4: Derive the real `EXECUTE` allowlist.** On the same stack, run the privilege check as `magora_refresh` with only the `pg_catalog`/`information_schema` lines.
   - For each `EXECUTE` violation, read the function. Allowlist it, with its reason, only if it cannot write.
   - A writing `SECURITY DEFINER` function callable through `PUBLIC` is **not** allowlisted. It goes to the private advisory (Task 7), and production's privilege check (Task 13 Step 3) stays red until that fix is applied.
+  - A `WRITES_WITHOUT_TABLE_PRIVILEGE` violation (Task 11) cannot be allowlisted either. It is handled the same way: it goes to the advisory with the proposed fix (revoking `EXECUTE` on those functions from `PUBLIC`, which David approves because it changes production), and the check stays red until it is applied.
   - Non-`EXECUTE` privileges reached through `PUBLIC` (`USAGE`/`CREATE` on schemas, `TEMP` on the database) are handled the same way: `USAGE` is not in §5.10's forbidden list. `CREATE` on `public` is revoked from `PUBLIC` by Supabase's defaults; if it is present, it goes to the advisory. `TEMP` is not a write to production data, and is recorded in the allowlist file's header as accepted, for David to confirm.
   - Expected after this step: the check passes locally.
 - [ ] **Step 5: Commit** with PR D. The production application is Task 13 Step 3.
@@ -761,6 +766,8 @@ This is a spec exception, for David to approve. The migration changes production
 - [ ] **Step 1b: Write `scripts/staging/lease.mjs` and `lease.test.mjs`** (interfaces in Task 26's lease paragraph):
   - the four `admit` cases
   - `claim` refusing an already-held lease
+  - two interleaved `claim`s against a fake whose create refuses an existing name: exactly one succeeds, and the loser exits non-zero without writing
+  - `claim` never calling `gh variable set` (the fake fails the test if it does)
   - `release` refusing the wrong login, with `gh` injected as a fake
 
   Run it: FAIL, implement, PASS.
@@ -1025,9 +1032,10 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
   - a schedule while unheld → true
   - a dispatch while held → true only if `holder === held`
   - a dispatch while unheld → true
-- `scripts/staging/lease.mjs` also exports `claim(login)` and `release(login)`, which call `gh variable`:
-  - `claim` refuses if the variable is already set, sets it, and reads it back to confirm that it holds `login`.
-  - `release` refuses unless the variable holds `login`.
+- `scripts/staging/lease.mjs` also exports `claim(login)` and `release(login)`. Unheld means the variable does not exist (not that it is empty):
+  - `claim` acquires in one atomic call: it **creates** the variable with `gh api -X POST repos/{owner}/{repo}/actions/variables -f name=STAGING_HELD_BY -f value=<login>`. The create endpoint refuses a name that already exists, so of two concurrent claims exactly one succeeds. Any refusal (a 409, or any non-2xx) means the claim failed; `claim` never falls back to `gh variable set`, which overwrites. After a successful create it reads the variable back and refuses unless it holds `login`.
+  - `release` reads the variable, refuses unless it holds `login`, then deletes it (`gh api -X DELETE repos/{owner}/{repo}/actions/variables/STAGING_HELD_BY`).
+  - Before Task 20's runbook relies on it, the operator probes the create endpoint once in this repository with a throwaway name: a second create of the same name must be refused. If it is accepted, stop: the lease is not atomic and needs another design.
 
 - [ ] **Step 1: Write the runbook** following §5.5, with exact commands.
   - Claim staging in the maintainers' channel. Then run `node scripts/staging/lease.mjs claim <github-login>`.
