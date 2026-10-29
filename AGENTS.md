@@ -26,7 +26,7 @@ For agents and contributors (Claude Code via `CLAUDE.md`, Codex CLI directly). D
 | `standard` | ordinary changes | Codex CLI, correctness question |
 | `subtle-correctness` | **any PR that touches `supabase/migrations/`, an `api/` auth path, or a control file**; concurrency; anything subtle | Codex CLI on correctness, plus a Fable or Opus subagent on completeness, executability, whether tests can fail, and what the fixes broke |
 
-If Codex wrote it, route its review to an Anthropic model. An empty reviewer reply is an unrun review, not a pass. This review layer is discipline; required CI checks are the control.
+If Codex wrote the change, route its review to an Anthropic model instead. An empty reviewer reply is an unrun review, not a pass. This review layer is discipline; required CI checks are the control.
 
 Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`; for those, the merging maintainer's control-file read replaces the depth rule.
 
@@ -35,7 +35,7 @@ Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing 
 `.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`,
 `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`,
 `scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`.
-A PR can weaken a check by editing these. Say so in the PR description when you change one. On fork and Dependabot PRs the merging maintainer reads each control-file change before merging.
+A PR can weaken a check by editing these. Say so in the PR description when you change one. On fork and Dependabot PRs the merging maintainer reads each control-file change first.
 
 ## Migrations
 
@@ -47,8 +47,8 @@ A PR can weaken a check by editing these. Say so in the PR description when you 
 ## Production warnings (until the staging spec lands)
 
 - `vite dev` proxies `/api` to production; every Vercel preview uses production Supabase.
-- **Never authorize a Vercel deployment for a fork PR.** It would run fork code with Preview secrets against production. Review fork PRs from CI and diff only.
+- **Never authorize a Vercel deployment for a fork PR.** It runs fork code with Preview secrets against production. Review fork PRs from CI and diff only.
 
 ## Secrets
 
-Agents use `op run` and `op inject` only, never `op read`, `op item get` or anything else that prints a secret value. Local env files hold `op://` references only (`env/*.env`); run commands through `op run --env-file=env/staging.env -- <cmd>`.
+Agents use `op run` and `op inject` only, never `op read`, `op item get` or anything else that prints a secret value. Local env files hold `op://` references only (`env/*.env`); run commands via `op run --env-file=env/staging.env -- <cmd>`.
