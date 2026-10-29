@@ -22,7 +22,9 @@ restore from.
 
 1. Production Supabase is on Pro with daily backups, and one restore (database plus a sample of
    Storage objects from R2) has been rehearsed into a scratch project (not production) and read back.
-2. Vercel Preview and local `vite dev` reach the staging project only. Proven by reading back every
+2. Vercel Preview and local `vite dev` send their Supabase requests and their proxied `/api` requests
+   to the staging project only. They can still call production's public endpoints directly (§5.4);
+   criterion 8 covers the production write paths among those. Proven by reading back every
    Preview-scoped env var's name and its 1Password item reference (never its value; the
    reference is recorded beside each copy), by a preview request that shows the staging
    project ref, and on a maintainer's machine by a `vite dev` session whose browser Supabase
@@ -71,7 +73,8 @@ the source of truth for every secret; a simulated node for the node-portal contr
 
 ## 3. Current state (read 2026-10-28 unless noted)
 
-- One Supabase project, `wqxmmuwrfltpaxnuddwk`, on the **Free** plan (David, 2026-10-28): no
+- One Supabase project when this was read, `wqxmmuwrfltpaxnuddwk`; the staging project was
+  created later the same day (§5.3). Production is on the **Free** plan (David, 2026-10-28): no
   backups, no branching, pauses after a week idle (supabase.com/pricing, read 2026-10-28).
 - Vercel is on Pro (architect charter, 2026-07-17). Production serves at
   `magora-portal.vercel.app`. The charter's `app.themagoraproject.com` does not resolve (`dig`,
@@ -145,9 +148,14 @@ the core tables with production, delete the scratch project. Record the procedur
 **Storage objects (E-13).** Supabase database backups and `pg_dump` do not include Storage object
 bytes (audio, avatars, banners), so a database restore alone would bring back rows pointing at
 missing files. A nightly job copies every production Storage bucket to a Cloudflare R2 bucket
-(David, 2026-10-28). The job holds Storage's S3 access keys (decision 4, §8) and a write-only
-R2 credential, both in a protected `main`-only GitHub environment (§5.10). The rehearsal above
-also restores a sample of objects from R2 into the scratch project and checks that rows
+(David, 2026-10-28), `magora-storage-backup`. The job holds Storage's S3 access keys (decision 4,
+§8) and an R2 token, both in a protected `main`-only GitHub environment (§5.10). Cloudflare has no
+write-only token, so the R2 token is an Object Read & Write token scoped to that one bucket, and a
+bucket lock on `nightly/` (8 days) stops it deleting or overwriting the recent backups (the plan's
+Decision R2). The
+rehearsal above reads R2 with the same token, taken from the "Magora Project" vault by the
+maintainer running it through `op run` (§5.10). It restores a sample of objects from R2 into the
+scratch project and checks that rows
 referencing them resolve. Retention and versioning are left to the builder, but must cover at
 least the 7 days of database backups.
 
@@ -384,7 +392,7 @@ boundary. Hence:
 | Refresh login (production, read-only): `SELECT` on copied and transformed tables, catalog read | Environment `staging-sync`, `main` only | Refresh workflow |
 | Staging database owner, staging service-role key, staging `PROVISION_SECRET`, staging Slack webhook | Environment `staging-sync`; also the staging vault | Refresh workflow; maintainers (interim procedure, Edge Function deploys) |
 | Vercel automation-bypass secret (valid on every deployment in the project, §5.3) | Environment `staging-sync`; also the staging vault, for `vite dev` | Refresh workflow; maintainers' laptops |
-| Storage read and R2 write (nightly backups) | Environment `backup`, `main` only; Storage's S3 access keys (decision 4, §8) | Nightly backup job |
+| Storage read and R2 write (nightly backups): Storage's S3 access keys (decision 4, §8); R2 Object Read & Write token scoped to `magora-storage-backup`, with an 8-day bucket lock on `nightly/` (§5.1) | Environment `backup`, `main` only; also the "Magora Project" vault | Nightly backup job; maintainers, through `op run`, for restore rehearsals and restores (§5.1) |
 | Vercel token (staging deploy) | Environment `staging-deploy`, `main` only | Staging deploy workflow |
 
 Jobs that hold an environment secret check out `main` only and never run code from a PR. No PR
@@ -483,3 +491,4 @@ Also everything listed as a non-goal in §2.
 | 5 | Codex CLI, read-only at `501ff28`, on rev 5, gate findings excluded | REWORK, 4 findings, all P2; no safety finding | All applied in rev 6: an exclusive test session that starts and ends with a refresh (#1, §5.5); bootstrap order, baseline accepted on its proof, smoke after the domain (#2, §5.11); `config.toml` counts as an Edge Function deploy input (#3, §5.4); Storage objects owned by a user deleted before the user (#4, §5.3). |
 | 6 | Codex CLI, read-only, on the rev 5 → rev 6 diff (`501ff28..d0c682a`) with the full file read, asked whether each fix closes its finding and what the fixes broke | PASS, no findings | Each of the four fixes closes its finding; no new contradiction or unexecutable step. A diff-scoped confirmation, not a full-artifact review; rounds 1–5 were full-artifact. |
 | 7 | Codex CLI, read-only, on the rev 6 → rev 7 diff (from `1b80f00`) with the full file read: decisions recorded (staging ref, decision 4, rev-1 changes accepted, status approved). Semgrep UNRUN: the spec has no code blocks | PASS, no findings | Decision 4 consistent across §§1, 5.1, 5.10, 5.11, 7, 8; the staging ref contradicts no refusal. Output: `~/.local/state/claude-close-task/magora-spec2-codex-round7.out`. |
+| 8 | CodeRabbit on PR #43 (`711b7c4`), 3 Minor; Codex CLI on the fix diff | 3 findings, all applied (David, 2026-10-29) | Criterion 2 scoped to Supabase and proxied `/api` requests, direct production endpoints left to §5.4 and criterion 8 (§1); §3's project count dated before staging was created (§3); the "write-only R2 credential" replaced by the plan's Decision R2, a bucket-scoped Object Read & Write token plus a lock on `nightly/`, and the rehearsal's R2 read named: the same token from the vault through `op run` (§5.1, §5.10). |
