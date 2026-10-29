@@ -357,11 +357,17 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    if the endpoint names production or lacks the scratch ref you typed:
 
    ```sh
-   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore_target:<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" --checksum
-   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore_target:<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" --checksum --one-way
+   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore_target:<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" --checksum --ignore-times
+   EP='https://<scratch-ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_ep "$EP" <scratch-ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<latest>/<bucket>" "restore_target:<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" --download --one-way
    ```
 
-   Use `rclone copy`, never `rclone sync`.
+   Use `rclone copy`, never `rclone sync`. The data restore already put each object's size and ETag in
+   `storage.objects`, and Supabase's S3 API answers listings and HEAD requests from those rows, not from
+   the stored bytes. So without `--ignore-times`, `rclone copy` would see a matching object and skip the
+   upload, and a hash-based `rclone check` would pass with the bytes missing. `--ignore-times` uploads
+   every listed object unconditionally (rclone decides this before any size or checksum comparison), and
+   `rclone check --download` reads the content of each object from both sides and compares it, so it
+   never trusts the destination's metadata.
 5. An upload through Supabase S3 can upsert the `storage.objects` row, so check the rows are the ones
    restored from the dump. The same 20 ids must still exist; expected result: `20`:
 

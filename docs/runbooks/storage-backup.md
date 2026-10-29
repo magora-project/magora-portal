@@ -161,9 +161,18 @@ GUARD
    line with the bare ref, typed:
 
    ```sh
-   EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --checksum
-   EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --checksum --one-way
+   EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --checksum --ignore-times
+   EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --download --one-way
    ```
+
+   The database restore already put each object's size and ETag in `storage.objects`, and Supabase's S3
+   API answers listings and HEAD requests from those rows, not from the stored bytes. Without
+   `--ignore-times`, `rclone copy` would see a matching object and skip the upload, and a hash-based
+   `rclone check` would pass with the bytes missing. `--ignore-times` uploads every object
+   unconditionally (rclone decides this before any size or checksum comparison), and
+   `rclone check --download` reads each object's content from both R2 and production and compares it,
+   so it never trusts the destination's metadata. Cost: the check downloads the whole bucket from both
+   sides, so it takes about as long as the copy and adds a full bucket's worth of Supabase egress.
 
 6. Clean up, and confirm:
 
