@@ -402,7 +402,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 - [ ] **Step 3: Implement.** The `executeAllowlist` lives in `supabase/migrations/checks/refresh-execute-allowlist.txt`, a reviewed file where every line is `<schema>.<function>(<args>)  # <reason>`, or `<schema>.*  # <reason>` for `pg_catalog` and `information_schema` only.
   The allowlist's real contents are derived in Task 15b Step 4, once the full schema and grants exist. Here it holds only the `pg_catalog.*` and `information_schema.*` lines.
   - A wildcard does not cover functions that write without any table privilege. `judge` keeps a fixed list, `WRITES_WITHOUT_TABLE_PRIVILEGE`, and reports `EXECUTE` on any of them **whatever the allowlist says**, so no allowlist line, wildcard or derived, can admit one. It starts with the large-object writers: `lo_create`, `lo_creat`, `lo_from_bytea`, `lo_import` (both forms), `lo_open`, `lowrite`, `lo_put`, `lo_truncate`, `lo_truncate64` and `lo_unlink`; `lo_export`, which writes server files (not callable through `PUBLIC` by default, but a later grant must not pass the wildcard); and both overloads of `pg_logical_emit_message`, which writes caller-supplied content to WAL. Any of them lets a "read-only" login write in production, and `default_transaction_read_only` is a session default the login can switch off, not a boundary.
-  - A unit case: a `Facts` with `EXECUTE` on `pg_catalog.lo_create` under an allowlist holding `pg_catalog.*` gives exactly one violation naming it.
+  - Unit cases, one per function **signature** in the list, enumerated in the test independently of `judge`'s own constant: a `Facts` with `EXECUTE` on that signature gives exactly one violation naming it, once under an allowlist holding `pg_catalog.*` and once under an allowlist naming that exact signature. Functions not callable by default (such as `lo_export`) are exercised the same way, as a synthetic `Facts`. Removing any entry from `judge`'s list must fail a case.
 - [ ] **Step 4: Run it.** Expected: PASS.
 - [ ] **Step 5: Write the itest, which sabotages the check.**
   The fixture is self-contained, so this task does not wait for the baseline:
@@ -580,7 +580,8 @@ This is a spec exception, for David to approve. The migration changes production
 - [ ] **Step 4: Derive the real `EXECUTE` allowlist.** On the same stack, run the privilege check as `magora_refresh` with only the `pg_catalog`/`information_schema` lines.
   - For each `EXECUTE` violation, read the function. Allowlist it, with its reason, only if it cannot write.
   - A writing `SECURITY DEFINER` function callable through `PUBLIC` is **not** allowlisted. It goes to the private advisory (Task 7), and production's privilege check (Task 13 Step 3) stays red until that fix is applied.
-  - A `WRITES_WITHOUT_TABLE_PRIVILEGE` violation (Task 11) cannot be allowlisted either. It is handled the same way: it goes to the advisory with the proposed fix (revoking `EXECUTE` on those functions from `PUBLIC`, which David approves because it changes production), and the check stays red until it is applied. The same revoke is applied to this local stack (through the grants migration, once David approves it) before the PASS below is expected.
+  - A `WRITES_WITHOUT_TABLE_PRIVILEGE` violation (Task 11) cannot be allowlisted either. It goes to the advisory, and production's check stays red until it is fixed.
+  - 🔴 **OPEN before this step is executed: how that fix ships.** Found by Codex on the spec branch, 2026-10-29. The likely fix is revoking `EXECUTE` on those functions from `PUBLIC`, which changes production and needs David's approval. Not yet decided: which migration carries it (the grants migration's rollback is defined as revoking exactly its `GRANT SELECT`s, so adding the revoke there breaks that contract); whether its rollback restores the `PUBLIC` grants or deliberately keeps them revoked; and re-running Step 2's local cycle once the final migration contents are known, checking the state after rollback, not only after re-apply. Until it is decided, this step's local PASS cannot be expected on a stack that exposes these functions.
   - Non-`EXECUTE` privileges reached through `PUBLIC` (`USAGE`/`CREATE` on schemas, `TEMP` on the database) are handled the same way: `USAGE` is not in §5.10's forbidden list. `CREATE` on `public` is revoked from `PUBLIC` by Supabase's defaults; if it is present, it goes to the advisory. `TEMP` is not a write to production data, and is recorded in the allowlist file's header as accepted, for David to confirm.
   - Expected after this step: the check passes locally.
 - [ ] **Step 5: Commit** with PR D. The production application is Task 13 Step 3.
@@ -766,10 +767,8 @@ This is a spec exception, for David to approve. The migration changes production
 - [ ] **Step 1b: Write `scripts/staging/lease.mjs` and `lease.test.mjs`** (interfaces in Task 26's lease paragraph):
   - the four `admit` cases
   - `claim` refusing an already-held lease
-  - two interleaved `claim`s against a fake whose create refuses an existing name: exactly one succeeds, and the loser exits non-zero without writing
-  - `claim` never calling `gh variable set` (the fake fails the test if it does)
-  - `release` refusing a token other than its own (including the same login with another suffix), with `gh` injected as a fake
-  - two `release` calls of one session, interleaved with another session's successful `claim`: the second release refuses (its token file is gone) and the new lease survives
+  - `release` refusing the wrong login, with `gh` injected as a fake
+  - 🔴 These cases are superseded by the lease design that Task 26's OPEN block requires; write the tests that design names.
 
   Run it: FAIL, implement, PASS.
 - [ ] **Step 2: Lint.** `actionlint` is clean. Read the YAML for any `pull_request` trigger (there must be none) and for `${{ secrets.* }}` inside a `run:` line (there must be none).
@@ -1033,24 +1032,28 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
   - a schedule while unheld → true
   - a dispatch while held → true only if `holder === held`
   - a dispatch while unheld → true
-- `scripts/staging/lease.mjs` also exports `claim(login)` and `release()`. The lease value is a per-session token, `<login>:<random>` (16 random hex characters), so two sessions of one maintainer are told apart. `claim` writes the token to `~/.local/state/magora/staging-lease` (mode 600) and prints it; that file is the session's proof of holding.
-  - `claim` refuses if the token file already exists, then acquires in one atomic call: it **creates** the variable with `gh api -X POST repos/{owner}/{repo}/actions/variables -f name=STAGING_HELD_BY -f value=<token>`. The create endpoint refuses a name that already exists (409, as GitHub's own CLI handles it), so of two concurrent claims exactly one succeeds. Any non-2xx means the claim failed and the token file is removed; `claim` never falls back to `gh variable set` or a PATCH, which overwrite. After a successful create it reads the variable back and refuses unless it holds the token.
-  - `release` first renames the token file to a unique name (an atomic rename, so a second `release` of the same session finds no file and refuses). It then reads the variable, refuses unless it holds that token, and deletes it (`gh api -X DELETE repos/{owner}/{repo}/actions/variables/STAGING_HELD_BY`). GitHub's delete has no expected-value condition, so this read-then-delete is not atomic against another writer. That is safe here: only the holding session's token passes the check, the rename lets that session release once, and nothing else writes the variable except a new claim, which cannot succeed until the delete has happened.
-  - `admit` cannot tell an absent variable from an empty one (`vars.STAGING_HELD_BY` reads `''` for both), and treats both as unheld. An empty-valued variable still blocks every claim, because the create fails; delete it by hand. No organization variable may use this name.
-  - Before Task 20's runbook relies on it, the operator probes the create endpoint once in this repository with a throwaway name: a second create of the same name must be refused. If it is accepted, stop: the lease is not atomic and needs another design.
+- `scripts/staging/lease.mjs` also exports `claim(login)` and `release(login)`, which call `gh variable`:
+  - `claim` refuses if the variable is already set, sets it, and reads it back to confirm that it holds `login`.
+  - `release` refuses unless the variable holds `login`.
+- 🔴 **OPEN before Task 20 is implemented: the lease is not yet exclusive.** Found by Codex on the spec branch, 2026-10-29; design it in its own artifact when PR E starts, and do not implement `claim`/`release` as written above. Known so far:
+  - `claim` as written is read, set, read back, so two maintainers can both win. Acquiring by **creating** the variable (`POST repos/{owner}/{repo}/actions/variables`) gives one winner: the endpoint refuses an existing name with 409 (GitHub's own CLI handles that response; the REST reference documents only 201). Confirm with a one-time probe in this repository. Never fall back to `gh variable set` or a PATCH, which overwrite.
+  - `release` has no atomic delete-if-equal: GitHub's delete is by name only. A release must be bound to its own session, including two sessions under one OS account and one GitHub login, so a late or repeated release cannot delete a newer lease. A shared local token path does not achieve that.
+  - Recovery is undefined for a stranded lease (a crashed session, a lost proof) and for an empty-valued variable, which blocks every claim while `admit` reads it as unheld (`vars.*` is `''` for both). An uncoordinated manual delete can erase a successful claim.
+  - Same-machine concurrent claims need exclusive local proof creation as well as the remote winner.
+  - Tests must cover interleaved claims, a repeated or late release after another claim, and recovery.
 
 - [ ] **Step 1: Write the runbook** following §5.5, with exact commands.
-  - Claim staging in the maintainers' channel. Then run `node scripts/staging/lease.mjs claim <github-login>`; it prints the session token (`<token>` below).
+  - Claim staging in the maintainers' channel. Then run `node scripts/staging/lease.mjs claim <github-login>`.
   - Drain: wait until `gh run list --workflow staging-refresh.yml --json status --jq '[.[] | select(.status != "completed")] | length'` prints `0`. That covers queued, waiting, pending and in-progress runs.
-  - `gh workflow run staging-refresh.yml -f holder=<token>`, and wait for green.
+  - `gh workflow run staging-refresh.yml -f holder=<login>`, and wait for green.
   - Apply the PR's migration, its rollback, then the migration again, through `op run --env-file=env/staging.env -- node scripts/db/apply-migrations.mjs --db-url-env STAGING_DB_URL --file <path>`. That entry point refuses non-staging refs through `writeTarget: 'staging'`.
   - Run the simulated node.
-  - End with `gh workflow run staging-refresh.yml -f holder=<token>`. Once it is green, run `node scripts/staging/lease.mjs release`.
+  - End with `gh workflow run staging-refresh.yml -f holder=<login>`. Once it is green, run `node scripts/staging/lease.mjs release <login>`.
   - After merge, confirm that day's daily backup exists, apply to production by the current method, and run a refresh.
   - One session at a time: a set variable means staging is taken.
 - [ ] **Step 2: Add the code.**
   - Add the `--file` entry point to `apply-migrations.mjs`, plus a test that `--db-url-env` pointing at the production ref is refused before connecting.
-  - Before rehearsing (Step 4), confirm on `main` that a dispatch with `-f holder=<token>` while held runs the `refresh` job, and that one with another token (including the same login with a different suffix) skips it.
+  - Before rehearsing (Step 4), confirm on `main` that a dispatch with `-f holder=<login>` while held runs the `refresh` job, and that one with another login skips it.
 - [ ] **Step 3: Edit AGENTS.md.**
 - [ ] **Step 4 (operator): rehearse the runbook end to end,** with a scratch project standing in for production. Record the result in the runbook. This is criterion 3.
   The scratch source is built from the repo, not from a production copy. That way its schema and ACLs match production's by construction (the drift check proves it), and no production data is held.
