@@ -124,11 +124,15 @@ GUARD
 3. Confirm the ref: read the production ref aloud, character by character, and match it against the
    production project in the Supabase dashboard. If they differ, stop. Do not run the copy.
 4. Pick `<YYYY-MM-DD>`: a date whose `storage-backup` run succeeded, never just the newest prefix. A
-   failed night's prefix may be partial. List the successful runs' UTC dates and the prefixes, and pick a
-   date that appears in both:
+   failed night's prefix may be partial. List the successful runs and the prefixes, and pick a run date
+   that appears in both. `startedAt` is when the run's latest attempt started (GitHub's `run_started_at`, which a re-run
+   resets), and the job names its prefix after the UTC date a few minutes later. So a run's date is
+   the first 10 characters of its `startedAt`, and a run whose `startedAt` is after 23:00 UTC is not
+   used: its prefix may carry the next day's date. `createdAt` is not used: it keeps the first
+   attempt's date when a failed night is re-run successfully after midnight.
 
    ```sh
-   gh run list --workflow storage-backup.yml --branch main --status success --limit 20 --json createdAt --jq '.[].createdAt[0:10]'
+   gh run list --workflow storage-backup.yml --branch main --status success --limit 20 --json startedAt,attempt --jq '.[] | "\(.startedAt) attempt \(.attempt)"'
    op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf "r2:<R2_BUCKET>/nightly/" --dirs-only
    ```
 

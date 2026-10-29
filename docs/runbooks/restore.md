@@ -271,11 +271,15 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
 
 1. Pick `<latest>`: the newest date whose `storage-backup` run succeeded, never just the newest prefix.
    A prefix is a complete copy only for a night whose run succeeded; a failed night leaves a partial
-   one. List the successful runs' UTC dates, then the prefixes, and take the newest date that appears
-   in both:
+   one. List the successful runs, then the prefixes, and take the newest run date that appears in
+   both. `startedAt` is when the run's latest attempt started (GitHub's `run_started_at`, which a re-run
+   resets), and the job names its prefix after the UTC date a few minutes later. So a run's date is
+   the first 10 characters of its `startedAt`, and a run whose `startedAt` is after 23:00 UTC is not
+   used: its prefix may carry the next day's date. `createdAt` is not used: it keeps the first
+   attempt's date when a failed night is re-run successfully after midnight.
 
    ```sh
-   gh run list --workflow storage-backup.yml --branch main --status success --limit 20 --json createdAt --jq '.[].createdAt[0:10]'
+   gh run list --workflow storage-backup.yml --branch main --status success --limit 20 --json startedAt,attempt --jq '.[] | "\(.startedAt) attempt \(.attempt)"'
    op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf "r2:<R2_BUCKET>/nightly/" --dirs-only
    ```
 
