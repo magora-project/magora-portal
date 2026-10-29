@@ -41,11 +41,17 @@ production's extensions are created in the scratch project, each in the schema p
 before the restore.
 
 `--no-privileges` leaves production's GRANT and REVOKE statements out of the dump. So on scratch, every
-restored function keeps PostgreSQL's default `EXECUTE` for `PUBLIC` (production's `revoke ... from
-public` is not restored), and it is not known whether the new project's default privileges also grant
-`anon` and `authenticated` access to the restored objects. After the restore, all privileges on every
-table, sequence and function in schema `public` are therefore revoked from `PUBLIC`, `anon` and
-`authenticated`. Grants to other roles, and objects outside `public`, are not changed. This proves the
+restored function would keep PostgreSQL's default `EXECUTE` for `PUBLIC` (production's `revoke ... from
+public` is not restored), and the new project's default privileges may grant `anon` and `authenticated`
+access to restored tables. Row level security is enabled only in the dump's last section, after the data
+is committed. So access is closed before any data is restored: step 3 first revokes `USAGE` on schema
+`public` from `PUBLIC`, `anon` and `authenticated` (without it they cannot reach any object in `public`,
+whatever its own grants), revokes the `postgres` role's default privileges in `public` from the same
+three, and stops if `anon` or `authenticated` still has `USAGE`. From then on, including while a restore
+is running or if it is interrupted, those roles cannot read restored tables or call restored functions.
+After the restore, all privileges on every table, sequence and function in `public` are also revoked
+from the same three. Grants to other roles, and objects outside `public` (including the `auth` and
+`storage` rows from (b), which keep Supabase's own grants and policies), are not changed. This proves the
 data restores, not that the app would run on it.
 
 ## Before you start
@@ -209,18 +215,38 @@ Check that `postgis` and `pgmq` appear.
 The restore commands take only `SCRATCH_DB_URL`, never the production URL. Its username must carry the
 scratch ref, and the guard enforces that in the same command.
 
-### Extensions, then the restore with (b) first, then revoke
+### Close `public`, create extensions, restore with (b) first, then revoke
 
-Create production's extensions, restore (b) then (a), and revoke all privileges on the tables,
-sequences and functions in `public` from `PUBLIC`, `anon` and `authenticated`. Step 5 reads objects
-through the Storage API with the service role key; these revokes change nothing outside schema `public`:
+First, before any data, close schema `public` to `PUBLIC`, `anon` and `authenticated` and check it
+(the check stops with `LOCKDOWN FAILED` if either role still has `USAGE`, or if the connecting role
+lacks `USAGE` and `CREATE` on `public`, which the restore needs). Then create production's extensions,
+restore (b) then (a), and revoke all privileges on the tables, sequences and functions in `public` from
+the same three. Every later step that reads `public` (the row counts) connects as the scratch
+`postgres` role, which keeps its access. Step 5 reads objects through the Storage API with the service
+role key; none of this changes anything outside schema `public`:
 
 ```sh
+cat > "$RESTORE_DIR/lockdown.sql" <<'SQL'
+revoke usage on schema public from public, anon, authenticated;
+alter default privileges for role postgres in schema public revoke all on tables from public, anon, authenticated;
+alter default privileges for role postgres in schema public revoke all on sequences from public, anon, authenticated;
+alter default privileges for role postgres in schema public revoke all on functions from public, anon, authenticated;
+do $$ begin
+  if has_schema_privilege('anon', 'public', 'USAGE') or has_schema_privilege('authenticated', 'public', 'USAGE') then
+    raise exception 'LOCKDOWN FAILED: anon or authenticated still has USAGE on schema public';
+  end if;
+  if not has_schema_privilege(current_user, 'public', 'USAGE,CREATE') then
+    raise exception 'LOCKDOWN FAILED: % lacks USAGE or CREATE on schema public', current_user;
+  end if;
+end $$;
+SQL
 cat > "$RESTORE_DIR/revoke.sql" <<'SQL'
 revoke all on all tables in schema public from public, anon, authenticated;
 revoke all on all sequences in schema public from public, anon, authenticated;
 revoke all on all functions in schema public from public, anon, authenticated;
 SQL
+op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+  '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -v ON_ERROR_STOP=1 -f "$2/lockdown.sql"' _ <scratch-ref> "$RESTORE_DIR"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
   '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -v ON_ERROR_STOP=1 -f "$2/extensions.sql"' _ <scratch-ref> "$RESTORE_DIR"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
@@ -233,8 +259,9 @@ op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
 
 Expected messages: `schema "..." already exists, skipping` and `extension "..." already exists, skipping`
 notices from the extensions step, and
-`schema "public" already exists` on (a), are benign. No other error is expected. If the extensions
-step or the revoke step fails, or the restore reports any other error, David records it (text only, no
+`schema "public" already exists` on (a), are benign. No other error is expected. If the lockdown step
+prints `LOCKDOWN FAILED` or fails in any way, stop before restoring anything and run "Clean up" step 2
+(and step 1, since the project is suspect). If the extensions step or the revoke step fails, or the restore reports any other error, David records it (text only, no
 connection strings) in the Rehearsals table, the agent beside him adjusts this runbook, and you run
 "Clean up" steps 1 and 2. Retry only after deleting and recreating the scratch project, with a fresh dump.
 
