@@ -235,7 +235,7 @@ Implements Decision R2, option 1.
 
 - [ ] **Step 1: Write the runbook.** It covers:
   1. Create a scratch project `magora-restore-scratch` in the same org.
-  2. `pg_dump --format=custom --no-owner --no-privileges` of production through the pooler, with `op run`. `pg_dump` must be 17, matching the server major.
+  2. `pg_dump --format=custom --no-owner --no-privileges` of production through the pooler, with `op run`. `pg_dump` must be 17, matching the server major. `--no-privileges` drops production's revokes as well as its grants, so the restored scratch project does not inherit production's access controls; the runbook compensates by locking scratch's schema `public` down before any data is restored and revoking every privilege in it afterwards (`docs/runbooks/restore.md`, the paragraphs on `--no-privileges`, PR B #46).
   3. `pg_restore` into the scratch project.
   4. Row counts of the core tables (`nodes, detections, aci_logs, species, node_habitat`) on both sides, taken the same hour. Equality is expected, give or take rows production wrote in between, and any difference is recorded.
   5. Restore 20 objects from R2 `nightly/<latest>/` into the scratch project's matching buckets. For each, the `storage.objects` row (restored with the dump) resolves to a downloadable object.
@@ -335,6 +335,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
     - in `public`, for tables:
       - every table column (`attnum` order, type, default, not-null, identity) and column ACL (`attacl`)
       - constraint (`pg_get_constraintdef`), index (`pg_get_indexdef`), view (`pg_get_viewdef`), trigger (`pg_get_triggerdef`), policy (the `pg_policies` row)
+      - 🔴 **OPEN before Task 10 is implemented** (Codex on the spec branch, 2026-10-29): a view's `reloptions` (`security_invoker`, `security_barrier`, `check_option`) are not in the list above, so a change to `security_invoker` alone, which changes whose permissions and RLS apply, would snapshot as identical. Add normalized view `reloptions` to the snapshot and a sabotage step that flips `security_invoker` without changing the query.
       - sequence, enum and composite type
       - table ACL (`relacl`, grantees sorted), owner, `relrowsecurity`, `relforcerowsecurity`
     - in `public`, for functions: `pg_get_functiondef`, `proacl`, owner, `prosecdef`, and `proconfig` (search_path)
