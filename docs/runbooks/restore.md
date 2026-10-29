@@ -44,10 +44,12 @@ before the restore.
 restored function would keep PostgreSQL's default `EXECUTE` for `PUBLIC` (production's `revoke ... from
 public` is not restored), and the new project's default privileges may grant `anon` and `authenticated`
 access to restored tables. Row level security is enabled only in the dump's last section, after the data
-is committed. So access is closed before any data is restored: step 3 first revokes `USAGE` on schema
+is committed. So access is closed before any data is restored: step 3 first grants `USAGE` and `CREATE`
+on `public` to the connecting role explicitly, so the restore does not depend on `PUBLIC`, then revokes `USAGE` on schema
 `public` from `PUBLIC`, `anon` and `authenticated` (without it they cannot reach any object in `public`,
 whatever its own grants), revokes the `postgres` role's default privileges in `public` from the same
-three, and stops if `anon` or `authenticated` still has `USAGE`. From then on, including while a restore
+three, and stops if `anon` or `authenticated` still has `USAGE` or the connecting role lacks either
+`USAGE` or `CREATE`. From then on, including while a restore
 is running or if it is interrupted, those roles cannot read restored tables or call restored functions.
 After the restore, all privileges on every table, sequence and function in `public` are also revoked
 from the same three. Grants to other roles, and objects outside `public` (including the `auth` and
@@ -217,9 +219,10 @@ scratch ref, and the guard enforces that in the same command.
 
 ### Close `public`, create extensions, restore with (b) first, then revoke
 
-First, before any data, close schema `public` to `PUBLIC`, `anon` and `authenticated` and check it
-(the check stops with `LOCKDOWN FAILED` if either role still has `USAGE`, or if the connecting role
-lacks `USAGE` and `CREATE` on `public`, which the restore needs). Then create production's extensions,
+First, before any data, grant `USAGE` and `CREATE` on schema `public` to the connecting role
+explicitly (so it never depends on `PUBLIC`), close `public` to `PUBLIC`, `anon` and `authenticated`,
+and check it (the check stops with `LOCKDOWN FAILED` if either role still has `USAGE`, or if the
+connecting role lacks either `USAGE` or `CREATE` on `public`; the restore needs both). Then create production's extensions,
 restore (b) then (a), and revoke all privileges on the tables, sequences and functions in `public` from
 the same three. Every later step that reads `public` (the row counts) connects as the scratch
 `postgres` role, which keeps its access. Step 5 reads objects through the Storage API with the service
@@ -227,6 +230,7 @@ role key; none of this changes anything outside schema `public`:
 
 ```sh
 cat > "$RESTORE_DIR/lockdown.sql" <<'SQL'
+grant usage, create on schema public to current_user;
 revoke usage on schema public from public, anon, authenticated;
 alter default privileges for role postgres in schema public revoke all on tables from public, anon, authenticated;
 alter default privileges for role postgres in schema public revoke all on sequences from public, anon, authenticated;
@@ -235,7 +239,8 @@ do $$ begin
   if has_schema_privilege('anon', 'public', 'USAGE') or has_schema_privilege('authenticated', 'public', 'USAGE') then
     raise exception 'LOCKDOWN FAILED: anon or authenticated still has USAGE on schema public';
   end if;
-  if not has_schema_privilege(current_user, 'public', 'USAGE,CREATE') then
+  if not has_schema_privilege(current_user, 'public', 'USAGE')
+     or not has_schema_privilege(current_user, 'public', 'CREATE') then
     raise exception 'LOCKDOWN FAILED: % lacks USAGE or CREATE on schema public', current_user;
   end if;
 end $$;
