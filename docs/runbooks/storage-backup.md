@@ -21,9 +21,13 @@ An object uploaded between a bucket's copy and its check is missing from R2, so 
 - R2 bucket lock on prefix `nightly/`: 8 days. An object younger than 8 days cannot be overwritten or deleted.
 - Lifecycle rule: objects under `nightly/` are deleted after 14 days.
 - Today's copy goes to a new dated prefix, so the first run of a day is never blocked by the lock.
-  A same-day re-run after a successful run (`complete/<today>` exists) copies nothing and exits 0: a
-  prefix with a marker is never written again, so it stays the copy its marker vouches for. A same-day
-  re-run after a failed run (no marker) writes to the same prefix. `rclone copy --checksum` skips
+  A same-day re-run after a successful run (`complete/<today>` exists) copies nothing and exits 0 with a
+  warning on the run summary: a prefix with a marker is never written again, so it stays the copy its
+  marker vouches for. Such a run checks nothing, including the credentials, so it cannot verify a
+  change made that day (a new bucket, a `--checksum` change); verify on the next night's run. A same-day
+  re-run after a failed run (no marker) writes to the same prefix, so a marked prefix may span two
+  attempts: it holds every object present at the later attempt, plus any deleted between the two,
+  which a restore lists as `+` for David's review. `rclone copy --checksum` skips
   objects that already match, so unchanged objects are fine. An object that changed in Supabase since
   the first run cannot be overwritten while it is under the lock, and that bucket's copy fails (the job
   fails, and still writes no marker). That is expected; the changed object is picked up in the next
@@ -46,7 +50,9 @@ Read back: `gh api repos/{owner}/{repo}/environments/backup` shows the branch po
 `gh secret list --env backup` shows the six names.
 
 After the workflow merges, run the checksum probe below, then trigger the workflow once with
-`workflow_dispatch` and read the `rclone check` output.
+`workflow_dispatch` and read the `rclone check` output. Dispatch before that day's 07:30 UTC scheduled
+run, or on a day it has not yet succeeded: after a same-day success the dispatch copies and checks
+nothing.
 
 First-dispatch checksum note: the job uses `--checksum`, and an object without an MD5 is compared by
 size only. Before the first dispatch, count each bucket's objects without an MD5. This only reads
@@ -176,6 +182,7 @@ GUARD
       this does not print `lsf exit 0` and then `bucket exists`:
 
       ```sh
+      rm -f "$RESTORE_DIR/buckets.txt"
       EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf --dirs-only "restore_target:" > "$RESTORE_DIR/buckets.txt"; echo "lsf exit $?"
       grep -Fqx -- '<bucket>/' "$RESTORE_DIR/buckets.txt" && echo "bucket exists" || echo "REFUSED: production has no bucket <bucket>"
       ```
@@ -188,7 +195,7 @@ GUARD
       two counts at the end differ (then the comparison did not cover every object):
 
       ```sh
-      rm -f "$RESTORE_DIR/<bucket>.combined" "$RESTORE_DIR/<bucket>.src"
+      rm -f "$RESTORE_DIR/<bucket>.combined" "$RESTORE_DIR/<bucket>.src" "$RESTORE_DIR/<bucket>.prod-reviewed" "$RESTORE_DIR/<bucket>.prod-approved" "$RESTORE_DIR/<bucket>.prod-now"
       EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --download --one-way --combined "$RESTORE_DIR/<bucket>.combined"; echo "check exit $?"
       op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" > "$RESTORE_DIR/<bucket>.src"; echo "lsf exit $?"
       wc -l < "$RESTORE_DIR/<bucket>.src"
@@ -213,12 +220,32 @@ GUARD
       paths by hand and decides any restore of them outside this procedure. An object whose bytes are lost
       in production can appear here, because reading it from production fails.
 
-      If both lists are empty, the bucket needs no restore; skip to the next bucket. Otherwise David
+      If both lists are empty, the bucket needs no restore; skip to the next bucket. Otherwise, before
+      David's review, record production's current state of every listed path (path, size, modified
+      time; listing only, nothing is downloaded). Step c compares against this. It must print
+      `lsf exit 0`:
+
+      ```sh
+      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only --format pst --separator "$(printf '\t')" --files-from-raw "$RESTORE_DIR/<bucket>.files" "restore_target:<bucket>" > "$RESTORE_DIR/<bucket>.prod-reviewed"; echo "lsf exit $?"
+      ```
+
+      A `+` path is missing in production, so it has no line here; that is expected. Then David
       reviews every line of `<bucket>.files`. A `+` object may have been deleted on purpose after
       `<YYYY-MM-DD>`, and a `*` object may have been changed on purpose after it; restoring either undoes
       that change. David deletes those paths from `<bucket>.files` and records which paths were kept and
       that David approved them.
-   c. Copy only the listed objects, then check them by content. The check must exit 0:
+   c. First confirm production has not changed, for the approved paths, since step b recorded it. This
+      lists the approved paths again and compares them with step b's record, restricted to the same
+      paths. It must print `unchanged since step b`. If it prints `REFUSED`, an approved object was
+      uploaded, changed or deleted in production after step b: copy nothing, and redo steps a and b
+      for this bucket (step a deletes the old lists; David reviews the new list from scratch).
+
+      ```sh
+      awk -F '\t' 'NR==FNR { ok[$0]; next } ($1 in ok)' "$RESTORE_DIR/<bucket>.files" "$RESTORE_DIR/<bucket>.prod-reviewed" | sort > "$RESTORE_DIR/<bucket>.prod-approved"
+      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only --format pst --separator "$(printf '\t')" --files-from-raw "$RESTORE_DIR/<bucket>.files" "restore_target:<bucket>" > "$RESTORE_DIR/<bucket>.prod-now" && sort -o "$RESTORE_DIR/<bucket>.prod-now" "$RESTORE_DIR/<bucket>.prod-now" && cmp -s "$RESTORE_DIR/<bucket>.prod-approved" "$RESTORE_DIR/<bucket>.prod-now" && echo "unchanged since step b" || echo "REFUSED: production changed since step b, or the listing failed"
+      ```
+
+      Then, at once, copy only the listed objects and check them by content. The check must exit 0:
 
       ```sh
       EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" --checksum --ignore-times
@@ -233,11 +260,13 @@ GUARD
    read fails, in which case step b stops and leaves it to David. `--ignore-times` uploads unconditionally (rclone decides this before any size or
    checksum comparison), but over a whole bucket it would rewrite every live object and revert any that
    changed after `<YYYY-MM-DD>`. The reviewed list limits it to the objects that need restoring.
-   Known gap: writes to production are not paused. If an object on the list is uploaded or changed
-   between step a and step c, step c overwrites that newer version with the backup, and rclone has no
-   conditional write to detect it. Keep the time between step a and step c short (run step c as soon as
-   David has approved the list), and if any listed path may be in active use, re-run step a and step b
-   just before step c and compare the new list with the approved one. Cost:
+   Known gap: writes to production are not paused, and rclone has no conditional write. Step c's first
+   command catches an approved object uploaded, changed or deleted between step b's record and that
+   command, because Supabase's listing reflects each upload's size and modified time. Two windows
+   remain uncovered: a write between step a's comparison and step b's record (seconds to minutes, before
+   David's review), and a write between step c's first command and the copy. So run step b's record
+   immediately after step a, and the copy immediately after step c's first command. A write in either
+   window is overwritten by the backup, or a deleted object is put back. Cost:
    step a downloads up to the whole bucket from both R2 and production (a full bucket's worth of Supabase
    egress); step c downloads only the listed objects. A path containing a newline breaks the list
    format; if step b shows a line that is not a whole path, stop.

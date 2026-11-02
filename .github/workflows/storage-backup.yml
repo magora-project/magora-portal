@@ -56,7 +56,8 @@ jobs:
 
           # A prefix already marked complete is never written again: a same-day rerun could add
           # newer objects to it and then fail on a locked one, leaving a mixed copy under a marker
-          # that restores trust. Exit 3 is rclone's "directory not found" (no complete/ yet).
+          # that restores trust. On S3/R2 a missing complete/ lists as empty with exit 0; exit 3
+          # ("directory not found", other backends) is accepted the same way. Any other failure is fatal.
           rc=0
           markers="$(rclone lsf --files-only "r2:${R2_BUCKET}/complete/")" || rc=$?
           if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
@@ -64,12 +65,14 @@ jobs:
             exit 1
           fi
           if printf '%s\n' "$markers" | grep -qxF "$today"; then
-            echo "nightly/${today}/ is already marked complete (complete/${today}); not writing to it again"
+            # A warning annotation, so the run summary shows this run copied and checked nothing.
+            echo "::warning::nightly/${today}/ is already marked complete (complete/${today}); this run copied and checked nothing"
             exit 0
           fi
 
           # Newest nightly/ prefix strictly earlier than today (UTC); empty on the first night.
-          # Exit 3 is rclone's "directory not found" (no nightly/ yet); any other failure is fatal.
+          # On S3/R2 a missing nightly/ lists as empty with exit 0; exit 3 ("directory not found",
+          # other backends) is accepted the same way. Any other failure is fatal.
           rc=0
           listing="$(rclone lsf --dirs-only "r2:${R2_BUCKET}/nightly/")" || rc=$?
           if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
