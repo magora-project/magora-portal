@@ -21,10 +21,13 @@ An object uploaded between a bucket's copy and its check is missing from R2, so 
 - R2 bucket lock on prefix `nightly/`: 8 days. An object younger than 8 days cannot be overwritten or deleted.
 - Lifecycle rule: objects under `nightly/` are deleted after 14 days.
 - Today's copy goes to a new dated prefix, so the first run of a day is never blocked by the lock.
-  A same-day re-run writes to the same prefix. `rclone copy --checksum` skips objects that already match,
-  so unchanged objects are fine. An object that changed in Supabase since the first run cannot be
-  overwritten while it is under the lock, and that bucket's copy fails (the job fails). That is
-  expected; the changed object is picked up in the next night's prefix.
+  A same-day re-run after a successful run (`complete/<today>` exists) copies nothing and exits 0: a
+  prefix with a marker is never written again, so it stays the copy its marker vouches for. A same-day
+  re-run after a failed run (no marker) writes to the same prefix. `rclone copy --checksum` skips
+  objects that already match, so unchanged objects are fine. An object that changed in Supabase since
+  the first run cannot be overwritten while it is under the lock, and that bucket's copy fails (the job
+  fails, and still writes no marker). That is expected; the changed object is picked up in the next
+  night's prefix.
 
 ## Operator setup (once)
 
@@ -229,7 +232,12 @@ GUARD
    tells them apart. Such an object shows as `*` if production returns the wrong bytes, and as `!` if the
    read fails, in which case step b stops and leaves it to David. `--ignore-times` uploads unconditionally (rclone decides this before any size or
    checksum comparison), but over a whole bucket it would rewrite every live object and revert any that
-   changed after `<YYYY-MM-DD>`. The reviewed list limits it to the objects that need restoring. Cost:
+   changed after `<YYYY-MM-DD>`. The reviewed list limits it to the objects that need restoring.
+   Known gap: writes to production are not paused. If an object on the list is uploaded or changed
+   between step a and step c, step c overwrites that newer version with the backup, and rclone has no
+   conditional write to detect it. Keep the time between step a and step c short (run step c as soon as
+   David has approved the list), and if any listed path may be in active use, re-run step a and step b
+   just before step c and compare the new list with the approved one. Cost:
    step a downloads up to the whole bucket from both R2 and production (a full bucket's worth of Supabase
    egress); step c downloads only the listed objects. A path containing a newline breaks the list
    format; if step b shows a line that is not a whole path, stop.
