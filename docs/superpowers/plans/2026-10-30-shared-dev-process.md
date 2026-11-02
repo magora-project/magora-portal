@@ -411,7 +411,7 @@ ok('a justified conformance deviation listed in Deviations is acceptable', dispo
 ok('justified-deviation absent from Deviations is not acceptable', dispositionOk({ id: 'D1', severity: 'P1', disposition: { kind: 'justified-deviation' } }, { deviations: [] }) === false)
 ok('pre-existing without an issue is not an acceptable disposition', dispositionOk({ severity: 'P1', disposition: { kind: 'pre-existing', reason: 'x' } }) === false)
 ok('severity "high" is blocking by default (unparseable)', isBlockingByDefault({ severity: 'high' }))
-ok('validateRecord rejects an unknown outcome', validateRecord({ ...good, outcome: 'ok' }).length > 0)
+ok('validateRecord rejects an unknown outcome, naming the field, and accepts the base fixture', validateRecord(good).length === 0 && validateRecord({ ...good, outcome: 'ok' }).some((p) => /outcome/.test(p)))
 ok('records are written with LF and a trailing newline', readFileSync(p, 'utf8').endsWith('}\n') && !readFileSync(p, 'utf8').includes('\r'))
 ```
 
@@ -541,7 +541,7 @@ ok('specced without Plan -> problem', parseBody('Lane: specced\nSpec: docs/s.md\
 ok('range expands', expandTasks('T1-T3,T6').join() === 'T1,T2,T3,T6')
 ok('a reversed range is a problem, not an empty list', /range/.test(parseBody('Lane: specced\nSpec: s\nPlan: p T3-T1\nDeviations: none', { author: 'a' }).problems.join()))
 ok('deviation lines parse', parseBody('Lane: specced\nSpec: s\nPlan: p T1\nDeviations:\n- D1: plan used X; Y is simpler and tested', { author: 'a' }).deviations[0].id === 'D1')
-ok('a deviation without a justification is a problem', parseBody('Lane: specced\nSpec: s\nPlan: p T1\nDeviations:\n- D1:', { author: 'a' }).problems.length > 0)
+ok('a deviation without a justification is a problem', parseBody('Lane: specced\nSpec: s\nPlan: p T1\nDeviations:\n- D1:', { author: 'a' }).problems.some((p) => /D1/.test(p)))
 ok('dependabot body with no fields -> dependency lane', parseBody('Bumps idb …', { author: 'dependabot[bot]' }).lane === 'dependency')
 ok('HTML comments from the template are ignored', parseBody('<!-- Lane: specced -->\nLane: direct\nDeviations: none', { author: 'a' }).lane === 'direct')
 ```
@@ -599,10 +599,10 @@ ok('a PR created one second before requiredSince is exempt', isGrandfathered({ p
 ok('a PR created one second after requiredSince is judged', isGrandfathered({ prCreatedAt: '2026-11-05T00:00:01Z', requiredSince: '2026-11-05T00:00:00Z' }) === false)
 ok('unset or empty requiredSince exempts nothing', isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: undefined }) === false && isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: '' }) === false)
 ok('activation file: an old PR is exempt, a new one judged, read at the base ref', (await (async () => { const calls = []; const f = activationFile({ 'review-evidence': '2026-11-05T00:00:00Z' }, calls); const oldCode = (await quiet(() => main({ env: goodEnv, fetchImpl: f(prCreatedAt('2026-11-04T23:59:59Z', noRecords)) }))).code; const newCode = (await quiet(() => main({ env: goodEnv, fetchImpl: f(prCreatedAt('2026-11-05T00:00:01Z', noRecords)) }))).code; return oldCode === 0 && newCode === 1 && calls.every((u) => u.includes('ref=main')) })()))
-ok('activation file 404 -> judged, not exempt', (await quiet(() => main({ env: goodEnv, fetchImpl: activationFile404(prCreatedAt('2020-01-01T00:00:00Z', noRecords)) }))).code === 1)
+ok('activation file 404 -> judged, not exempt: the failure names the missing slot, not "could not judge"', await (async () => { const r = await quiet(() => main({ env: goodEnv, fetchImpl: activationFile404(prCreatedAt('2020-01-01T00:00:00Z', noRecords)) })); return r.code === 1 && /correctness/.test(r.out) && /could not judge/.test(r.out) === false })())
 ok('an unparseable activation value -> exit 1 and "could not judge"', await (async () => { const r = await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({ 'review-evidence': 'soon' })(prCreatedAt('2020-01-01T00:00:00Z', passingRecords)) })); return r.code === 1 && /could not judge/.test(r.out) })())
 ok('activation read fails (500) after every PR-state read succeeded -> exit 1 and "could not judge", even with passing records', await (async () => { const r = await quiet(() => main({ env: goodEnv, fetchImpl: activationFails500(prCreatedAt('2020-01-01T00:00:00Z', passingRecords)) })); return r.code === 1 && /could not judge/.test(r.out) && r.calls.some((u) => u.includes('review-activation.json')) })())
-ok('API error -> exit 1 "could not judge"', (await quiet(() => main({ env: goodEnv, fetchImpl: stub403 }))).code === 1)
+ok('API error -> exit 1 "could not judge"', await (async () => { const r = await quiet(() => main({ env: goodEnv, fetchImpl: stub403 })); return r.code === 1 && /could not judge/.test(r.out) })())
 ```
 
 - [ ] **Step 2: Run it.** Expected: FAIL.
@@ -915,9 +915,9 @@ ok('substitute run carries a fixed-but-unverified finding, not a verified one', 
 ok('R1 resolves G, R2 chains from R1: R2 persists G as fixed with R1 as by, never sends G to the reviewer, and the gate passes on R2', await (async () => { const r1 = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); const sent = []; const r2 = await runSubstitute({ bot: 'codex', supersedes: r1.stem, readersImpl: liveAfterR1, reviewerImpl: rejectsIds(['thread:PRRT_1'], sent) }); const g = r2.findings.find((f) => f.id === 'thread:PRRT_1'); return g && g.disposition.kind === 'fixed' && g.disposition.by === r1.stem && !sent.includes('thread:PRRT_1') && (await evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(r1, r2), depth: 'subtle-correctness' })).ok })())
 ok('second substitute review: an open finding chains under the same gate ID and resolves -> gate ok', await (async () => { const r1 = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: leavesOpen }); const r2 = await runSubstitute({ bot: 'codex', supersedes: r1.stem, readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); return r2.findings.some((f) => f.id === 'thread:PRRT_1' && f.disposition.kind === 'fixed') && (await evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(r1, r2), depth: 'subtle-correctness' })).ok })())
 ok('substitute run fills {{bot}} in substitute.md', (await runSubstitute({ bot: 'gemini', readersImpl: none, reviewerImpl: captures })).prompt.includes('gemini') && !(await runSubstitute({ bot: 'gemini', readersImpl: none, reviewerImpl: captures })).prompt.includes('{{bot}}'))
-ok('API error -> exit 1 "could not judge"', (await quiet(() => main({ env: goodEnv, fetchImpl: stub403 }))).code === 1)
-ok('a PR created before the review-gate activation time is exempt; one created after is judged', (await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({ 'review-gate': '2026-11-05T00:00:00Z' })(prCreatedAt('2026-11-04T23:59:59Z', failingState)) }))).code === 0 && (await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({ 'review-gate': '2026-11-05T00:00:00Z' })(prCreatedAt('2026-11-05T00:00:01Z', failingState)) }))).code === 1)
-ok('a review-evidence key alone does not exempt from review-gate', (await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({ 'review-evidence': '2026-11-05T00:00:00Z' })(prCreatedAt('2020-01-01T00:00:00Z', failingState)) }))).code === 1)
+ok('API error -> exit 1 "could not judge"', await (async () => { const r = await quiet(() => main({ env: goodEnv, fetchImpl: stub403 })); return r.code === 1 && /could not judge/.test(r.out) })())
+ok('a PR created before the review-gate activation time is exempt; one created after is judged', (await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({ 'review-gate': '2026-11-05T00:00:00Z' })(prCreatedAt('2026-11-04T23:59:59Z', failingState)) }))).code === 0 && await (async () => { const r = await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({ 'review-gate': '2026-11-05T00:00:00Z' })(prCreatedAt('2026-11-05T00:00:01Z', failingState)) })); return r.code === 1 && /thread:/.test(r.out) })())
+ok('a review-evidence key alone does not exempt from review-gate (failingState holds one undisposed blocking thread, which the judged output names)', await (async () => { const r = await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({ 'review-evidence': '2026-11-05T00:00:00Z' })(prCreatedAt('2020-01-01T00:00:00Z', failingState)) })); return r.code === 1 && /thread:/.test(r.out) })())
 ```
 
 - [ ] **Step 2: Run them.** Expected: FAIL.
