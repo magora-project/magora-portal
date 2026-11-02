@@ -27,7 +27,7 @@ For agents and contributors (Claude Code via `CLAUDE.md`, Codex CLI directly). D
 | `standard` | ordinary changes |
 | `subtle-correctness` | **any PR that touches `supabase/migrations/`, an `api/` auth path, or a control file**; concurrency; anything subtle |
 
-Review before pushing: `.claude/rules/process.md` § Review slots and dispatch. CI checks are the control.
+Review before pushing: `.claude/rules/process.md` § Review slots and dispatch. This review layer is discipline; the required CI checks are the control.
 
 Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`; for those, the merging maintainer's control-file read replaces the depth rule.
 

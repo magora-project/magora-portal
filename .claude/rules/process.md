@@ -2,6 +2,7 @@
 
 The repo's single process document, distilled from `docs/superpowers/specs/2026-10-29-shared-dev-process-design.md`.
 Every agent and contributor follows it. If this file and the spec disagree, the spec wins; fix this file.
+The checks and tooling named here are enforced as each ships (spec §6); do not hunt for tooling that does not exist yet.
 
 ## Lanes
 
@@ -49,7 +50,7 @@ Slots are fixed IDs, each with a canonical prompt file in `.claude/`: `spec`, `p
 
 - `mechanical`: no pre-push record.
 - `standard`: a `correctness` record.
-- `subtle-correctness`: a `correctness` record and a `completeness` record, from different models.
+- `subtle-correctness`: a `correctness` record and a `completeness` record, from different models. `completeness` asks: is anything promised missing, can the tests fail, what did the fixes break.
 
 **Dispatch.** The reviewer's vendor must differ from the vendor that wrote the change.
 
@@ -72,19 +73,19 @@ On `subtle-correctness`, `completeness` uses whichever of the three vendors is n
 
 | Lane / author | Spec | Plan | Conformance | Pre-push | PR review |
 |---|---|---|---|---|---|
-| `specced` | for the current blob of the linked spec | likewise | for the declared tasks | by depth | required |
-| `docs-only` | each spec added or changed | each plan added or changed | none | none | required |
-| `direct` | none | none | none | by depth | required |
-| `dependency` (maintainer supplies) | none | none | none | one `correctness` | required |
-| Fork PR (maintainer supplies) | as its lane requires | as its lane requires | as its lane requires | as its lane requires | required |
+| `specced` | for the current blob of the linked spec | likewise | for the declared tasks | by depth | per §5.5 |
+| `docs-only` | each spec added or changed | each plan added or changed | none | none | per §5.5 |
+| `direct` | none | none | none | by depth | per §5.5 |
+| `dependency` (maintainer supplies) | none | none | none | one `correctness` | per §5.5 |
+| Fork PR (maintainer supplies) | as its lane requires | as its lane requires | as its lane requires | as its lane requires | per §5.5 |
 
-A record covers a review-input identity: for a PR, the patch-id of its own diff against its current merge base, excluding `.review`; for a spec or plan, its git blob hash. A fix commit voids the record that found the problem; the re-review writes a new record that names the one it supersedes, covers the new identity, inherits every undisposed finding, and reviews only the delta.
+A record covers a review-input identity: for a PR, the patch-id of its own diff against its current merge base, excluding `.review`; for a spec or plan, its git blob hash. A fix commit voids the record that found the problem; the re-review writes a new record that names the one it supersedes, covers the new identity, inherits every undisposed finding, and reviews only the delta (the two identities, or the two blobs for a spec or plan). Its question is "did the fixes break anything, and is anything blocking still open?"
 
-**Substitution.** A bot slot is filled by a local full review, by a vendor not already counted on the PR, recorded as `substitute:<bot>`, when the bot is not configured for the PR (Gemini is not configured on fork, Dependabot and draft PRs), after a terminal failure (CodeRabbit's status description such as "Review rate limited" or "Review skipped", an empty review, or Gemini's `could-not-run` marker), or after the timeout with no review (30 minutes after the head commit or full-review request). A diff over Gemini's 400,000-byte limit means the PR is split.
+**Substitution.** A bot slot is filled by a local full review of the current identity, by a vendor not already counted on the PR, recorded as `substitute:<bot>`; it inherits that bot's undisposed blocking findings. It applies when the bot is not configured for the PR (Gemini is not configured on fork, Dependabot and draft PRs), after a terminal failure (read only from CodeRabbit's commit-status description such as "Review rate limited" or "Review skipped", an empty review, or the Gemini job's conclusion or its `could-not-run` verdict marker; review bodies are never parsed), or after the timeout with no review (30 minutes after the head commit's push or a full-review request). When all three bots fail on `subtle-correctness`, each of the three vendors fills one slot. A diff over Gemini's 400,000-byte limit means the PR is split.
 
 **After a rewrite that changes the identity,** ask for a full review: `@coderabbitai full review` and `@codex review`. An incremental review alone does not restore coverage.
 
-The bots never review the `.review/` evidence directory; a finding located only there is outside the gate.
+The bots are told to skip the `.review/` evidence directory (the Codex App has no path filter, so its guidance in `AGENTS.md` says so); a finding located only there is outside the gate, whichever bot raised it.
 
 ## What blocks
 
@@ -99,15 +100,15 @@ The bots never review the `.review/` evidence directory; a finding located only 
 
 **Pre-existing** applies only when the defect is present on the base revision under the same reachable conditions, and the record gives the reason and the issue that tracks it. An unchanged line that this PR newly makes reachable is this PR's regression, not pre-existing.
 
-The PR review record lists each required slot with the review ID it relies on, each default-blocking finding with its stable ID and disposition, and each reclassification with its reason. Nits appear only if reclassified from blocking. `review-gate` fails a PR whose blocking finding is missing from the record.
+The PR review record is required whenever the PR has at least one required slot or any finding that blocks by default; a `mechanical` PR with no such finding needs none. It lists each required slot with the review ID it relies on, each default-blocking finding with its stable ID and disposition, and each reclassification with its reason. Nits appear only if reclassified from blocking. `review-gate` passes when every required slot is covered or substituted, and every finding that blocks by default on the PR appears in the record with an acceptable disposition. A bot review arriving after the record with a new blocking finding fails the gate until the record is updated; a nit does not.
 
 ## Stop rule
 
-(spec §5.6) After two rounds in a row where every new finding sits in the previous round's own fixes, stop patching and restructure. By round three, change the reviewer's question as well as the model.
+(spec §5.6, discipline: no check enforces it) After two rounds in a row where every new finding sits in the previous round's own fixes, stop patching and restructure. By round three, change the reviewer's question as well as the model.
 
 ## Evidence
 
-(spec §5.3) Records are committed to the PR in one evidence directory, `.review/`. PR comments and checks posted with a personal token are ruled out. Each record states its type and slot ID, the input identity it covers, the reviewer's model and vendor, the vendor that wrote the change, the outcome, the verdict, each default-blocking finding with a stable ID and disposition, and the record it supersedes. Conformance records also carry the covered task IDs, the deviation IDs, and each `command` target with its exit status.
+(spec §5.3) Records are committed to the PR in one evidence directory, `.review/`. PR comments, and checks posted with a personal token, are ruled out. Each record states its type and slot ID, the input identity it covers, the reviewer's model and vendor, the vendor that wrote the change, the outcome, the verdict, each default-blocking finding with a stable ID and disposition, and the record it supersedes. Conformance records also carry the covered task IDs, the deviation IDs, and each `command` target with its exit status.
 
 `review-evidence` passes a record only when all four hold:
 
