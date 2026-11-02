@@ -112,9 +112,10 @@ PRs.
 
 **claude-b**
 
-- Every entry in `~/.claude-b/` is a symlink into `~/code/claude-config`: `CLAUDE.md`,
-  `settings.json`, `hooks`, `skills`, `scripts`, `agents`, `commands`, `plugins`, `output-styles`
-  and `.mcp.json`.
+- `~/.claude-b/` holds 12 symlinks (V7, enumerated 2026-11-01). Eleven point into
+  `~/code/claude-config`: `CLAUDE.md`, `settings.json`, `hooks`, `skills`, `scripts`, `agents`,
+  `commands`, `plugins`, `output-styles`, `reflections` and `.mcp.json`. `plans` points to
+  `~/code/claude-memory/plans/claude-b`.
 - In Claude Code, personal skills take precedence over same-named project skills. Plugin skills are
   namespaced and coexist with them.
 - All personal hooks are bash or Python.
@@ -190,9 +191,10 @@ CI checks that the fields are present and well formed. It does not judge whether
 **Review-input identity** has one definition, used everywhere:
 
 - **For a PR's changes:** the hash of the PR's own diff against its **current** merge base.
-  - The identity is `git patch-id --stable` of
-    `git diff -U0 --no-ext-diff --binary --no-color <merge-base> <head>`. Patch IDs ignore line
-    numbers and whitespace, and `-U0` drops context lines, so a change to `main` next to or above the
+  - The identity is `git patch-id --verbatim` of
+    `git diff -U0 --no-ext-diff --binary --no-color <merge-base> <head> -- . ':(exclude).review'`
+    (the exact flags are in the plan, Task 10). Patch IDs ignore line numbers; `--verbatim` keeps
+    whitespace, so an indentation-only change counts as a change. `-U0` drops context lines, so a change to `main` next to or above the
     PR's lines does not change the identity. The PR's own added and removed lines still do.
   - It is read from git objects, never working-tree bytes, so Windows and macOS agree.
   - It excludes the evidence directory. That is the only exclusion.
@@ -498,7 +500,7 @@ magora PRs, which are `subtle-correctness` because `.claude/**` and `AGENTS.md` 
   - Claude Code;
   - the Codex CLI, signed in;
   - Semgrep;
-  - Node 22;
+  - Node 24 (`.nvmrc`, V8);
   - Deno 2.9.5;
   - `gh`;
   - a Gemini key, from the Gemini account David set up for both developers (D-15).

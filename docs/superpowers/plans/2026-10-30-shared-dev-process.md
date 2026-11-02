@@ -6,7 +6,7 @@
 
 **Architecture:** A committed `.claude/` carries the settings, Node hooks, repo skills, slot prompts and process rules. Local reviews run through one Node runner, `scripts/review/review.mjs`, which spawns the reviewer, classifies the outcome mechanically, and writes a JSON record into `.review/`. Two `pull_request` workflows run pure Node checkers: `review-evidence` judges the local records against the PR's live input identity and body fields, and `review-gate` judges the committed PR review record against live bot state read from the GitHub API. Steps on David's machine, in claude-config, or in GitHub settings are **operator steps**.
 
-**Tech Stack:** Node 24 ESM (`.nvmrc`), no new dependencies; git ≥ 2.40 (`git patch-id --stable`); GitHub Actions; Codex CLI ≥ 0.161 (`codex exec --output-schema`); Claude Code ≥ 2.1 (`claude -p`); Gemini API (`streamGenerateContent`, as `gemini_review.py`); Semgrep CLI; `gh`.
+**Tech Stack:** Node 24 ESM (`.nvmrc`), no new dependencies; git ≥ 2.40 (`git patch-id --verbatim`); GitHub Actions; Codex CLI ≥ 0.161 (`codex exec --output-schema`); Claude Code ≥ 2.1 (`claude -p`); Gemini API (`streamGenerateContent`, as `gemini_review.py`); Semgrep CLI; `gh`.
 
 **Spec:** `docs/superpowers/specs/2026-10-29-shared-dev-process-design.md` (rev 5, approved 2026-10-29). Read it before any task. §N below refers to the spec's sections.
 
@@ -44,8 +44,8 @@ Each fact below was measured while planning. Rows marked **spec deviation** cont
 | V4 | §5.5 "an empty review" as failure, **spec deviation** | Empty reviews are routine: on #43, CodeRabbit submitted three empty-body reviews on `ed7a13a` (thread replies) after its 11,585-byte review, and David's three thread replies are empty reviews too. Treating an empty review as a terminal failure would demand substitution on almost every PR. Plan: an empty review is never usable and never a failure signal; it is ignored. | `pulls/43/reviews` |
 | V5 | §5.5 no-loop guarantee, **spec deviation** | `gemini-review.yml` re-runs on every `synchronize` and reviews the whole diff, so an evidence-only commit would get a fresh Gemini run with new finding indices, which would fail the gate until the record is updated, which is another commit. That is a loop. Plan: Gemini's verdict marker carries the input identity, and the workflow skips the model call when a usable verdict for the same identity already exists. No finding is ever dropped: the gate collects findings from every usable Gemini verdict on the PR. | `gemini-review.yml` triggers |
 | V6 | §3 "re-reviews only after a nudge" | The Codex App also reviews on new commits here ("Review trigger: New commits" on #44). The design is unaffected: an evidence-only commit keeps the identity, and findings located only in `.review/` are outside the gate. | `issues/44/comments` |
-| V7 | §3 claude-b inventory | `~/.claude-b` has 12 symlinks, not 10: also `plans` → `~/code/claude-memory/plans/claude-b` and `reflections`. Task 8 enumerates links live rather than from the spec's list. | `ls -la ~/.claude-b` |
-| V8 | §5.8 "Node 22" | `.nvmrc` is `24` and CI uses it. The plan uses Node 24; `CONTRIBUTING.md` says 24. | `.nvmrc` |
+| V7 | §3 claude-b inventory | `~/.claude-b` has 12 symlinks, not 10: also `plans` → `~/code/claude-memory/plans/claude-b` and `reflections`. Task 8 enumerates links live rather than from the spec's list. Spec §3 corrected 2026-11-01. | `ls -la ~/.claude-b` |
+| V8 | §5.8 "Node 22" | `.nvmrc` is `24` and CI uses it. The plan uses Node 24; `CONTRIBUTING.md` says 24. Spec §5.8 corrected 2026-11-01. | `.nvmrc` |
 | V9 | §5.7 skills | The personal `writing-plans` (220 KB with assets) and `codex-review` (196 KB) depend on bash scripts and `~/code/claude-config` paths. Neither can be vendored as-is for Windows. | `find ~/code/claude-config/skills/<name>` |
 | V10 | §5.7 committed `.claude/` | `scripts/run-tests.mjs` skips `.claude` wholesale, so hook tests under `.claude/hooks/` would never run. Task 1 narrows the skip to `.claude/worktrees`. | `scripts/run-tests.mjs:10` |
 
@@ -348,12 +348,14 @@ ok('a PR whose only change is under .review/ -> "empty"', idEvidenceOnly === 'em
 ok('diff.noprefix=true in repo config -> same identity', idBefore === idNoPrefix)
 ok('diff.renames=copies and diff.algorithm=histogram -> same identity', idBefore === idUserConfig)
 ok('a binary file change has an identity, and changing its bytes changes it', idBin1 !== idBin2)
+ok('an indentation-only change to an added line -> changed', idIndent4 !== idIndent8)
+ok('the same two-file change in either file order -> same identity', idOrderXY === idOrderYX)
 ok('blobIdentity equals git hash-object of the committed bytes', blob === hashObject)
 ok('CRLF working tree with autocrlf=true does not change the identity', idBefore === idCrlfCheckout)
 ```
 
 - [ ] **Step 2: Run it.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `DIFF_ARGS = ['diff', '-U0', '--no-ext-diff', '--no-textconv', '--binary', '--no-color', '--no-renames', '--diff-algorithm=myers', '--src-prefix=a/', '--dst-prefix=b/']`. `inputIdentity` runs `git <DIFF_ARGS> <merge-base> <head> -- . ':(exclude).review'`, pipes stdout into `git patch-id --stable`, and returns the first field, or `'empty'` when patch-id prints nothing. The merge base is recomputed on every call (D-10); it is provenance only.
+- [ ] **Step 3: Implement.** `DIFF_ARGS = ['diff', '-U0', '--no-ext-diff', '--no-textconv', '--binary', '--no-color', '--no-renames', '--diff-algorithm=myers', '--src-prefix=a/', '--dst-prefix=b/']`. `inputIdentity` runs `git <DIFF_ARGS> <merge-base> <head> -- . ':(exclude).review'`, pipes stdout into `git patch-id --verbatim` (not `--stable`, which strips whitespace, so `return True` moved from four to eight spaces kept its ID; `--verbatim` is file-order stable, measured on git 2.50.1, and cannot be combined with `--stable`), and returns the first field, or `'empty'` when patch-id prints nothing. The merge base is recomputed on every call (D-10); it is provenance only.
 - [ ] **Step 4: Run `npm test`.** Expected: exit 0, on macOS here and on `windows-latest` in CI.
 - [ ] **Step 5: Commit** (`feat(review): input identity from the PR's own diff`).
 
@@ -722,11 +724,14 @@ This runs in claude-config, not this repo.
 
 Requires Task 0's ruling on V2–V5 (accepted by David 2026-11-01; recorded here by PR D, Task 20) **and the OPEN item below, resolved as a plan amendment before Task 22 starts.**
 
-### OPEN: substitution clock (blocks Task 22, and Tasks 23–24 through it)
+### OPEN: substitution clock and three gate points (block Task 22, and Tasks 23–24 through it)
 
 Rounds 4 and 5 of plan review kept finding defects in the stand-in (substitute) part of the PR-stage gate, each in the previous round's fix. Round 5's three points were extracted here; round 6 showed two of them (chained verification, the substitute vendor rule) change PR B's Tasks 11 and 12, so those two are settled there now. The one left is local to Task 22's `headPushedAt` and changes nothing PRs A–C ship. **Task 22 is not settled where it touches this point**; the PR D amendment resolves it with tests and gets its own plan review first:
 
 1. **Clock for a returning head (round 5, P2).** `headPushedAt` (Task 22) takes the earliest run for the head SHA over the whole PR. If a PR moves A → B → back to A, the clock for the current arrival of A starts at A's first arrival, so substitution can be allowed a minute after the head returns. Runs with an empty PR list (fork runs) can also come from another PR. Decide which arrival starts the wait, how that survives gate re-runs, and test a returning SHA and an unrelated empty-list run.
+2. **A late Gemini verdict after substitution (PR #52, Codex App, P2).** If Gemini runs past 30 minutes, a substitute can turn the gate green, and Gemini's later issue comment triggers no gate run, so a new blocking finding in it never reaches the gate. Candidate: Gemini is `needs-substitute` on the clock only when no Gemini run for the head is queued or in progress (`prRunsFor` reads run status), with a job `timeout-minutes` below 30; or a completion-triggered gate run that reports on the current head. Test a late Gemini finding after a green substituted gate. Touches Tasks 20 and 22.
+3. **Codex rewrite history (PR #52, Codex App, P2).** Clean Codex reviews overwrite one summary comment (V2), so after a force-push `codexState` sees only the new head and Task 22's ancestry check finds no rewrite. Measured 2026-11-01: GraphQL `userContentEdits` on that comment keeps the earlier bodies (PRs #43, #44, #46 each show two or three distinct `commit_sha` values). Candidate: read every reviewed SHA from the edit history, paginated, and fail closed when it cannot be read. Test a clean marker overwritten after a force-push with no full-review request. Touches Tasks 21 and 22.
+4. **Verifying a `fixed` outside-diff finding (PR #52, Gemini, P1).** Task 23's rule (a) accepts any later CodeRabbit review, but an incremental review does not re-read outside-diff code, and there is no thread to resolve. Candidate: for `cr:` findings, (a) needs a `@coderabbitai full review` after the fix commit and a usable review after that request which does not repeat the marker; otherwise only (b), a substitute. Task 21 Step 1 must first show whether the marker is stable across reviews. Touches Tasks 21 and 23.
 Settled, not open: chained verification (Task 11, `inherit` copies fixed gate-ID findings) and the substitute vendor rule (Task 12, `substitute:*` slots skip the author-vendor refusal).
 
 ### Task 20: Bots skip the evidence; Gemini's verdict marker
