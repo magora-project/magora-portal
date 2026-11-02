@@ -107,18 +107,18 @@ Inputs the spec implies but its own tests would not meet, most likely first. Eac
 | PR | Rollout step (§6) | Tasks | Label |
 |---|---|---|---|
 | A: repo layer | 1 | 1–7, with operator Tasks 8–9 between commit and push | `subtle-correctness` |
-| B: evidence and `review-evidence` | 2 | 10–15, then operator Task 16 | `subtle-correctness` |
-| C: typed targets and conformance | 3 | 17–18, then operator Task 19 (first promotion) | `subtle-correctness` |
+| B: evidence and `review-evidence` | 2 | 10–15 | `subtle-correctness` |
+| C: typed targets and conformance | 3 | 17–18, then operator Task 16 (activation, after PR C merges) and Task 19 (first promotion) | `subtle-correctness` |
 | D: PR review record and `review-gate` | 4 | 20–23, then operator Task 24 | `subtle-correctness` |
 
-Task 0 is a ruling, Task 25 is Noah's onboarding (rollout step 6), and rollout step 7 is a conversation. None opens a PR. PRs B–D are grandfathered from the check they introduce only until it is required: from Task 16 on, PRs C and D carry their own evidence.
+Task 0 is a ruling, Task 25 is Noah's onboarding (rollout step 6), and rollout step 7 is a conversation. None opens a PR. PRs B–D are grandfathered from the check they introduce only until it is required. `review-evidence` becomes required in Task 16, which runs **after PR C merges** (its specced activation PR needs PR C's conformance writer and the spec/plan records PR C's bootstrap creates). PR C still carries its own evidence (Task 18 Step 6), judged by the check while it is not yet required; from Task 16 on, PR D is judged by the required check.
 
 ---
 
 ## Task 0 (operator): Rule on the spec deviations
 
 - [ ] **Step 1 (David):** accept or reject V2–V5 in "Verified before planning". Each accepted row becomes a one-line amendment in spec §5.5, committed with PR D (Task 20 owns the edit). A rejected row returns that part of §5.5 to design before Task 21 starts.
-- [ ] **Step 2:** record the ruling and its date in this plan under V2–V5, as a commit in PR D (Task 20 Step 6 makes the spec edit in the same PR), then run the chained `plan` and `spec` re-reviews (`--supersedes`) in PR D.
+- [ ] **Step 2:** record the ruling and its date in this plan under V2–V5, as a commit in PR D (Task 20 Step 6 makes the spec edit in the same PR), then run the chained `plan` and `spec` re-reviews (`--supersedes`) in PR D; the plan re-review is an amendment, so it passes `--tasks T20-T25` (Task 17).
 
 PRs A–C do not depend on Task 0 and may start before it.
 
@@ -511,7 +511,7 @@ ok('every slot prompt ends by requiring the verdict JSON', slotPrompts.every((p)
 
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Write the slot prompts.** Each states the question and the output contract (the JSON of `verdict.schema.json`, severity P0–P3 per `.claude/rules/process.md` § What blocks). `correctness`: does the diff do what it claims, without breaking anything. `completeness`: is anything the spec or plan promised missing, can the tests fail, what did the fixes break. `spec` and `plan`: the reviews David runs today (correctness and feasibility; for a plan, also task targets and executability). `conformance`: lists every deviation in both directions with an ID `D<n>`, and traces each stated safeguard to code or test (§5.4). `substitute.md`, one file for all three `substitute:<bot>` slots with `{{bot}}` filled in by the runner: a full review of the current identity, standing in for that bot, which also assesses the bot's inherited findings. Update the `brainstorming` and `writing-plans` skills (Task 5) to name `.claude/skills/codex-review/SKILL.md` and `scripts/review/review.mjs` now that they exist, and drop their "not available yet" caveat. `push-readiness` waits for Task 15.
-- [ ] **Step 4: Write `codex-review`.** It picks the slot from the depth and stage, runs `npm run review -- run …`, reads the record, and on a failed or non-`completed` outcome falls back to the next reviewer in the dispatch table (§5.3). It never reports an unrun review as a pass. For spec and plan slots it runs `scanArtifact` first and records UNRUN when there is nothing to scan.
+- [ ] **Step 4: Write `codex-review`.** It picks the slot from the depth and stage, runs `npm run review -- run …` (always with `--author <vendor>`; for a `plan` slot on a plan already on `main`, also `--tasks <the tasks not yet landed>` or `--tasks none`, which the CLI requires, Task 17), reads the record, and on a failed or non-`completed` outcome falls back to the next reviewer in the dispatch table (§5.3). It never reports an unrun review as a pass. For spec and plan slots it runs `scanArtifact` first and records UNRUN when there is nothing to scan.
 - [ ] **Step 5: Implement `semgrep-artifact.mjs`.** Write each block to a temp dir with an extension from its language, run `semgrep scan --config p/default --json --metrics=off <dir>`, map findings back to the Markdown line.
 - [ ] **Step 6: Run `npm test`.** Expected: exit 0.
 - [ ] **Step 7: Commit** (`feat(review): slot prompts, codex-review skill, Semgrep on artifacts`).
@@ -607,7 +607,9 @@ ok('API error -> exit 1 "could not judge"', (await quiet(() => main({ env: goodE
 
 ### Task 16 (operator): Acceptance cases, then make `review-evidence` required
 
-- [ ] **Step 1:** on throwaway same-repo test PRs, run once each, and record the run URL and conclusion in PR B's thread:
+**Runs after PR C merges**, not after PR B: Step 1's task-scope case and Step 2's activation PR need PR C's conformance writer, and the activation PR reuses the spec and plan records from PR C's bootstrap (Task 18 Step 6). It stays numbered 16 so references hold.
+
+- [ ] **Step 1:** on throwaway same-repo test PRs, run once each, and record the run URL and conclusion in PR C's thread:
   - a failed review with zero findings (expect red);
   - an evidence-only commit on a green PR (expect still green);
   - a merge from `main` that edits a line next to the PR's lines (expect still green);
@@ -630,7 +632,7 @@ ok('API error -> exit 1 "could not judge"', (await quiet(() => main({ env: goodE
 
 **Interfaces:**
 - Produces:
-  - `parsePlan(markdown) -> { tasks: [{ id: 'T<n>', title, targets: [{ type: 'existing' | 'create' | 'modify' | 'delete' | 'command', value: string, line: number }] }], problems: string[] }`. A task is a `### Task <n>:` heading, `<n>` an integer; an operator task (heading contains `(operator)`) may have no Files block. Targets are lines `- <type>: \`<value>\`` inside the task's `**Files:**` block.
+  - `parsePlan(markdown) -> { tasks: [{ id: 'T<n>', title, targets: [{ type: 'existing' | 'create' | 'modify' | 'delete' | 'command', value: string, line: number }] }], problems: string[] }`. A task heading matches `^### Task (\d+)( \(operator\))?: ` — both `### Task 17: X` and `### Task 16 (operator): X`; an operator task may have no Files block, and then has `targets: []`. Conformance on a task with no targets runs no postconditions and still runs the reviewer on the task's text (Task 18). Targets are lines `- <type>: \`<value>\`` inside the task's `**Files:**` block.
   - `checkExisting({plan, exists, tasks?}) -> {problems: string[], notes: string[]}`, where `exists(path) -> boolean` answers "is this a file at the revision under review" (the CLI builds it from `git ls-tree -r --name-only <rev>`; tests pass a synthetic set, because CI checks out at depth 1). It walks the plan's tasks in order, restricted to `tasks` when given (the tasks not yet landed; plan re-reviews after a phase merges pass only the remaining ones). A path is **available** to a task if `exists(path)`, or an earlier in-scope task `create`s it, and not if an earlier in-scope task `delete`s it. Reported: each `existing` or `modify` target that is not available; each `create` target for which `exists` is true or that an earlier task creates; each untyped Files line. A `~/`-prefixed `existing` target is checked on disk locally; in CI it produces a `notes` entry, never a problem. Each result also lists the targets it considered, so a test can assert the walk was not empty.
   - `review.mjs run --slot plan --path <plan> [--tasks <list>] [--rev <sha>]` runs `checkExisting({plan, exists: <files at rev>, tasks})` first (defaults: `rev` = `git merge-base origin/main HEAD`, after `git fetch origin main`, i.e. the tree the in-scope tasks start from; `tasks` as below). The default is the merge base, not `HEAD`, because a plan is often re-reviewed on the branch that implements it: at `HEAD`, the files that branch's tasks create already exist and every one of their `create` targets would be reported. `tasks`: if the plan file does not exist at `rev` (a new plan), the default is every task. If it does (an amendment to a merged plan, e.g. a docs-only PR or PR D's chained re-review), **`--tasks` is required** and the CLI refuses without it, naming the flag: which tasks remain is a fact the author states and the reviewer sees, not something inferred from which files exist. A plan with no remaining tasks passes `--tasks none`, which checks nothing and says so in a note. The skill commands (Task 5) say this and records its problems as P1 findings in the plan record. A plan re-review after a phase has merged passes `--tasks` with the remaining tasks; the plan record stores both values.
 
@@ -650,6 +652,7 @@ ok('amendment to a merged plan without --tasks is refused, naming the flag', /--
 ok('a new plan (absent at rev) defaults to every task, so a create target that already exists is still reported', resolveTasks({ tasks: undefined, planExistsAtRev: false, plan: planCreatingExisting }).tasks.length === parsePlan(planCreatingExisting).tasks.length && checkExisting({ plan: planCreatingExisting, exists: setOf(['x.mjs']) }).problems.length === 1)
 ok('--tasks none checks nothing and notes it', (() => { const r = checkExisting({ plan: thisPlan, exists: setOf([]), tasks: [] }); return r.problems.length === 0 && r.considered.length === 0 && r.notes.some((n) => /no remaining tasks/.test(n)) })())
 ok('duplicate task IDs are a problem', /duplicate T2/.test(parsePlan(dupPlan).problems.join()))
+ok('operator headings parse: T16 and T24 are found, with no targets and no problem', (() => { const r = parsePlan(thisPlan); return ['T16', 'T24'].every((id) => r.tasks.some((t) => t.id === id && t.targets.length === 0)) && !r.problems.some((p) => /T16|T24/.test(p)) })())
 ok('a command target keeps its value verbatim, spaces included', parsePlan(p).tasks[0].targets[0].value === 'npm run check:migrations')
 ```
 
@@ -687,18 +690,19 @@ ok('a command is spawned without a shell on every platform', spawnOpts.shell ===
 ok('only the declared tasks are checked', pc.every((p) => ['T1', 'T2'].includes(p.task)))
 ok('deviation IDs in the record are the unfixed findings only', rec.conformance.deviations.join() === 'D2')
 ok('a re-run with --supersedes chains and inherits D2 if undisposed', chained.findings.some((f) => f.id.endsWith('#D2')))
+ok('conformance on an operator task with no targets: no postconditions, reviewer still runs on its text', zeroTargetRec.conformance.commands.length === 0 && reviewerPrompts.some((p) => p.includes('Task 16')))
 ```
 
 - [ ] **Step 2: Run it.** Expected: FAIL.
 - [ ] **Step 3: Implement.** A `command` value is split into argv with a small quote-aware splitter (no shell). On Windows, `npm` runs as `node <dir>/node_modules/npm/bin/npm-cli.js` and `npx` as `node <dir>/node_modules/npm/bin/npx-cli.js`, where `<dir>` is `dirname(process.execPath)`; arguments pass through unchanged. Tests: `npm run check:migrations` and `npx eslint "a b.js"` reach their CLI with argv `['run','check:migrations']` and `['eslint','a b.js']`.
 - [ ] **Step 4: Run `npm test`.** Expected: exit 0.
 - [ ] **Step 5: Commit** (`feat(review): plan conformance and its record`).
-- [ ] **Step 6: Bootstrap PR C's evidence** (review-evidence is required from Task 16). PR C is the first `specced` PR, and no chain root exists yet for the spec or this plan, so these are full reviews, not chained ones:
+- [ ] **Step 6: Bootstrap PR C's evidence** (`review-evidence` is not yet required: Task 16 runs after PR C merges; the check still runs, and PR C must pass it). PR C is the first `specced` PR, and no chain root exists yet for the spec or this plan, so these are full reviews, not chained ones:
   - `npm run review -- init-local --lane specced --depth subtle-correctness --spec docs/superpowers/specs/2026-10-29-shared-dev-process-design.md --plan "docs/superpowers/plans/2026-10-30-shared-dev-process.md T17-T18"`
   - `npm run review -- run --slot spec --path docs/superpowers/specs/2026-10-29-shared-dev-process-design.md --author anthropic`
   - `npm run review -- run --slot plan --path docs/superpowers/plans/2026-10-30-shared-dev-process.md --tasks T17-T25 --author anthropic` (no `--rev`: the default merge base is `main` before PR C, where T17 and T18's `create` targets do not exist yet)
   - `npm run review -- conformance --plan docs/superpowers/plans/2026-10-30-shared-dev-process.md --tasks T17-T18 --author anthropic`
-  - then `correctness` and `completeness`, and `npm run review -- check --local`. Expected: every line ok. Push PR C with approval. PR D reuses the spec and plan records unless Task 0 or Task 20 changed those blobs, in which case it chains from these.
+  - then `correctness` and `completeness`, and `npm run review -- check --local`. Expected: every line ok. Push PR C with approval. PR D reuses the spec and plan records unless Task 0 or Task 20 changed those blobs, in which case it chains from these with `--supersedes` and, for the plan, `--tasks T20-T25` (an amendment, Task 17).
 
 ### Task 19 (operator): First promotion to claude-config (D-4)
 
@@ -896,6 +900,7 @@ ok('fixed + SHA with a covering review after the fix and the thread resolved -> 
 ok('pr-record writes every blocking finding with an empty disposition for the author', draft.findings.length === blockingFindings(stateWithTwo).length && draft.findings.length === 2 && draft.findings.every((f) => f.disposition === null))
 ok('substitute run, end to end: stubbed live readers -> record -> gate ok', await (async () => { const rec = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); return rec.findings.some((f) => f.id === 'thread:PRRT_1' && f.disposition.kind === 'fixed') && evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(rec), depth: 'subtle-correctness' }).ok })())
 ok('substitute run carries a fixed-but-unverified finding, not a verified one', (await runSubstitute({ bot: 'codex', readersImpl: oneVerifiedOneNot, reviewerImpl: captures })).sentInherited.join() === 'thread:PRRT_2')
+ok('R1 resolves G, R2 chains from R1: R2 persists G as fixed with R1 as by, never sends G to the reviewer, and the gate passes on R2', await (async () => { const r1 = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); const sent = []; const r2 = await runSubstitute({ bot: 'codex', supersedes: r1.stem, readersImpl: liveAfterR1, reviewerImpl: rejectsIds(['thread:PRRT_1'], sent) }); const g = r2.findings.find((f) => f.id === 'thread:PRRT_1'); return g && g.disposition.kind === 'fixed' && g.disposition.by === r1.stem && !sent.includes('thread:PRRT_1') && evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(r1, r2), depth: 'subtle-correctness' }).ok })())
 ok('second substitute review: an open finding chains under the same gate ID and resolves -> gate ok', await (async () => { const r1 = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: leavesOpen }); const r2 = await runSubstitute({ bot: 'codex', supersedes: r1.stem, readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); return r2.findings.some((f) => f.id === 'thread:PRRT_1' && f.disposition.kind === 'fixed') && evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(r1, r2), depth: 'subtle-correctness' }).ok })())
 ok('substitute run fills {{bot}} in substitute.md', (await runSubstitute({ bot: 'gemini', readersImpl: none, reviewerImpl: captures })).prompt.includes('gemini') && !(await runSubstitute({ bot: 'gemini', readersImpl: none, reviewerImpl: captures })).prompt.includes('{{bot}}'))
 ok('API error -> exit 1 "could not judge"', (await quiet(() => main({ env: goodEnv, fetchImpl: stub403 }))).code === 1)
@@ -913,7 +918,7 @@ ok('a review-evidence key alone does not exempt from review-gate', (await quiet(
 
 - [ ] **Step 1:** on a test PR, submit a review and read `gh api repos/magora-project/magora-portal/commits/<head>/check-runs --jq '.check_runs[] | select(.name=="review-gate") | [.head_sha, .conclusion] | @tsv'`. Record whether the `pull_request_review` run's check is on the PR head (§5.5). If it is not, remove `pull_request_review` from the triggers in a follow-up commit; the record commit is the trigger.
 - [ ] **Step 2:** run each remaining acceptance case once (§6 step 5) and record the run URL and conclusion: a rate-limited CodeRabbit (or a `skipped` check run as its stand-in, said so), a Gemini that couldn't run (a test branch whose workflow run has the key unset), an oversized diff (expect red with "split this PR", whatever substitutes exist), a force-push followed by a full-review request, a Dependabot PR, and an evidence-only commit after a green gate (expect still green, and Gemini posts `skipped-same-identity`).
-- [ ] **Step 3 (David, approved):** add `review-gate` to the required checks and read back as in Task 16; expect 10 entries. Immediately after, capture the UTC time; a PR classified and evidenced as in Task 16 Step 2 (`Plan:` this plan `T24`) adds the `review-gate` key to `.github/review-activation.json`, and also needs `review-gate`'s own PR review record if any bot raises a blocking finding; after it merges, re-run `review-gate` on the PRs open at activation, as in Task 16 Step 3.
+- [ ] **Step 3 (David, approved):** add `review-gate` to the required checks and read back as in Task 16; expect 10 entries. Immediately after, capture the UTC time; a PR classified and evidenced as in Task 16 Step 2 (`Plan:` this plan `T24`) adds the `review-gate` key to `.github/review-activation.json`, and also needs its PR review record `.review/pr/<n>.json` **in every case**: as a `subtle-correctness` PR it requires all three bot slots, and Task 23 requires a record whenever the depth requires any slot; after it merges, re-run `review-gate` on the PRs open at activation, as in Task 16 Step 3.
 - [ ] **Fork with maintainer edits off:** not run separately for `review-gate`. The gate reads `.review/pr/<n>.json` from a tree the maintainer cannot push to, so §5.3's move-to-a-same-repo-PR path applies, and Task 16 already exercised it.
 
 ---
