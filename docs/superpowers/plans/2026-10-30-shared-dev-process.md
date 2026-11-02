@@ -26,7 +26,7 @@
 - Actions are pinned by full SHA with the tag in a comment, using the pins in `ci.yml`: `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`, `actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0`.
 - New workflows trigger on `pull_request` only, never `pull_request_target`, and post no status with any credential: each job's own pass or fail is the check (§2.1). Each job reads PR state live from the API, not the event payload (the `label-gate.mjs` pattern).
 - `AGENTS.md` is size-ratcheted (`doc-size.conf`): every edit is byte-neutral or smaller. Process rules that do not fit go in `.claude/rules/process.md` (§5.7).
-- Tests follow `scripts/ci/label-gate.test.mjs`: a `*.test.mjs` beside the module, a local `ok(name, cond)` counter, stubbed `fetchImpl` and stubbed spawns, and an `ok` that **counts a thenable `cond` as a failure** ("unawaited Promise"), because a Promise is truthy even when it resolves to `false`: every async assertion is written `ok(name, await …)`, non-zero exit on any failure. Tests that need a real git repo build one in `mkdtemp` and delete it.
+- Tests follow `scripts/ci/label-gate.test.mjs`: a `*.test.mjs` beside the module, a local `ok(name, cond)` counter, stubbed `fetchImpl` and stubbed spawns, and an `ok` that **counts a thenable `cond` as a failure** ("unawaited Promise"), because a Promise is truthy even when it resolves to `false`: every async assertion is written `ok(name, await …)`, non-zero exit on any failure. The snippets below abbreviate: `slotState` (`s`), `evaluateGate`, `diffTooLarge`, `geminiDiff`, `claudeRun` and the other adapters are async, so await every call before reading a property, and write negative checks as `=== false` or an expected value, never `!x.ok` or `!==`, which pass on `undefined`. Tests that need a real git repo build one in `mkdtemp` and delete it.
 - Every PR in this plan is `subtle-correctness`: each touches `AGENTS.md`, `.github/**`, `package.json`, `scripts/review/**` or `.claude/**`, which are or become control files. Each PR description says which control files it changes.
 - `npm run lint:ratchet` stays green; new files add no ESLint findings (Task 1 narrows ESLint's `.claude` ignore so the hooks are linted).
 - **The committed plan and spec are not edited for progress.** Executors track checkboxes in their own session, not in the file: any edit changes the blob and voids the `spec`/`plan` records every later PR relies on (§5.3). Only rulings and amendments edit them, each inside the PR that owns the edit (Task 0 → PR D, Task 20), followed by a chained `plan`/`spec` re-review.
@@ -835,16 +835,16 @@ ok('empty reviews after a full one do not uncover it', s(crFullThenEmpties).stat
 ok('rate-limited CodeRabbit with no usable review -> needs-substitute', s(crRateLimited).status === 'needs-substitute')
 ok('Gemini could-not-run -> needs-substitute', s(geminiCouldNotRun).status === 'needs-substitute')
 ok('Gemini on a draft PR -> needs-substitute immediately', s(geminiDraft).status === 'needs-substitute')
-ok('force-push then incremental review only, no answer to the full-review request -> not covered', s(forcePushIncrementalOnly).status !== 'covered')
+ok('force-push then incremental review only, no answer to the full-review request -> not covered', ['pending', 'needs-substitute'].includes((await s(forcePushIncrementalOnly)).status))
 ok('force-push, incremental review on the new identity, no request at all -> not covered, reason names the request', s(forcePushNoRequest).status !== 'covered' && /full review/.test(s(forcePushNoRequest).reason))
 ok('ordinary push, incremental review on the new identity -> covered (no request needed)', s(ordinaryPushIncremental).status === 'covered')
 ok('substitute with a completed outcome but a new open P1 -> not ok', !substituteOk({ bot: 'coderabbit', records: [subWithOpenP1], currentIdentity: id, countedVendors: [] }))
-ok('a 400,001-byte diff is too large, and no substitute clears the gate', diffTooLarge(bigRepo) && !evaluateGateLike(bigWithSubs).ok)
+ok('a 400,001-byte diff is too large, and no substitute clears the gate', (await diffTooLarge(bigRepo)) === true && (await evaluateGateLike(bigWithSubs)).ok === false)
 ok('three substitutes from openai, anthropic, google on an anthropic-authored PR -> all ok', ['coderabbit', 'codex', 'gemini'].every((b) => substituteOk(threeSubsFor(b))))
 ok('two substitutes from the same vendor -> the second is not ok', !substituteOk(secondSameVendor))
 ok('Gemini after a force-push: a fresh verdict on the new identity -> covered, no request needed', s(geminiAfterForcePush).status === 'covered')
 ok('identity-preserving force-push (rebase onto main): earlier CodeRabbit coverage stands', s(crRebaseSameIdentity).status === 'covered')
-ok('geminiDiff and diffTooLarge measure the same bytes, binary and rename included', geminiDiff(binRenameRepo).length === sizeSeenBy(diffTooLarge, binRenameRepo))
+ok('geminiDiff and diffTooLarge measure the same bytes, binary and rename included', await (async () => { const n = (await geminiDiff(binRenameRepo)).length; return Number.isInteger(n) && n > 0 && n === await sizeSeenBy(diffTooLarge, binRenameRepo) })())
 ok('force-push then a usable review after the request -> covered', s(forcePushAnswered).status === 'covered')
 ok('review on an unfetchable commit -> not usable, no throw', s(unfetchable).status === 'pending' && /full review/.test(s(unfetchable).reason))
 ok('29 minutes, nothing -> pending; 31 minutes -> needs-substitute', s(at29).status === 'pending' && s(at31).status === 'needs-substitute')
@@ -890,16 +890,16 @@ ok('substitute by a vendor already counted -> not ok', !substituteOk({ bot: 'gem
 
 ```js
 ok('mechanical PR with no blocking finding needs no record', evaluateGate({ state: mech, record: null, depth: 'mechanical' }).ok)
-ok('mechanical PR with a blocking thread needs a record', !evaluateGate({ state: mechWithP1, record: null, depth: 'mechanical' }).ok)
+ok('mechanical PR with a blocking thread needs a record', (await evaluateGate({ state: mechWithP1, record: null, depth: 'mechanical' })).ok === false)
 ok('a nit thread needs no entry', evaluateGate({ state: withNitOnly, record: slotsOnly, depth: 'standard' }).ok)
 ok('a bot-resolved CodeRabbit thread passes without an entry', evaluateGate({ state: crResolvedByBot, record: slotsOnly, depth: 'standard' }).ok)
-ok('an author-resolved blocking thread still needs an entry', !evaluateGate({ state: authorResolvedP1, record: slotsOnly, depth: 'standard' }).ok)
-ok('reclassified without a reason -> FAIL', !evaluateGate({ state: p1, record: reclassNoReason, depth: 'standard' }).ok)
+ok('an author-resolved blocking thread still needs an entry', (await evaluateGate({ state: authorResolvedP1, record: slotsOnly, depth: 'standard' })).ok === false)
+ok('reclassified without a reason -> FAIL', (await evaluateGate({ state: p1, record: reclassNoReason, depth: 'standard' })).ok === false)
 ok('a new blocking finding after the record -> FAIL naming it', /thread:/.test(evaluateGate({ state: p1Later, record: older, depth: 'standard' }).lines.join()))
 ok('a finding located only in .review/ is outside the gate', evaluateGate({ state: findingInEvidence, record: slotsOnly, depth: 'standard' }).ok)
 ok('subtle-correctness with all three bots failed and three substitutes from three vendors -> ok', evaluateGate({ state: allFailed, record: threeSubs, depth: 'subtle-correctness' }).ok)
 ok('Gemini findings from an earlier identity still need dispositions', blockingFindings(geminiTwoIdentities).filter((f) => f.source === 'gemini').length === 3)
-ok('fixed + SHA with no bot evidence after the fix -> FAIL', !evaluateGate({ state: fixedNoReReview, record: fixedRec, depth: 'standard' }).ok)
+ok('fixed + SHA with no bot evidence after the fix -> FAIL', (await evaluateGate({ state: fixedNoReReview, record: fixedRec, depth: 'standard' })).ok === false)
 ok('a human-opened thread is not a blocking finding', blockingFindings(humanThread).length === 0)
 ok('bot finding -> fix -> unrelated commit -> bot fails -> substitute inherits the fixed-but-unverified finding and resolves it -> ok', evaluateGate({ state: fixUnrelatedThenFail, record: withSubResolving, depth: 'subtle-correctness' }).ok)
 ok('Gemini finding -> fix -> Gemini could-not-run -> substitute resolves it -> ok', evaluateGate({ state: geminiFixedThenFailed, record: withSubResolving, depth: 'subtle-correctness' }).ok)
