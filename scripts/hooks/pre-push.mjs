@@ -1,18 +1,18 @@
 // Git pre-send hook (via .githooks): warns when local review evidence is missing. It NEVER blocks:
 // every path, including every internal failure, exits 0. The required CI checks are the control.
 // Kill-switch: PREPUSH_REVIEW_WARN_DISABLE=1.
-import { readFileSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 
 // Resolves to the localCheck function, or null when scripts/ci/review-evidence.mjs is not there yet.
+// Only an absent file counts as "not available"; a module that exists but fails to load rejects,
+// so main() reports it as a failed check rather than as missing evidence tooling.
 async function defaultLoadCheck(cwd) {
-  try {
-    const mod = await import(pathToFileURL(join(cwd, 'scripts', 'ci', 'review-evidence.mjs')).href)
-    return typeof mod.localCheck === 'function' ? mod.localCheck : null
-  } catch {
-    return null
-  }
+  const file = join(cwd, 'scripts', 'ci', 'review-evidence.mjs')
+  if (!existsSync(file)) return null
+  const mod = await import(pathToFileURL(file).href)
+  return typeof mod.localCheck === 'function' ? mod.localCheck : null
 }
 
 export async function main({ cwd = process.cwd(), stderr = process.stderr, env = process.env, loadCheck = defaultLoadCheck } = {}) {
@@ -28,8 +28,12 @@ export async function main({ cwd = process.cwd(), stderr = process.stderr, env =
       const lines = Array.isArray(result.lines) ? result.lines : []
       stderr.write(`WARNING: local review evidence is missing or incomplete (this does not block):\n${lines.map((l) => `  ${l}`).join('\n')}\n`)
     }
-  } catch {
-    // fail open: a warning hook must never block
+  } catch (e) {
+    // still exit 0, but say so: a broken check must not read as "evidence present"
+    try {
+      const msg = String(e && e.message ? e.message : e).split('\n')[0]
+      stderr.write(`WARNING: review-evidence check failed: ${msg}\n`)
+    } catch { /* fail open */ }
   }
   return 0
 }
@@ -46,8 +50,15 @@ function isMain() {
 }
 
 if (isMain()) {
-  // Git writes ref lines to stdin; drain them so it never writes into a closed pipe.
+  // Defensive: git tolerates a hook that ignores its stdin, but drain it anyway.
   try { readFileSync(0) } catch { /* fail open */ }
   process.stderr.on('error', () => {})
-  process.exitCode = await main()
+  // No top-level await: a check that never settles must not exit 13 or hang. The watchdog is not
+  // unref'd on purpose, so it also fires when the loop would otherwise be empty or kept alive.
+  const ms = Number(process.env.PREPUSH_REVIEW_TIMEOUT_MS) > 0 ? Number(process.env.PREPUSH_REVIEW_TIMEOUT_MS) : 10000
+  setTimeout(() => {
+    try { process.stderr.write('review-evidence check timed out\n') } catch { /* fail open */ }
+    process.exit(0)
+  }, ms)
+  main().then(() => process.exit(0), () => process.exit(0))
 }

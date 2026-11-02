@@ -1,7 +1,7 @@
 // Self-test for scripts/hooks/pre-push.mjs and scripts/hooks/setup.mjs. Real spawns use a scratch dir.
 // Run: node scripts/hooks/pre-push.test.mjs
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,7 +27,7 @@ const runHook = async ({ localCheck, env = {} }) => {
 ok('always exits 0, even when the check fails', (await runHook({ localCheck: () => ({ ok: false, lines: ['x'] }) })).code === 0)
 ok('prints the failing lines as a warning', /WARNING.*x/s.test((await runHook({ localCheck: () => ({ ok: false, lines: ['x'] }) })).err))
 ok('a throwing check still exits 0', (await runHook({ localCheck: () => { throw new Error('boom') } })).code === 0)
-ok('a throwing check prints nothing', (await runHook({ localCheck: () => { throw new Error('boom') } })).err === '')
+ok('a throwing check prints a failure warning', /^WARNING: review-evidence check failed: boom\n$/.test((await runHook({ localCheck: () => { throw new Error('boom') } })).err))
 ok('missing check module: one line, exit 0', (await runHook({ localCheck: null })).code === 0)
 ok('missing check module: says not available yet', (await runHook({ localCheck: null })).err === 'review-evidence not available yet\n')
 ok('passing check prints nothing', (await runHook({ localCheck: () => ({ ok: true, lines: [] }) })).err === '')
@@ -55,13 +55,46 @@ try {
 
   writeFileSync(mod, "export const localCheck = () => { throw new Error('boom') }\n")
   const thrown = spawnHook(link, scratch)
-  ok('spawn with a throwing check: exit 0, silent', thrown.status === 0 && thrown.stderr === '')
+  ok('spawn with a throwing check: exit 0 with a failure warning', thrown.status === 0 && /check failed: boom/.test(thrown.stderr))
 
   writeFileSync(mod, 'this is not javascript (\n')
   const broken = spawnHook(link, scratch)
   ok('spawn with an unparseable module: exit 0', broken.status === 0)
+  ok('spawn with an unparseable module: reported as a failed check, not as missing', /check failed/.test(broken.stderr) && !/not available yet/.test(broken.stderr))
+
+  const fast = { ...process.env, PREPUSH_REVIEW_TIMEOUT_MS: '300' }
+  writeFileSync(mod, 'export const localCheck = () => new Promise(() => {})\n')
+  const hung = spawnSync(process.execPath, [link], { cwd: scratch, env: fast, input: '', encoding: 'utf8', shell: false, timeout: 8000 })
+  ok('spawn with a never-settling check: exit 0 (not 13) and a timeout line', hung.status === 0 && /timed out/.test(hung.stderr))
+
+  writeFileSync(mod, 'setInterval(() => {}, 1000)\nexport const localCheck = () => new Promise(() => {})\n')
+  const alive = spawnSync(process.execPath, [link], { cwd: scratch, env: fast, input: '', encoding: 'utf8', shell: false, timeout: 8000 })
+  ok('spawn with a loop-holding check: exits 0 at the watchdog, not hung', alive.status === 0 && /timed out/.test(alive.stderr))
 } finally {
   rmSync(scratch, { recursive: true, force: true })
+}
+
+// The shim itself: run with sh from a scratch tree root (skipped where sh is absent).
+const shimSrc = join(here, '..', '..', '.githooks', 'pre-push')
+const hasSh = spawnSync('sh', ['-c', 'exit 0'], { shell: false }).status === 0
+if (hasSh) {
+  const tree = mkdtempSync(join(tmpdir(), 'prepush-shim-'))
+  try {
+    mkdirSync(join(tree, 'scripts', 'hooks'), { recursive: true })
+    copyFileSync(hookPath, join(tree, 'scripts', 'hooks', 'pre-push.mjs'))
+    copyFileSync(shimSrc, join(tree, 'shim'))
+    const withNode = spawnSync('sh', [join(tree, 'shim')], { cwd: tree, input: '', encoding: 'utf8', shell: false })
+    ok('shim with node: exit 0 and runs the hook', withNode.status === 0 && withNode.stderr === 'review-evidence not available yet\n')
+    const bin = join(tree, 'bin')
+    mkdirSync(bin)
+    const noNode = spawnSync('/bin/sh', [join(tree, 'shim')], { cwd: tree, env: { PATH: bin }, input: '', encoding: 'utf8', shell: false })
+    ok('shim without node on PATH: exit 0 and one line', noNode.status === 0 && noNode.stderr === 'node not found; review-evidence warning skipped\n')
+    writeFileSync(join(bin, 'node'), '#!/bin/sh\nexit 7\n', { mode: 0o755 })
+    const nodeFails = spawnSync('/bin/sh', [join(tree, 'shim')], { cwd: tree, env: { PATH: bin }, input: '', encoding: 'utf8', shell: false })
+    ok('shim whose node exits non-zero: still exit 0', nodeFails.status === 0)
+  } finally {
+    rmSync(tree, { recursive: true, force: true })
+  }
 }
 
 // setup.mjs only ever runs in a scratch repo here, never in this checkout.

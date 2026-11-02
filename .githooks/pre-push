@@ -1,3 +1,8 @@
 #!/bin/sh
 # Warning-only hook (never blocks). Installed by: npm run setup:hooks
-exec node scripts/hooks/pre-push.mjs "$@"
+if command -v node >/dev/null 2>&1; then
+  node scripts/hooks/pre-push.mjs "$@"
+else
+  echo "node not found; review-evidence warning skipped" >&2
+fi
+exit 0
