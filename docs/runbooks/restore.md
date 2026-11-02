@@ -284,7 +284,7 @@ stops before step 1.
 Expected messages: `schema "..." already exists, skipping` and `extension "..." already exists, skipping`
 notices from the extensions step are benign. No error is expected from any step. If the lockdown step
 prints `LOCKDOWN FAILED` or fails in any way, stop before restoring anything and run "Clean up" step 2
-(and step 1, since the project is suspect). If the extensions step or the revoke step fails, or the restore reports any other error, David records it (text only, no
+(and step 1, since the project is suspect). If the extensions step, either restore step or the revoke step fails, David records it (text only, no
 connection strings) in the Rehearsals table, the agent beside him adjusts this runbook, and you run
 "Clean up" steps 1 and 2. Retry only after deleting and recreating the scratch project, with a fresh dump.
 

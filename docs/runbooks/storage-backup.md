@@ -195,7 +195,7 @@ GUARD
       two counts at the end differ (then the comparison did not cover every object):
 
       ```sh
-      rm -f "$RESTORE_DIR/<bucket>.combined" "$RESTORE_DIR/<bucket>.src" "$RESTORE_DIR/<bucket>.prod-reviewed" "$RESTORE_DIR/<bucket>.prod-approved" "$RESTORE_DIR/<bucket>.prod-now"
+      rm -f "$RESTORE_DIR/<bucket>.combined" "$RESTORE_DIR/<bucket>.src"
       EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone check "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --download --one-way --combined "$RESTORE_DIR/<bucket>.combined"; echo "check exit $?"
       op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" > "$RESTORE_DIR/<bucket>.src"; echo "lsf exit $?"
       wc -l < "$RESTORE_DIR/<bucket>.src"
@@ -220,32 +220,13 @@ GUARD
       paths by hand and decides any restore of them outside this procedure. An object whose bytes are lost
       in production can appear here, because reading it from production fails.
 
-      If both lists are empty, the bucket needs no restore; skip to the next bucket. Otherwise, before
-      David's review, record production's current state of every listed path (path, size, modified
-      time; listing only, nothing is downloaded). Step c compares against this. It must print
-      `lsf exit 0`:
-
-      ```sh
-      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only --format pst --separator "$(printf '\t')" --files-from-raw "$RESTORE_DIR/<bucket>.files" "restore_target:<bucket>" > "$RESTORE_DIR/<bucket>.prod-reviewed"; echo "lsf exit $?"
-      ```
-
-      A `+` path is missing in production, so it has no line here; that is expected. Then David
+      If both lists are empty, the bucket needs no restore; skip to the next bucket. Otherwise David
       reviews every line of `<bucket>.files`. A `+` object may have been deleted on purpose after
       `<YYYY-MM-DD>`, and a `*` object may have been changed on purpose after it; restoring either undoes
       that change. David deletes those paths from `<bucket>.files` and records which paths were kept and
       that David approved them.
-   c. First confirm production has not changed, for the approved paths, since step b recorded it. This
-      lists the approved paths again and compares them with step b's record, restricted to the same
-      paths. It must print `unchanged since step b`. If it prints `REFUSED`, an approved object was
-      uploaded, changed or deleted in production after step b: copy nothing, and redo steps a and b
-      for this bucket (step a deletes the old lists; David reviews the new list from scratch).
-
-      ```sh
-      awk -F '\t' 'NR==FNR { ok[$0]; next } ($1 in ok)' "$RESTORE_DIR/<bucket>.files" "$RESTORE_DIR/<bucket>.prod-reviewed" | sort > "$RESTORE_DIR/<bucket>.prod-approved"
-      EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsf -R --files-only --format pst --separator "$(printf '\t')" --files-from-raw "$RESTORE_DIR/<bucket>.files" "restore_target:<bucket>" > "$RESTORE_DIR/<bucket>.prod-now" && sort -o "$RESTORE_DIR/<bucket>.prod-now" "$RESTORE_DIR/<bucket>.prod-now" && cmp -s "$RESTORE_DIR/<bucket>.prod-approved" "$RESTORE_DIR/<bucket>.prod-now" && echo "unchanged since step b" || echo "REFUSED: production changed since step b, or the listing failed"
-      ```
-
-      Then, at once, copy only the listed objects and check them by content. The check must exit 0:
+   c. As soon as David has approved the list, copy only the listed objects, then check them by
+      content. The check must exit 0:
 
       ```sh
       EP='https://<production ref>.supabase.co/storage/v1/s3'; . "$RESTORE_DIR/guard.sh" && guard_prod_ep "$EP" <production ref> && RCLONE_CONFIG_RESTORE_TARGET_ENDPOINT="$EP" op run --env-file="$RESTORE_DIR/rclone.env" -- rclone copy "r2:<R2_BUCKET>/nightly/<YYYY-MM-DD>/<bucket>" "restore_target:<bucket>" --files-from-raw "$RESTORE_DIR/<bucket>.files" --checksum --ignore-times
@@ -260,13 +241,12 @@ GUARD
    read fails, in which case step b stops and leaves it to David. `--ignore-times` uploads unconditionally (rclone decides this before any size or
    checksum comparison), but over a whole bucket it would rewrite every live object and revert any that
    changed after `<YYYY-MM-DD>`. The reviewed list limits it to the objects that need restoring.
-   Known gap: writes to production are not paused, and rclone has no conditional write. Step c's first
-   command catches an approved object uploaded, changed or deleted between step b's record and that
-   command, because Supabase's listing reflects each upload's size and modified time. Two windows
-   remain uncovered: a write between step a's comparison and step b's record (seconds to minutes, before
-   David's review), and a write between step c's first command and the copy. So run step b's record
-   immediately after step a, and the copy immediately after step c's first command. A write in either
-   window is overwritten by the backup, or a deleted object is put back. Cost:
+   Known gap (accepted, David 2026-11-01): writes to production are not paused, nothing detects them,
+   and rclone has no conditional write. If an approved object is uploaded, changed or deleted in
+   production after step a compared it, step c overwrites the newer version with the backup, or puts
+   back the deleted object. For a large bucket that window lasts as long as step a itself. So run step
+   c as soon as David has approved the list, and do not re-run step b once David has edited
+   `<bucket>.files`: step b rewrites that file from scratch and would discard the approval. Cost:
    step a downloads up to the whole bucket from both R2 and production (a full bucket's worth of Supabase
    egress); step c downloads only the listed objects. A path containing a newline breaks the list
    format; if step b shows a line that is not a whole path, stop.
