@@ -253,7 +253,8 @@ revoke all on all tables in schema public from public, anon, authenticated;
 revoke all on all sequences in schema public from public, anon, authenticated;
 revoke all on all functions in schema public from public, anon, authenticated;
 SQL
-pg_restore -l "$RESTORE_DIR/public.dump" | grep -v -E '^[0-9]+; [0-9]+ [0-9]+ SCHEMA - public ' > "$RESTORE_DIR/public.list" &&
+pg_restore -l "$RESTORE_DIR/public.dump" > "$RESTORE_DIR/public.full.list" &&
+grep -v -E '^[0-9]+; [0-9]+ [0-9]+ SCHEMA - public ' "$RESTORE_DIR/public.full.list" > "$RESTORE_DIR/public.list" &&
 echo "== step 1 of 5: lockdown" &&
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
   '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -v ON_ERROR_STOP=1 -f "$2/lockdown.sql"' _ <scratch-ref> "$RESTORE_DIR" &&
@@ -278,8 +279,9 @@ printed names it, and `RESTORE STOPPED` follows. `pg_restore` exits non-zero on 
 past, so every step must run clean. That is why (a) is restored from `public.list`: the dump's own
 `CREATE SCHEMA public` entry is left out (the scratch project already has `public`), which would
 otherwise fail with `schema "public" already exists` on every rehearsal and stop the run before the
-revoke step. The comment on `public` is still restored. If `public.list` cannot be written, the run
-stops before step 1.
+revoke step. The comment on `public` is still restored. The listing is written to `public.full.list`
+first and filtered from that file, so a failed `pg_restore -l` (not only a failed filter or write)
+stops the run before step 1.
 
 Expected messages: `schema "..." already exists, skipping` and `extension "..." already exists, skipping`
 notices from the extensions step are benign. No error is expected from any step. If the lockdown step
