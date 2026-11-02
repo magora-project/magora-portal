@@ -235,6 +235,9 @@ CI checks that the fields are present and well formed. It does not judge whether
 - **Scope of the re-review:** the delta between the two identities, or the two blobs for a spec or
   plan. The question is "did the fixes break anything, and is anything blocking still open?". A
   typo fix to a spec is therefore a small re-review, not a full one.
+- **Delta only after a completed review:** the delta is sent only when the superseded record's
+  outcome is `completed`. Otherwise nobody reviewed the earlier input, so the re-review gets the
+  full current input. An empty reply or a timeout stays an unrun review, never a pass.
 
 **Where records live:** committed to the PR, in one evidence directory.
 

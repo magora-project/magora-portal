@@ -242,7 +242,7 @@ ok('malformed payload: allow, exit 0', runWith('[]').code === 0 && runWith('[]')
 
 ```js
 ok('the three required skills exist', ['brainstorming', 'writing-plans', 'push-readiness'].every((n) => skills.some((s) => s.dir === n)))
-ok('removing any one required skill fails the check', ['brainstorming', 'writing-plans', 'push-readiness'].every((n) => !requiredSkillsPresent(skills.filter((s) => s.dir !== n))))
+ok('removing any one required skill fails the check', ['brainstorming', 'writing-plans', 'push-readiness'].every((n) => requiredSkillsPresent(skills.filter((s) => s.dir !== n)) === false))
 ok('every skill has frontmatter name equal to its directory', skills.every((s) => s.frontmatter.name === s.dir))
 ok('no skill references ~/code or claude-config', skills.every((s) => !/~\/code|claude-config|\.claude-[a-z]\b/.test(s.body)))
 ok('no skill tells the agent to run bash or a .sh script', skills.every((s) => !/\bbash\b|\.sh\b/.test(s.body)))
@@ -347,6 +347,7 @@ ok('an evidence-only commit voids nothing', idBefore === idAfterEvidenceCommit)
 ok('a PR whose only change is under .review/ -> "empty"', idEvidenceOnly === 'empty')
 ok('diff.noprefix=true in repo config -> same identity', idBefore === idNoPrefix)
 ok('diff.renames=copies and diff.algorithm=histogram -> same identity', idBefore === idUserConfig)
+ok('diff.interHunkContext=5 in repo config, two PR edits three lines apart -> same identity as with it unset', idTwoEdits === idTwoEditsInterHunk5)
 ok('a binary file change has an identity, and changing its bytes changes it', idBin1 !== idBin2)
 ok('an indentation-only change to an added line -> changed', idIndent4 !== idIndent8)
 ok('the same two-file change in either file order -> same identity', idOrderXY === idOrderYX)
@@ -355,7 +356,7 @@ ok('CRLF working tree with autocrlf=true does not change the identity', idBefore
 ```
 
 - [ ] **Step 2: Run it.** Expected: FAIL.
-- [ ] **Step 3: Implement.** `DIFF_ARGS = ['diff', '-U0', '--no-ext-diff', '--no-textconv', '--binary', '--no-color', '--no-renames', '--diff-algorithm=myers', '--src-prefix=a/', '--dst-prefix=b/']`. `inputIdentity` runs `git <DIFF_ARGS> <merge-base> <head> -- . ':(exclude).review'`, pipes stdout into `git patch-id --verbatim` (not `--stable`, which strips whitespace, so `return True` moved from four to eight spaces kept its ID; `--verbatim` is file-order stable, measured on git 2.50.1, and cannot be combined with `--stable`), and returns the first field, or `'empty'` when patch-id prints nothing. The merge base is recomputed on every call (D-10); it is provenance only. **Known limitation (accepted by David 2026-11-02, PR #52 CodeRabbit):** the identity has no location, so the same edit moved to another identical line elsewhere in the PR keeps its identity, and its earlier reviews stay valid. Adding line numbers would break D-10 (a `main` change above the PR's lines would void its reviews). It needs a follow-up commit that moves an edit onto another identical line, deliberately or by accident. That case is an accepted exception to §2.1's guarantee that a forgotten step cannot merge: a developer who relocates an edit that way and forgets to re-review is not caught. No test pins it.
+- [ ] **Step 3: Implement.** `DIFF_ARGS = ['diff', '-U0', '--no-ext-diff', '--no-textconv', '--binary', '--no-color', '--no-renames', '--diff-algorithm=myers', '--inter-hunk-context=0', '--src-prefix=a/', '--dst-prefix=b/']`. `--inter-hunk-context=0` overrides a user's `diff.interHunkContext`, which `-U0` does not: with it set to 5, two edits three lines apart became one hunk carrying the lines between them, and the patch ID changed (measured on git 2.50.1, PR #52 Codex). `inputIdentity` runs `git <DIFF_ARGS> <merge-base> <head> -- . ':(exclude).review'`, pipes stdout into `git patch-id --verbatim` (not `--stable`, which strips whitespace, so `return True` moved from four to eight spaces kept its ID; `--verbatim` is file-order stable, measured on git 2.50.1, and cannot be combined with `--stable`), and returns the first field, or `'empty'` when patch-id prints nothing. The merge base is recomputed on every call (D-10); it is provenance only. **Known limitation (accepted by David 2026-11-02, PR #52 CodeRabbit):** the identity has no location, so the same edit moved to another identical line elsewhere in the PR keeps its identity, and its earlier reviews stay valid. Adding line numbers would break D-10 (a `main` change above the PR's lines would void its reviews). It needs a follow-up commit that moves an edit onto another identical line, deliberately or by accident. That case is an accepted exception to §2.1's guarantee that a forgotten step cannot merge: a developer who relocates an edit that way and forgets to re-review is not caught. No test pins it.
 - [ ] **Step 4: Run `npm test`.** Expected: exit 0, on macOS here and on `windows-latest` in CI.
 - [ ] **Step 5: Commit** (`feat(review): input identity from the PR's own diff`).
 
@@ -407,8 +408,8 @@ ok('inherit carries an undisposed P1 and drops a fixed one', inherit(rec).map((f
 ok('inherit keeps a gate ID unprefixed', inherit(subRec).map((f) => f.id).join() === 'thread:PRRT_abc')
 ok('inherit copies a fixed gate-ID finding with its disposition, and still drops a fixed ordinary one', (() => { const out = inherit(subRecWithFixedGateAndFixedF1); const g = out.find((f) => f.id === 'thread:PRRT_fixed'); return g && g.disposition.kind === 'fixed' && g.disposition.by === subRecWithFixedGateAndFixedF1.stem && !out.some((f) => f.id.endsWith('#F1')) })())
 ok('a justified conformance deviation listed in Deviations is acceptable', dispositionOk({ id: 'D1', severity: 'P1', disposition: { kind: 'justified-deviation' } }, { deviations: [{ id: 'D1', justification: 'plan used X; Y is simpler and tested' }] }))
-ok('justified-deviation absent from Deviations is not acceptable', !dispositionOk({ id: 'D1', severity: 'P1', disposition: { kind: 'justified-deviation' } }, { deviations: [] }))
-ok('pre-existing without an issue is not an acceptable disposition', !dispositionOk({ severity: 'P1', disposition: { kind: 'pre-existing', reason: 'x' } }))
+ok('justified-deviation absent from Deviations is not acceptable', dispositionOk({ id: 'D1', severity: 'P1', disposition: { kind: 'justified-deviation' } }, { deviations: [] }) === false)
+ok('pre-existing without an issue is not an acceptable disposition', dispositionOk({ severity: 'P1', disposition: { kind: 'pre-existing', reason: 'x' } }) === false)
 ok('severity "high" is blocking by default (unparseable)', isBlockingByDefault({ severity: 'high' }))
 ok('validateRecord rejects an unknown outcome', validateRecord({ ...good, outcome: 'ok' }).length > 0)
 ok('records are written with LF and a trailing newline', readFileSync(p, 'utf8').endsWith('}\n') && !readFileSync(p, 'utf8').includes('\r'))
@@ -444,7 +445,7 @@ ok('records are written with LF and a trailing newline', readFileSync(p, 'utf8')
     - `gemini`: Node port of `gemini_review.py`'s request (same endpoint, `DEFAULT_MODEL = 'gemini-3.1-pro-preview'`, `GEMINI_API_KEY` from env, never logged). As in the Python, only a stream whose final `finishReason` is `STOP` can complete: `MAX_TOKENS` → `truncated`; a missing finish reason, a dropped stream, a non-2xx response or any other reason (`SAFETY`, …) → `failed`, whatever text arrived. Its diff comes from `geminiDiff` (Task 10); it refuses one over 400,000 bytes before any request
   - `classifyOutcome({exitCode, stdout, truncated, timedOut, inheritedIds = []}) -> {outcome, verdict, findings, inherited}`: `timeout` if timed out; else `truncated`; else `failed` on non-zero exit; else `refused` when stdout holds no JSON object matching the schema; else `completed`
   - `pickReviewer({authorVendor, slot, otherVendor?}) -> 'codex' | 'claude' | 'gemini'`: the dispatch table (§5.3); `authorVendor: 'none'` takes Codex as primary and satisfies independence with any vendor; `completeness` takes a vendor that is neither `authorVendor` nor `otherVendor` (for `'none'`, any vendor other than `otherVendor`). **`substitute:*` slots are the exception to the author-vendor rule** (§5.5 lets the author's vendor substitute, and all three vendors are needed when every bot fails): the runner neither picks nor refuses by `authorVendor` for them, `--reviewer` is required, and independence is judged by the gate's `countedVendors` rule (Task 22), not here. Every other slot refuses a `--reviewer` of the author's vendor before spawning (resolves the former OPEN point 3)
-  - CLI `node scripts/review/review.mjs run --slot <slot> --author <vendor> [--reviewer <name>] [--path <spec-or-plan>] [--supersedes <stem>]`, also `npm run review -- …`. For a PR slot it builds the prompt from `.claude/review/slots/<slotfile>.md` (Task 13) plus the diff; with `--supersedes` it sends the delta between the two identities' diffs and the inherited findings, and asks for each inherited finding's disposition.
+  - CLI `node scripts/review/review.mjs run --slot <slot> --author <vendor> [--reviewer <name>] [--path <spec-or-plan>] [--supersedes <stem>]`, also `npm run review -- …`. For a PR slot it builds the prompt from `.claude/review/slots/<slotfile>.md` (Task 13) plus the diff; with `--supersedes` it sends the inherited findings and asks for each one's disposition. It sends the delta between the two identities' diffs only when the superseded record's `outcome` is `completed`. For any other outcome (`failed`, `refused`, `truncated`, `timeout`) it sends the full current input, because nobody reviewed the earlier one: a retry with no edits in between would otherwise review an empty delta and pass. By induction, a completed chain head always covers the whole input (§5.3).
   - CLI `review.mjs dispose --record <stem> --finding <id> --kind pre-existing|reclassified-nit|justified-deviation --reason <text> [--issue <url>]`. It cannot set `fixed`: only a chained re-review can (§5.6).
 
 - [ ] **Step 1: Write the failing tests:**
@@ -467,6 +468,8 @@ ok('gemini: a 400,001-byte diff makes no request', fetchCalls.length === 0)
 ok('gemini: the API key never appears in stdout, stderr or the record', !all.includes('KEY123'))
 ok('codex: spawned with shell:false and the prompt on stdin, not argv', spawnArgs.opts.shell === false && !spawnArgs.argv.join(' ').includes(promptMarker))
 ok('run with --supersedes inherits an undisposed finding into the new record', newRec.findings.some((f) => f.id === `${old.stem}#F1`))
+ok('--supersedes of a timed-out root with no edits since sends the full current diff, not the empty delta', await (async () => { const sent = []; await runCli(['run', '--slot', 'correctness', '--author', 'anthropic', '--supersedes', timedOutRoot.stem], { spawnImpl: capturePrompt(sent, envelopeOk) }); return sent.length === 1 && sent[0].includes(fullCurrentDiff) })())
+ok('--supersedes of a completed record sends only the delta', await (async () => { const sent = []; await runCli(['run', '--slot', 'correctness', '--author', 'anthropic', '--supersedes', completedRoot.stem], { spawnImpl: capturePrompt(sent, envelopeOk) }); return sent.length === 1 && sent[0].includes(deltaOnly) && sent[0].includes(fullCurrentDiff) === false })())
 ok('re-review marking the inherited finding resolved -> disposition fixed by the new record', newRecResolved.findings.find((f) => f.id === `${old.stem}#F1`).disposition.by === newRecResolved.stem)
 ok('re-review that omits an inherited ID -> refused', classifyOutcome({ exitCode: 0, stdout: passJsonNoInherited, truncated: false, timedOut: false, inheritedIds: ['x#F1'] }).outcome === 'refused')
 ok('dispose cannot set fixed', /only a re-review/.test(disposeErr))
@@ -574,26 +577,27 @@ ok('HTML comments from the template are ignored', parseBody('<!-- Lane: specced 
 - [ ] **Step 1: Write the failing tests**, one per spec negative test (§5.3) and the Review Focus items:
 
 ```js
-ok('failed run with zero findings -> FAIL', !evaluate(fx({ outcome: 'failed', verdict: 'pass', findings: [] })).ok)
-ok('PASS verdict with an open blocking finding -> FAIL', !evaluate(fx({ verdict: 'pass', findings: [{ id: 'F1', severity: 'P1' }] })).ok)
+const failsWith = (r, re) => r.ok === false && re.test(r.lines.join('\n')) // a negative check names the guard that fired
+ok('failed run with zero findings -> FAIL', failsWith(evaluate(fx({ outcome: 'failed', verdict: 'pass', findings: [] })), /failed/))
+ok('PASS verdict with an open blocking finding -> FAIL', failsWith(evaluate(fx({ verdict: 'pass', findings: [{ id: 'F1', severity: 'P1' }] })), /F1/))
 ok('subtle-correctness missing completeness -> FAIL naming the slot', /completeness/.test(evaluate(fx({ depth: 'subtle-correctness', only: ['correctness'] })).lines.join()))
-ok('stale identity -> FAIL', !evaluate(fx({ recordIdentity: 'aaa', identity: 'bbb' })).ok)
+ok('stale identity -> FAIL', failsWith(evaluate(fx({ recordIdentity: 'aaa', identity: 'bbb' })), /identity/))
 ok('evidence-only commit voids nothing (identity from a real repo before and after)', idBefore === idAfter && evaluate(fx({ identity: idAfter, recordIdentity: idBefore })).ok)
 ok('merge from main next to the PR lines voids nothing', idBefore === idAfterMainMerge)
-ok('conformance task-scope edit (Plan T1-T3 -> T1-T4) -> FAIL', !evaluate(fx({ conformanceTasks: ['T1', 'T2', 'T3'], bodyTasks: 'T1-T4' })).ok)
-ok('unfixed deviation IDs must exactly match the Deviations field', !evaluate(fx({ deviations: ['D1', 'D2'], bodyDeviations: ['D1'] })).ok)
+ok('conformance task-scope edit (Plan T1-T3 -> T1-T4) -> FAIL', failsWith(evaluate(fx({ conformanceTasks: ['T1', 'T2', 'T3'], bodyTasks: 'T1-T4' })), /T4/))
+ok('unfixed deviation IDs must exactly match the Deviations field', failsWith(evaluate(fx({ deviations: ['D1', 'D2'], bodyDeviations: ['D1'] })), /D2/))
 ok('a justified, unfixed deviation (including a failed postcondition) passes', evaluate(fx({ deviations: ['D1'], bodyDeviations: ['D1'], d1Disposition: 'justified-deviation' })).ok)
 ok('no local.json -> not ok, names init-local', /init-local/.test(localCheck({ cwd: emptyRepo }).lines.join()))
-ok('reviewer vendor equals author vendor -> FAIL', !evaluate(fx({ reviewerVendor: 'anthropic', authorVendor: 'anthropic' })).ok)
-ok('completeness from the same vendor as correctness -> FAIL', !evaluate(fx({ depth: 'subtle-correctness', correctnessVendor: 'openai', completenessVendor: 'openai' })).ok)
+ok('reviewer vendor equals author vendor -> FAIL', failsWith(evaluate(fx({ reviewerVendor: 'anthropic', authorVendor: 'anthropic' })), /vendor/))
+ok('completeness from the same vendor as correctness -> FAIL', failsWith(evaluate(fx({ depth: 'subtle-correctness', correctnessVendor: 'openai', completenessVendor: 'openai' })), /vendor/))
 ok('a superseded record is not judged; its chain head is', evaluate(fx({ chain: [failedOld, passingNew] })).ok)
 ok('an invalid record file fails by name', /records\/bad\.json/.test(evaluate(fx({ invalid: 'bad' })).lines.join()))
 ok('identity "empty" on a direct PR -> FAIL with "no changes outside .review/"', /no changes outside/.test(evaluate(fx({ identity: 'empty', lane: 'direct' })).lines.join()))
 ok('mechanical direct PR needs no record', evaluate(fx({ lane: 'direct', depth: 'mechanical', records: [] })).ok)
-ok('dependency lane needs one correctness record', !evaluate(fx({ lane: 'dependency', records: [] })).ok)
+ok('dependency lane needs one correctness record', failsWith(evaluate(fx({ lane: 'dependency', records: [] })), /correctness/))
 ok('a PR created one second before requiredSince is exempt', isGrandfathered({ prCreatedAt: '2026-11-04T23:59:59Z', requiredSince: '2026-11-05T00:00:00Z' }))
-ok('a PR created one second after requiredSince is judged', !isGrandfathered({ prCreatedAt: '2026-11-05T00:00:01Z', requiredSince: '2026-11-05T00:00:00Z' }))
-ok('unset or empty requiredSince exempts nothing', !isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: undefined }) && !isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: '' }))
+ok('a PR created one second after requiredSince is judged', isGrandfathered({ prCreatedAt: '2026-11-05T00:00:01Z', requiredSince: '2026-11-05T00:00:00Z' }) === false)
+ok('unset or empty requiredSince exempts nothing', isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: undefined }) === false && isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: '' }) === false)
 ok('activation file: an old PR is exempt, a new one judged, read at the base ref', (await (async () => { const calls = []; const f = activationFile({ 'review-evidence': '2026-11-05T00:00:00Z' }, calls); const oldCode = (await quiet(() => main({ env: goodEnv, fetchImpl: f(prCreatedAt('2026-11-04T23:59:59Z', noRecords)) }))).code; const newCode = (await quiet(() => main({ env: goodEnv, fetchImpl: f(prCreatedAt('2026-11-05T00:00:01Z', noRecords)) }))).code; return oldCode === 0 && newCode === 1 && calls.every((u) => u.includes('ref=main')) })()))
 ok('activation file 404 -> judged, not exempt', (await quiet(() => main({ env: goodEnv, fetchImpl: activationFile404(prCreatedAt('2020-01-01T00:00:00Z', noRecords)) }))).code === 1)
 ok('an unparseable activation value -> exit 1 and "could not judge"', await (async () => { const r = await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({ 'review-evidence': 'soon' })(prCreatedAt('2020-01-01T00:00:00Z', passingRecords)) })); return r.code === 1 && /could not judge/.test(r.out) })())
@@ -686,9 +690,9 @@ ok('a command target keeps its value verbatim, spaces included', parsePlan(p).ta
 - [ ] **Step 1: Write the failing tests:**
 
 ```js
-ok('a create target absent at head -> failed postcondition', !pc.find((p) => p.target.value === 'new.mjs').ok)
-ok('a modify target unchanged in the PR diff -> failed', !pc.find((p) => p.target.value === 'untouched.mjs').ok)
-ok('a delete target still present -> failed', !pc.find((p) => p.target.type === 'delete').ok)
+ok('a create target absent at head -> failed postcondition', pc.find((p) => p.target.value === 'new.mjs').ok === false)
+ok('a modify target unchanged in the PR diff -> failed', pc.find((p) => p.target.value === 'untouched.mjs').ok === false)
+ok('a delete target still present -> failed', pc.find((p) => p.target.type === 'delete').ok === false)
 ok('a command target that exits 1 is recorded with exit 1', rec.conformance.commands[0].exit === 1)
 ok('a command is spawned without a shell on every platform', spawnOpts.shell === false)
 ok('only the declared tasks are checked', pc.every((p) => ['T1', 'T2'].includes(p.task)))
@@ -785,8 +789,8 @@ Settled, not open: chained verification (Task 11, `inherit` copies fixed gate-ID
 
 ```js
 ok('Codex P2 badge -> blocking', severityOf(codexP2).blocking && severityOf(codexP2).label === 'P2')
-ok('Codex P3 -> nit', !severityOf(codexP3).blocking)
-ok('CodeRabbit Major -> blocking; Minor -> nit', severityOf(crMajor).blocking && !severityOf(crMinor).blocking)
+ok('Codex P3 -> nit', severityOf(codexP3).blocking === false)
+ok('CodeRabbit Major -> blocking; Minor -> nit', severityOf(crMajor).blocking && severityOf(crMinor).blocking === false)
 ok('a body with no recognizable label -> blocking', severityOf({ login: 'coderabbitai[bot]', body: 'hmm' }).blocking)
 ok('codexState reads the marker, not the table', codexState(fixtureComments).commitSha === '6df86b4a8697900b3d4e1aea17dbeec237ae44e9')
 ok('a marker in a comment from another login is ignored', codexState([{ ...spoof, login: 'mallory' }]) === null)
@@ -838,10 +842,10 @@ ok('Gemini on a draft PR -> needs-substitute immediately', (await s(geminiDraft)
 ok('force-push then incremental review only, no answer to the full-review request -> not covered', ['pending', 'needs-substitute'].includes((await s(forcePushIncrementalOnly)).status))
 ok('force-push, incremental review on the new identity, no request at all -> not covered, reason names the request', ['pending', 'needs-substitute'].includes((await s(forcePushNoRequest)).status) && /full review/.test((await s(forcePushNoRequest)).reason))
 ok('ordinary push, incremental review on the new identity -> covered (no request needed)', (await s(ordinaryPushIncremental)).status === 'covered')
-ok('substitute with a completed outcome but a new open P1 -> not ok', !substituteOk({ bot: 'coderabbit', records: [subWithOpenP1], currentIdentity: id, countedVendors: [] }))
+ok('substitute with a completed outcome but a new open P1 -> not ok', substituteOk({ bot: 'coderabbit', records: [subWithOpenP1], currentIdentity: id, countedVendors: [] }) === false)
 ok('a 400,001-byte diff is too large, and no substitute clears the gate', (await diffTooLarge(bigRepo)) === true && (await evaluateGateLike(bigWithSubs)).ok === false)
 ok('three substitutes from openai, anthropic, google on an anthropic-authored PR -> all ok', ['coderabbit', 'codex', 'gemini'].every((b) => substituteOk(threeSubsFor(b))))
-ok('two substitutes from the same vendor -> the second is not ok', !substituteOk(secondSameVendor))
+ok('two substitutes from the same vendor -> the second is not ok', substituteOk(secondSameVendor) === false)
 ok('Gemini after a force-push: a fresh verdict on the new identity -> covered, no request needed', (await s(geminiAfterForcePush)).status === 'covered')
 ok('identity-preserving force-push (rebase onto main): earlier CodeRabbit coverage stands', (await s(crRebaseSameIdentity)).status === 'covered')
 ok('geminiDiff and diffTooLarge measure the same bytes, binary and rename included', await (async () => { const n = (await geminiDiff(binRenameRepo)).length; return Number.isInteger(n) && n > 0 && n === await sizeSeenBy(diffTooLarge, binRenameRepo) })())
@@ -855,7 +859,7 @@ ok('a gate re-run adds a later run and leaves the clock unchanged', headPushedAt
 ok('a commit authored two hours before its push does not start the clock early', (await s(oldCommitFreshPush)).status === 'pending')
 ok('subtle-correctness: CodeRabbit and Codex covered, Gemini failed, anthropic substitute -> ok', substituteOk({ bot: 'gemini', records: [subByAnthropic], currentIdentity: id, countedVendors: ['openai'] }))
 ok('standard: one of CodeRabbit or Codex is enough', requiredMet('standard', { coderabbit: 'pending', codex: 'covered' }))
-ok('substitute by a vendor already counted -> not ok', !substituteOk({ bot: 'gemini', records: [subByOpenai], currentIdentity: id, countedVendors: ['openai'] }))
+ok('substitute by a vendor already counted -> not ok', substituteOk({ bot: 'gemini', records: [subByOpenai], currentIdentity: id, countedVendors: ['openai'] }) === false)
 ```
 
 - [ ] **Step 2: Run them.** Expected: FAIL.
