@@ -244,8 +244,9 @@ policies) under their historical names. Staging is built from it (§5.3); Spec 2
   refuses to write to the production project ref. No PR job touches staging.
 - **Who can reach staging.** Staging's anon key ships in the staging bundle, so its API is as
   public as production's. The guarantee is therefore: staging exposes to an anonymous caller no
-  more than production already does, and holds nothing private. RLS is identical (same
-  migrations); copied tables carry the same policies they have in production. Sign-ups are off
+  more than production already does, and holds no one's private data but the maintainers' own: a
+  maintainer's phone recordings carry their real location, readable only by them (§5.7). RLS is
+  identical (same migrations); copied tables carry the same policies they have in production. Sign-ups are off
   on staging Auth. Staging and Preview deployments sit behind Vercel deployment protection;
   scripts and the local `vite dev` proxy pass it with Vercel's automation-bypass secret (§5.10).
   That secret is valid on **every** deployment in the Vercel project, production included
