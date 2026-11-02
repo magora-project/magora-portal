@@ -17,16 +17,17 @@ For agents and contributors (Claude Code via `CLAUDE.md`, Codex CLI directly). D
 - Squash merge only. Maintainers merge own PRs once required checks are green; no approval needed. A maintainer reviews then merges fork/Dependabot PRs.
 - Resolve each review thread before merge, after reading bot findings.
 - **Agents never push, merge, or change repo settings without their operator's explicit approval.**
+- Process: `.claude/rules/process.md`. Every agent follows it; Claude Code loads the repo skills from `.claude/skills/`.
 
 ## Depth labels (exactly one per PR)
 
-| Label | Use for | Review before push |
-|---|---|---|
-| `mechanical` | docs, renames, formatting | nothing beyond CI |
-| `standard` | ordinary changes | Codex CLI, correctness question |
-| `subtle-correctness` | **any PR that touches `supabase/migrations/`, an `api/` auth path, or a control file**; concurrency; anything subtle | Codex CLI on correctness, plus a Fable or Opus subagent on completeness, executability, whether tests can fail, and what the fixes broke |
+| Label | Use for |
+|---|---|
+| `mechanical` | docs, renames, formatting |
+| `standard` | ordinary changes |
+| `subtle-correctness` | **any PR that touches `supabase/migrations/`, an `api/` auth path, or a control file**; concurrency; anything subtle |
 
-If Codex wrote the change, route its review to an Anthropic model instead. An empty reviewer reply is an unrun review, not a pass. This review layer is discipline; required CI checks are the control.
+Review before pushing: `.claude/rules/process.md` § Review slots and dispatch. CI checks are the control.
 
 Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`; for those, the merging maintainer's control-file read replaces the depth rule.
 
@@ -34,7 +35,7 @@ Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing 
 
 `.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`,
 `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`,
-`scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`.
+`scripts/review/**`, `.claude/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`.
 A PR can weaken a check by editing these. Say so in the PR description when you change one. On fork and Dependabot PRs the merging maintainer reads each control-file change first.
 
 ## Migrations
