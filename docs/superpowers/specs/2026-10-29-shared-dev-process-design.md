@@ -198,6 +198,9 @@ CI checks that the fields are present and well formed. It does not judge whether
     PR's lines does not change the identity. The PR's own added and removed lines still do.
   - It is read from git objects, never working-tree bytes, so Windows and macOS agree.
   - It excludes the evidence directory. That is the only exclusion.
+  - Known limitation (accepted 2026-11-02): it carries no location, so the same edit moved to another
+    identical line keeps its identity. Line numbers would break D-10. This is an accepted exception
+    to §2.1's forgotten-step guarantee. See plan Task 10.
   - The merge base stored in a record is provenance only. Bringing in `main` recomputes the
     identity, and records stay valid while it is unchanged (D-10).
 - **For a spec or plan:** the git blob hash of the document.
@@ -225,7 +228,7 @@ CI checks that the fields are present and well formed. It does not judge whether
 
 **Re-review chaining.**
 
-- **Why it's needed:** a fix commit changes the identity, which voids the record that found the
+- **Why it's needed:** a fix commit that changes the identity voids the record that found the
   problem.
 - **How it works:** the re-review writes a new record. That record names the one it supersedes,
   covers the new identity, and inherits every finding the old record left undisposed.
