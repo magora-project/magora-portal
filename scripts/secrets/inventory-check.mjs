@@ -14,7 +14,12 @@ export function inventoryProblems(markdown) {
   let parsed = 0
   for (const line of markdown.replace(/\r/g, '').split('\n')) {
     const t = line.trim()
-    if (!t.startsWith('|')) { inTable = false; continue }
+    if (!t.startsWith('|')) {
+      // Markdown allows a row without its leading pipe; under the header that must not vanish.
+      if (inTable && t.includes('|')) found.push(`inventory row could not be parsed: "${t.split('|')[0].trim()}"`)
+      else inTable = false
+      continue
+    }
     const cells = t.replace(/^\||\|$/g, '').split('|').map((c) => c.trim())
     if (!inTable) {
       if (cells[0] === 'Name') inTable = true

@@ -105,9 +105,13 @@ ok('doc: zero parsed rows is a problem', inventoryProblems(HDR).some((p) => p.in
 ok('doc: no table at all is a problem', inventoryProblems('# nothing\n').some((p) => p.includes('no inventory rows')))
 ok('doc: short row is a problem', inventoryProblems(HDR + '| X_KEY | production |\n').some((p) => p.includes('could not be parsed')))
 ok('doc: good row beside bad row still reports the bad one', inventoryProblems(HDR + '| X_KEY | production | op://a/b/X_KEY | vercel:production | no |\n| bad name | production | op://a/b/c | vercel:production | no |\n').length === 1)
+// Markdown allows a table row without its leading pipe; under the header it must not vanish silently
+ok('doc: row without leading pipe is a problem', inventoryProblems(HDR + '| X_KEY | production | op://a/b/X_KEY | vercel:production | no |\nY_KEY | production | op://a/b/Y_KEY | fly:app1 | no |\n').some((p) => p.includes('could not be parsed') && p.includes('Y_KEY')))
+ok('doc: prose after the table still ends it', inventoryProblems(HDR + '| X_KEY | production | op://a/b/X_KEY | vercel:production | no |\n\nSome prose after the table.\n').length === 0)
 const shipped = readFileSync(fileURLToPath(new URL('../../docs/runbooks/secrets-inventory.md', import.meta.url)), 'utf8')
 ok('shipped doc: parses with no structural problems', inventoryProblems(shipped).length === 0)
-ok('shipped doc: expected row count', parseInventory(shipped).length === 14)
+// A floor, not an exact count: the runbook's remedy is to add rows, and a lost row still fails here
+ok('shipped doc: no rows lost', parseInventory(shipped).length >= 14)
 
 // listStoreNames must never write to any output stream
 let writes = 0
