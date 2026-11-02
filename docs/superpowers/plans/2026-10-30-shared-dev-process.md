@@ -250,8 +250,8 @@ ok('every repo-relative path a skill names exists', skills.flatMap((s) => s.repo
   `repoPaths` are backticked tokens containing `/` that start with `.claude/`, `scripts/`, `docs/` or `.github/`.
 
 - [ ] **Step 2: Run it.** Expected: FAIL (no skills).
-- [ ] **Step 3: Write `brainstorming`:** the personal skill trimmed. Its terminal step invokes the repo `writing-plans`; spec review runs `npm run review -- run --slot spec --path <spec>` (it names no file that a later task creates, so the Step 1 path test holds; until PR B lands, the skill says that command is not available yet and to run Codex CLI by hand). Spec files save to `docs/superpowers/specs/`.
-- [ ] **Step 4: Write `writing-plans`:** the superpowers skill's structure (header, Global Constraints, Review Focus, task structure, self-review, execution handoff), plus: plans save to `docs/superpowers/plans/`; plan review runs `npm run review -- run --slot plan --path <plan>` (same caveat as Step 3).
+- [ ] **Step 3: Write `brainstorming`:** the personal skill trimmed. Its terminal step invokes the repo `writing-plans`; spec review runs `npm run review -- run --slot spec --path <spec> --author <vendor>`, where `<vendor>` is the vendor of the model that wrote the doc: `anthropic` for Claude Code, `openai` for Codex, `none` when a person wrote it by hand (Task 12's `pickReviewer` turns it into the reviewer) (it names no file that a later task creates, so the Step 1 path test holds; until PR B lands, the skill says that command is not available yet and to run Codex CLI by hand). Spec files save to `docs/superpowers/specs/`.
+- [ ] **Step 4: Write `writing-plans`:** the superpowers skill's structure (header, Global Constraints, Review Focus, task structure, self-review, execution handoff), plus: plans save to `docs/superpowers/plans/`; plan review runs `npm run review -- run --slot plan --path <plan> --author <vendor>` (same `--author` rule and caveat as Step 3).
 - [ ] **Step 5: Write `push-readiness`:** the personal skill trimmed to git commands that run identically in PowerShell and zsh (no pipes into `grep`/`awk`; use `git` flags). Its checks: branch is not `main`; `git fetch` then ahead/behind of `origin/main`; working tree clean; every slot the depth needs has a record for the current identity (`npm run review -- check --local`, from Task 15; until then, say so in one line). Tasks 13 and 15 update these skills to name the review files once they exist.
 - [ ] **Step 6: Run `npm test`.** Expected: exit 0.
 - [ ] **Step 7: Commit** (`feat(process): repo brainstorming, writing-plans and push-readiness skills`).
@@ -389,7 +389,7 @@ type ReviewRecord = {
   - `chainHeads(records) -> Record[]`: records that no other record supersedes
   - `isBlockingByDefault(finding) -> boolean`: `P0`–`P2`, or an unknown severity
   - `dispositionOk(finding, {deviations = []} = {}) -> boolean`: non-blocking; or `fixed` with `by` naming the **re-review record** that verified it (only the runner sets this, from a re-review's `inherited` assessment, Task 12); or `pre-existing` with `reason` and `issue`; or `reclassified-nit` with `reason`; or, in a `conformance` record only, `justified-deviation`, accepted when the finding's ID appears in the PR body's `Deviations:` with a non-empty justification (§5.4)
-  - `inherit(oldRecord) -> Finding[]`: undisposed blocking findings, IDs prefixed `<old stem>#`
+  - `inherit(oldRecord) -> Finding[]`: undisposed blocking findings, IDs prefixed `<old stem>#`, except a **gate ID** (one starting `thread:`, `cr:` or `gemini:`, which only `substitute:*` records carry, Task 22), which is carried unchanged so the gate can match it across a chain of substitute reviews
   - `validateRecord(obj) -> string[]` (problems; empty when valid)
 
 - [ ] **Step 1: Write the failing tests:**
@@ -400,6 +400,7 @@ ok('slot is read from the body, not the filename', readRecords({ cwd }).find((r)
 ok('a second record for the same slot and identity gets --2', basename(p2).endsWith('--2.json'))
 ok('chainHeads drops a superseded record', chainHeads([a, b]).map((r) => r.stem).join() === b.stem)
 ok('inherit carries an undisposed P1 and drops a fixed one', inherit(rec).map((f) => f.id).join() === `${rec.stem}#F1`)
+ok('inherit keeps a gate ID unprefixed', inherit(subRec).map((f) => f.id).join() === 'thread:PRRT_abc')
 ok('a justified conformance deviation listed in Deviations is acceptable', dispositionOk({ id: 'D1', severity: 'P1', disposition: { kind: 'justified-deviation' } }, { deviations: [{ id: 'D1', justification: 'plan used X; Y is simpler and tested' }] }))
 ok('justified-deviation absent from Deviations is not acceptable', !dispositionOk({ id: 'D1', severity: 'P1', disposition: { kind: 'justified-deviation' } }, { deviations: [] }))
 ok('pre-existing without an issue is not an acceptable disposition', !dispositionOk({ severity: 'P1', disposition: { kind: 'pre-existing', reason: 'x' } }))
@@ -474,6 +475,8 @@ ok('gemini: finishReason SAFETY -> failed', geminiOutcome(streamSafety) === 'fai
 ### Task 13: Slot prompts, the `codex-review` skill, Semgrep on artifacts
 
 **Files:**
+- modify: `.claude/skills/brainstorming/SKILL.md`
+- modify: `.claude/skills/writing-plans/SKILL.md`
 - create: `.claude/review/slots/spec.md`
 - create: `.claude/review/slots/plan.md`
 - create: `.claude/review/slots/conformance.md`
@@ -502,7 +505,7 @@ ok('every slot prompt ends by requiring the verdict JSON', slotPrompts.every((p)
 ```
 
 - [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Write the slot prompts.** Each states the question and the output contract (the JSON of `verdict.schema.json`, severity P0–P3 per `.claude/rules/process.md` § What blocks). `correctness`: does the diff do what it claims, without breaking anything. `completeness`: is anything the spec or plan promised missing, can the tests fail, what did the fixes break. `spec` and `plan`: the reviews David runs today (correctness and feasibility; for a plan, also task targets and executability). `conformance`: lists every deviation in both directions with an ID `D<n>`, and traces each stated safeguard to code or test (§5.4). `substitute.md`, one file for all three `substitute:<bot>` slots with `{{bot}}` filled in by the runner: a full review of the current identity, standing in for that bot, which also assesses the bot's inherited findings. Update the Task 5 skills to name `.claude/skills/codex-review/SKILL.md` and `scripts/review/review.mjs` now that they exist.
+- [ ] **Step 3: Write the slot prompts.** Each states the question and the output contract (the JSON of `verdict.schema.json`, severity P0–P3 per `.claude/rules/process.md` § What blocks). `correctness`: does the diff do what it claims, without breaking anything. `completeness`: is anything the spec or plan promised missing, can the tests fail, what did the fixes break. `spec` and `plan`: the reviews David runs today (correctness and feasibility; for a plan, also task targets and executability). `conformance`: lists every deviation in both directions with an ID `D<n>`, and traces each stated safeguard to code or test (§5.4). `substitute.md`, one file for all three `substitute:<bot>` slots with `{{bot}}` filled in by the runner: a full review of the current identity, standing in for that bot, which also assesses the bot's inherited findings. Update the `brainstorming` and `writing-plans` skills (Task 5) to name `.claude/skills/codex-review/SKILL.md` and `scripts/review/review.mjs` now that they exist, and drop their "not available yet" caveat. `push-readiness` waits for Task 15.
 - [ ] **Step 4: Write `codex-review`.** It picks the slot from the depth and stage, runs `npm run review -- run …`, reads the record, and on a failed or non-`completed` outcome falls back to the next reviewer in the dispatch table (§5.3). It never reports an unrun review as a pass. For spec and plan slots it runs `scanArtifact` first and records UNRUN when there is nothing to scan.
 - [ ] **Step 5: Implement `semgrep-artifact.mjs`.** Write each block to a temp dir with an extension from its language, run `semgrep scan --config p/default --json --metrics=off <dir>`, map findings back to the Markdown line.
 - [ ] **Step 6: Run `npm test`.** Expected: exit 0.
@@ -545,6 +548,8 @@ ok('HTML comments from the template are ignored', parseBody('<!-- Lane: specced 
 - create: `scripts/ci/review-evidence.test.mjs`
 - create: `.github/workflows/review-evidence.yml`
 - modify: `scripts/review/review.mjs`
+- modify: `.claude/skills/push-readiness/SKILL.md`
+- modify: `.gitignore`
 - modify: `AGENTS.md`
 - command: `npm test`
 
@@ -553,11 +558,11 @@ ok('HTML comments from the template are ignored', parseBody('<!-- Lane: specced 
 - Produces:
   - `requiredSlots({lane, depth, changedDocs}) -> [{slot, input}]`, per the §5.3 table: `specced` → `spec` and `plan` for the current blobs of the linked docs, `conformance` for the declared tasks, pre-push by depth (`standard`: `correctness`; `subtle-correctness`: `correctness` and `completeness`); `docs-only` → `spec`/`plan` for each spec or plan the PR adds or changes; `direct` → pre-push by depth; `dependency` → one `correctness`.
   - `evaluate({records, required, identity, body, authorVendorOf}) -> {ok, lines: string[]}`, applying the four-part predicate (§5.3) to the chain head for each required slot and input. For `completeness`, its reviewer's vendor must differ from both the author's and the `correctness` head's reviewer.
-  - `REQUIRED_SINCE: string | null` (exported constant, `null` in PR B) and `isGrandfathered({prCreatedAt, requiredSince}) -> boolean`: true only when `requiredSince` is set and the PR was created before it (§5.3, "opened before `review-evidence` becomes required"). `null` exempts nothing, so the acceptance PRs in Task 16 are judged. Task 16 sets the constant. `review-gate.mjs` (Task 23) has its own `REQUIRED_SINCE`, which Task 24 sets.
+  - `isGrandfathered({prCreatedAt, requiredSince}) -> boolean`: true only when `requiredSince` is a valid ISO time and the PR was created before it (§5.3, "opened before `review-evidence` becomes required"). `requiredSince` comes from the repo variable `REVIEW_EVIDENCE_REQUIRED_SINCE`, which the workflow passes as `env` (`${{ vars.REVIEW_EVIDENCE_REQUIRED_SINCE }}`). It is a variable, not a code constant, because the activation moment is when branch protection changes, and a constant merged in a PR would have to be fixed before that moment: PRs opened between the constant and the protection change would lose the exemption. Unset or empty exempts nothing, so the acceptance PRs in Task 16 are judged; a value that does not parse fails the check ("could not judge"), never exempts. David sets it in Task 16, right after the protection change. `review-gate.mjs` (Task 23) reads its own variable, `REVIEW_GATE_REQUIRED_SINCE`, which Task 24 sets.
   - `main({env, fetchImpl, gitImpl}) -> exit code`: reads labels and body live from the API, computes the identity from `base.sha` and the head, prints one line per slot, exit 0 or 1.
   - `localCheck({cwd}) -> {ok, lines}`: the same evaluation with the lane, depth and fields read from `.review/local.json` (`{lane, depth, spec?, plan?, deviations?}`), which the pre-push hook (Task 6) and `push-readiness` call. `review.mjs check --local` prints it. With no `local.json`, it prints one line naming the command below and returns `ok: false`.
   - CLI `review.mjs init-local --lane <lane> --depth <label> [--spec <path>] [--plan "<path> <tasks>"]` writes `.review/local.json`. The file is machine-local: Task 15 adds `.review/local.json` to `.gitignore`, and `readRecords` never reads it.
-- Workflow: `on: pull_request: types: [opened, synchronize, reopened, edited, labeled, unlabeled]`; `permissions: contents: read, pull-requests: read`; job and check name `review-evidence`; checkout with `fetch-depth: 0` and `persist-credentials: false`; `node scripts/ci/review-evidence.mjs`. Concurrency keyed on PR number and head SHA, `cancel-in-progress: false` (the label-gate pattern).
+- Workflow: `on: pull_request: types: [opened, synchronize, reopened, edited, labeled, unlabeled]`; `permissions: contents: read, pull-requests: read`; `env` passes `${{ vars.REVIEW_EVIDENCE_REQUIRED_SINCE }}` to `isGrandfathered`; job and check name `review-evidence`; checkout with `fetch-depth: 0` and `persist-credentials: false`; `node scripts/ci/review-evidence.mjs`. Concurrency keyed on PR number and head SHA, `cancel-in-progress: false` (the label-gate pattern).
 
 - [ ] **Step 1: Write the failing tests**, one per spec negative test (§5.3) and the Review Focus items:
 
@@ -579,13 +584,15 @@ ok('an invalid record file fails by name', /records\/bad\.json/.test(evaluate(fx
 ok('identity "empty" on a direct PR -> FAIL with "no changes outside .review/"', /no changes outside/.test(evaluate(fx({ identity: 'empty', lane: 'direct' })).lines.join()))
 ok('mechanical direct PR needs no record', evaluate(fx({ lane: 'direct', depth: 'mechanical', records: [] })).ok)
 ok('dependency lane needs one correctness record', !evaluate(fx({ lane: 'dependency', records: [] })).ok)
-ok('a PR created before REQUIRED_SINCE is exempt', isGrandfathered({ prCreatedAt: '2026-10-29T00:00:00Z', requiredSince: '2026-11-05T00:00:00Z' }))
-ok('REQUIRED_SINCE null exempts nothing', !isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: null }))
+ok('a PR created one second before requiredSince is exempt', isGrandfathered({ prCreatedAt: '2026-11-04T23:59:59Z', requiredSince: '2026-11-05T00:00:00Z' }))
+ok('a PR created one second after requiredSince is judged', !isGrandfathered({ prCreatedAt: '2026-11-05T00:00:01Z', requiredSince: '2026-11-05T00:00:00Z' }))
+ok('unset or empty requiredSince exempts nothing', !isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: undefined }) && !isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: '' }))
+ok('an unparseable REVIEW_EVIDENCE_REQUIRED_SINCE -> exit 1, not exempt', (await quiet(() => main({ env: { ...goodEnv, REVIEW_EVIDENCE_REQUIRED_SINCE: 'soon' }, fetchImpl: oldPrNoRecords }))).code === 1)
 ok('API error -> exit 1 "could not judge"', (await quiet(() => main({ env: goodEnv, fetchImpl: stub403 }))).code === 1)
 ```
 
 - [ ] **Step 2: Run it.** Expected: FAIL.
-- [ ] **Step 3: Implement** `review-evidence.mjs` and the workflow. `authorVendorOf` reads each record's `authorVendor`; all records on one input must agree, or the check fails naming them. Add the `check --local` and `init-local` subcommands to `review.mjs`, and `.review/local.json` to `.gitignore`. A conformance finding passes predicate 4 with `justified-deviation` only through `dispositionOk(f, {deviations: body.deviations})`.
+- [ ] **Step 3: Implement** `review-evidence.mjs` and the workflow. `authorVendorOf` reads each record's `authorVendor`; all records on one input must agree, or the check fails naming them. Add the `check --local` and `init-local` subcommands to `review.mjs`, and `.review/local.json` to `.gitignore`. Update `push-readiness` (Task 5) to run `npm run review -- check --local` and drop its "until then" line. A conformance finding passes predicate 4 with `justified-deviation` only through `dispositionOk(f, {deviations: body.deviations})`.
 - [ ] **Step 4: Edit `AGENTS.md`**, byte-neutral: add `npm run review -- check --local` to the "Commands" list (what it checks: the local records in `.review/`), removing an equal number of bytes elsewhere in the same section.
 - [ ] **Step 5: Run `npm test`.** Expected: exit 0.
 - [ ] **Step 6: Commit** (`feat(ci): review-evidence check`). Then push PR B with David's approval, after its own pre-push reviews, written with `review.mjs` as the first real use.
@@ -599,7 +606,8 @@ ok('API error -> exit 1 "could not judge"', (await quiet(() => main({ env: goodE
   - a task-scope edit to the `Plan:` field (expect red);
   - a Dependabot PR with a maintainer-supplied `correctness` record (expect green; then confirm the branch needs a manual update, §5.3);
   - a fork PR with maintainer edits off (expect red, then follow the move-to-same-repo path in §5.3).
-- [ ] **Step 2 (David, approved):** a one-line PR sets `REQUIRED_SINCE` in `scripts/ci/review-evidence.mjs` to the current UTC time; it merges first. Then add `review-evidence` to the required checks on `main`. Read back with `gh api repos/magora-project/magora-portal/branches/main/protection/required_status_checks --jq '.contexts'` and expect 9 entries including `review-evidence`. If the session token gets a 403 (§3), David reads it back in the UI.
+- [ ] **Step 2 (David, approved):** add `review-evidence` to the required checks on `main`. Read back with `gh api repos/magora-project/magora-portal/branches/main/protection/required_status_checks --jq '.contexts'` and expect 9 entries including `review-evidence`. If the session token gets a 403 (§3), David reads it back in the UI. **Immediately after** the read-back succeeds, set the activation time: `gh variable set REVIEW_EVIDENCE_REQUIRED_SINCE --body <the current UTC time, ISO 8601>`, and read it back with `gh variable get REVIEW_EVIDENCE_REQUIRED_SINCE`. The time is taken after the protection change, so every PR opened before activation is exempt; the cost is that a PR opened in the seconds between the two steps is exempt too. No code PR is involved.
+- [ ] **Step 3:** list the PRs that were open at activation (`gh pr list --state open --json number,createdAt`) and re-run `review-evidence` on each one created before the variable's value (`gh run rerun` on its latest `review-evidence` run, or `gh workflow run` if none). A red result recorded before the variable existed stays on the PR until the check runs again. Expect each re-run to pass with "grandfathered".
 
 ---
 
@@ -616,7 +624,7 @@ ok('API error -> exit 1 "could not judge"', (await quiet(() => main({ env: goodE
 - Produces:
   - `parsePlan(markdown) -> { tasks: [{ id: 'T<n>', title, targets: [{ type: 'existing' | 'create' | 'modify' | 'delete' | 'command', value: string, line: number }] }], problems: string[] }`. A task is a `### Task <n>:` heading, `<n>` an integer; an operator task (heading contains `(operator)`) may have no Files block. Targets are lines `- <type>: \`<value>\`` inside the task's `**Files:**` block.
   - `checkExisting({plan, exists, tasks?}) -> {problems: string[], notes: string[]}`, where `exists(path) -> boolean` answers "is this a file at the revision under review" (the CLI builds it from `git ls-tree -r --name-only <rev>`; tests pass a synthetic set, because CI checks out at depth 1). It walks the plan's tasks in order, restricted to `tasks` when given (the tasks not yet landed; plan re-reviews after a phase merges pass only the remaining ones). A path is **available** to a task if `exists(path)`, or an earlier in-scope task `create`s it, and not if an earlier in-scope task `delete`s it. Reported: each `existing` or `modify` target that is not available; each `create` target for which `exists` is true or that an earlier task creates; each untyped Files line. A `~/`-prefixed `existing` target is checked on disk locally; in CI it produces a `notes` entry, never a problem. Each result also lists the targets it considered, so a test can assert the walk was not empty.
-  - `review.mjs run --slot plan --path <plan> [--tasks <list>] [--rev <sha>]` runs `checkExisting({plan, exists: <files at rev>, tasks})` first (defaults: `rev` = `HEAD`, `tasks` = all) and records its problems as P1 findings in the plan record. A plan re-review after a phase has merged passes `--tasks` with the remaining tasks; the plan record stores both values.
+  - `review.mjs run --slot plan --path <plan> [--tasks <list>] [--rev <sha>]` runs `checkExisting({plan, exists: <files at rev>, tasks})` first (defaults: `rev` = `git merge-base origin/main HEAD`, after `git fetch origin main`, i.e. the tree the in-scope tasks start from; `tasks` = all). The default is the merge base, not `HEAD`, because a plan is often re-reviewed on the branch that implements it: at `HEAD`, the files that branch's tasks create already exist and every one of their `create` targets would be reported and records its problems as P1 findings in the plan record. A plan re-review after a phase has merged passes `--tasks` with the remaining tasks; the plan record stores both values.
 
 - [ ] **Step 1: Write the failing tests:**
 
@@ -627,7 +635,9 @@ ok('a missing existing target is reported', checkExisting({ plan: planWithMissin
 ok('a create target that already exists is reported', checkExisting({ plan: planCreatingExisting, exists: setOf(['x.mjs']) }).problems.length === 1)
 ok('modify of a file an earlier task creates is not reported (Task 3 modifies the settings.json Task 2 creates)', checkExisting({ plan: thisPlan, exists: setOf(filesBeforePhase1), tasks: ['T2', 'T3'] }).problems.length === 0)
 ok('after Phase 1 lands, checking only T10+ reports nothing for Phase 1 files, and did consider targets', (() => { const r = checkExisting({ plan: thisPlan, exists: setOf(filesAfterPhase1), tasks: laterTasks }); return r.considered.length > 0 && r.problems.every((p) => !/\.claude\/hooks/.test(p)) })())
-ok('a ~/ existing target in CI is a note, not a problem', checkExisting({ plan: planWithHomeTarget, exists: () => false, ci: true }).problems.length === 0)
+ok('a ~/ existing target in CI is a note, not a problem', (() => { const r = checkExisting({ plan: planWithHomeTarget, exists: () => false, ci: true }); return r.problems.length === 0 && r.notes.some((n) => n.includes('~/')) })())
+ok('PR C bootstrap: T17-T25 checked at the merge base reports nothing, though T17 and T18 files exist at HEAD', checkExisting({ plan: thisPlan, exists: setOf(filesAtMergeBaseBeforePhase3), tasks: phase3to5Tasks }).problems.length === 0 && checkExisting({ plan: thisPlan, exists: setOf(filesAtHeadAfterT18), tasks: phase3to5Tasks }).problems.some((p) => /plan-targets\.mjs/.test(p)))
+ok('the CLI default rev is the merge base, not HEAD', resolveRev({ rev: undefined, gitImpl: stubGit }) === stubGit.mergeBase)
 ok('duplicate task IDs are a problem', /duplicate T2/.test(parsePlan(dupPlan).problems.join()))
 ok('a command target keeps its value verbatim, spaces included', parsePlan(p).tasks[0].targets[0].value === 'npm run check:migrations')
 ```
@@ -675,7 +685,7 @@ ok('a re-run with --supersedes chains and inherits D2 if undisposed', chained.fi
 - [ ] **Step 6: Bootstrap PR C's evidence** (review-evidence is required from Task 16). PR C is the first `specced` PR, and no chain root exists yet for the spec or this plan, so these are full reviews, not chained ones:
   - `npm run review -- init-local --lane specced --depth subtle-correctness --spec docs/superpowers/specs/2026-10-29-shared-dev-process-design.md --plan "docs/superpowers/plans/2026-10-30-shared-dev-process.md T17-T18"`
   - `npm run review -- run --slot spec --path docs/superpowers/specs/2026-10-29-shared-dev-process-design.md --author anthropic`
-  - `npm run review -- run --slot plan --path docs/superpowers/plans/2026-10-30-shared-dev-process.md --tasks T17-T25 --author anthropic`
+  - `npm run review -- run --slot plan --path docs/superpowers/plans/2026-10-30-shared-dev-process.md --tasks T17-T25 --author anthropic` (no `--rev`: the default merge base is `main` before PR C, where T17 and T18's `create` targets do not exist yet)
   - `npm run review -- conformance --plan docs/superpowers/plans/2026-10-30-shared-dev-process.md --tasks T17-T18 --author anthropic`
   - then `correctness` and `completeness`, and `npm run review -- check --local`. Expected: every line ok. Push PR C with approval. PR D reuses the spec and plan records unless Task 0 or Task 20 changed those blobs, in which case it chains from these.
 
@@ -702,6 +712,7 @@ Requires Task 0's ruling on V2–V5.
 - modify: `scripts/review/gemini_review.py`
 - modify: `AGENTS.md`
 - modify: `docs/superpowers/specs/2026-10-29-shared-dev-process-design.md`
+- modify: `docs/superpowers/plans/2026-10-30-shared-dev-process.md` (Task 0's ruling, recorded under V2–V5)
 - existing: `scripts/review/identity.mjs`
 - command: `npm test`
 
@@ -732,6 +743,7 @@ Requires Task 0's ruling on V2–V5.
   - `listIssueComments() -> [{id, login, body, createdAt, updatedAt}]`
   - `listThreads() -> [{id, isResolved, resolvedBy, path, firstComment: {login, body, url}}]` via GraphQL `reviewThreads(first:100)` with cursor pagination
   - `coderabbitCheck({sha}) -> {conclusion, title} | null`: the check run named `CodeRabbit`, app slug `coderabbitai` (V3)
+  - `prRunsFor({sha}) -> [{id, event, createdAt, prNumbers: number[]}]`: workflow runs on the head SHA (`GET /actions/runs?head_sha=<sha>&event=pull_request`, paginated), the input to `headPushedAt` (Task 22). Needs `actions: read`
   - `codexState(comments) -> {commitSha, status, at} | null`: the latest `codex-review-state:v1` marker from `chatgpt-codex-connector[bot]` (V2)
   - `geminiVerdicts(comments) -> [{head, identity, verdict, findings, commentId, at}]`
   - `fullReviewRequests(comments) -> [{bot: 'coderabbit' | 'codex', at}]`: comments whose whole trimmed body is `@coderabbitai full review` or `@codex review`
@@ -753,6 +765,7 @@ ok('threads paginate past 100', (await listThreads({ fetchImpl: twoPages })).len
 ok('a blocking outside-diff finding present only in a review body is found', outsideDiffFindings({ reviews: [crReviewWithOutsideDiff], comments: [] }).some((f) => f.severity && f.id.startsWith('cr:')))
 ok('"@codex review please" is not a full-review request', fullReviewRequests([{ body: '@codex review please', login: 'a' }]).length === 0)
 ok('GraphQL errors throw (fail closed)', /GraphQL/.test(await errOf(() => listThreads({ fetchImpl: gqlError }))))
+ok('prRunsFor paginates and keeps the PR numbers of each run', (await prRunsFor({ sha, fetchImpl: twoRunPages })).length === 101 && (await prRunsFor({ sha, fetchImpl: twoRunPages }))[0].prNumbers.join() === '44')
 ```
 
 - [ ] **Step 3: Run them.** Expected: FAIL.
@@ -771,7 +784,7 @@ ok('GraphQL errors throw (fail closed)', /GraphQL/.test(await errOf(() => listTh
 - Consumes: Task 21's readers; `inputIdentity` (Task 10); `readRecords`, `chainHeads` (Task 11).
 - Produces:
   - `REQUIRED_BOTS = { mechanical: [], standard: ['coderabbit|codex'], 'subtle-correctness': ['coderabbit', 'codex', 'gemini'] }` (§5.5; `coderabbit|codex` means one of the two)
-  - `headPushedAt(checkRuns, gateStartedAt) -> string`: the GitHub API exposes no push time, and a commit's committer date predates its push. It is the earliest `started_at` among check runs on the head SHA, else the gate run's own start time.
+  - `headPushedAt({runs, pr, prCreatedAt}) -> string`: the GitHub API exposes no push time, and a commit's committer date predates its push. The closest recorded event is the creation of the workflow runs the push triggers: GitHub creates a `pull_request` run when it receives the `opened`/`synchronize` event, before any job is queued, so a run's `createdAt` does not wait for a runner the way a check's `started_at` does. It is `max(prCreatedAt, min(createdAt))` over the runs from `prRunsFor` (Task 21) whose `prNumbers` include `pr` or is empty (a fork PR's runs carry no PR numbers). The `prCreatedAt` floor covers a SHA that was pushed, and ran workflows, before this PR existed. The set is never empty, because the gate's own run is in it, and its minimum does not move when the gate re-runs, so the clock does not restart. Limitation: when GitHub delays event delivery, the clock starts late, which only lengthens the wait before substitution.
   - `slotState({bot, state, identityOf, currentIdentity, now, headPushedAt}) -> {status: 'covered' | 'needs-substitute' | 'pending', by?: string, reason: string}`, where `identityOf(sha) -> Promise<string | null>` fetches the commit if needed and returns `null` when it cannot be fetched.
     - Usable evidence per bot: CodeRabbit, a non-empty review; Codex, a non-empty review or a `completed` `codexState`; Gemini, a verdict of `no-findings` or `findings`. Empty reviews are ignored (V4).
     - **Rewrite** (applies to CodeRabbit and Codex, whose reviews are incremental; never to Gemini, whose every verdict reviews the full diff and is covered by its identity alone): some commit this bot reviewed is not an ancestor of the current head (`git merge-base --is-ancestor`, after fetching; an unfetchable commit counts as not an ancestor). Ordinary pushes, whose incremental reviews accumulate, are not rewrites.
@@ -779,7 +792,7 @@ ok('GraphQL errors throw (fail closed)', /GraphQL/.test(await errOf(() => listTh
     - `needs-substitute`: not covered, and either the bot is not configured (Gemini on fork, Dependabot or draft PRs), or a terminal failure is visible on the head (CodeRabbit check `conclusion` in `skipped`, `failure`, `cancelled`, `timed_out`, `action_required`; Gemini verdict `could-not-run`), or 30 minutes have passed since `max(headPushedAt, last request)` with nothing usable.
     - `pending` otherwise.
   - `substituteOk({bot, records, currentIdentity, countedVendors}) -> boolean`: a `substitute:<bot>` chain head that passes parts 1, 2 and 4 of the `review-evidence` predicate on `currentIdentity` (reuse `evaluate`'s record check from Task 15, so every finding it raised or inherited needs an acceptable disposition). Part 3's author-vendor rule is replaced by §5.5's own: the substitute's vendor is not in `countedVendors` (vendors of the bots that covered this PR and of the other substitutes). The author's vendor may substitute, which is what lets all three vendors fill the three slots when every bot fails.
-  - A `substitute:<bot>` record inherits, **under their gate IDs** (`thread:…`, `cr:…`, `gemini:…`), every blocking finding from that bot that has no disposition in the PR review record **or** is marked `fixed` without the verifying evidence Task 23 requires. Its re-review's `inherited` assessments are what resolve them (Task 12). `review.mjs run --slot substitute:<bot>` reads them live through Task 21's readers.
+  - A `substitute:<bot>` record carries, **under their gate IDs** (`thread:…`, `cr:…`, `gemini:…`), every blocking finding from that bot that has no disposition in the PR review record **or** is marked `fixed` without the verifying evidence Task 23 requires. The substitute run passes them to the reviewer as inherited findings, so its verdict's `inherited` array must assess each one (Task 12). The writer persists the result as ordinary findings in the record: each `resolved` becomes a finding with that gate ID and `disposition: { kind: 'fixed', by: <this record's stem> }`, each `open` stays undisposed. A later `substitute:<bot>` review chained with `--supersedes` inherits the open ones under the same gate IDs (Task 11's `inherit`). The gate reads only these persisted findings; nothing else is stored. Task 23 implements the run (`review.mjs run --slot substitute:<bot>`, reading the bot's findings live through Task 21's readers).
   - **Vendors for `countedVendors`:** Codex App → `openai`; Gemini → `google`; CodeRabbit counts no vendor (its model is not disclosed), so it never excludes a substitute.
   - `diffTooLarge({cwd, base, head}) -> Promise<boolean>`: `geminiDiff(...)` (Task 10) exceeds 400,000 bytes. The gate checks it **before** coverage: an oversized PR fails with "split this PR", and no substitution can clear it (§5.5).
 
@@ -805,7 +818,10 @@ ok('geminiDiff and diffTooLarge measure the same bytes, binary and rename includ
 ok('force-push then a usable review after the request -> covered', s(forcePushAnswered).status === 'covered')
 ok('review on an unfetchable commit -> not usable, no throw', s(unfetchable).status === 'pending' && /full review/.test(s(unfetchable).reason))
 ok('29 minutes, nothing -> pending; 31 minutes -> needs-substitute', s(at29).status === 'pending' && s(at31).status === 'needs-substitute')
-ok('headPushedAt is the earliest check-run start, not the committer date', headPushedAt(runsStartingAt('2026-11-01T10:00:00Z'), gateStart) === '2026-11-01T10:00:00Z')
+ok('headPushedAt is the earliest run creation for this PR, not the committer date', headPushedAt({ runs: [run(44, '2026-11-01T10:05:00Z'), run(44, '2026-11-01T10:00:00Z')], pr: 44, prCreatedAt: '2026-11-01T09:00:00Z' }) === '2026-11-01T10:00:00Z')
+ok('a SHA whose runs predate the PR: the clock starts at PR creation', headPushedAt({ runs: [run(44, '2026-11-01T08:00:00Z')], pr: 44, prCreatedAt: '2026-11-01T09:00:00Z' }) === '2026-11-01T09:00:00Z')
+ok('runs for another PR on the same SHA are ignored', headPushedAt({ runs: [run(12, '2026-11-01T07:00:00Z'), run(44, '2026-11-01T10:00:00Z')], pr: 44, prCreatedAt: '2026-11-01T06:00:00Z' }) === '2026-11-01T10:00:00Z')
+ok('a gate re-run adds a later run and leaves the clock unchanged', headPushedAt({ runs: [run(44, '2026-11-01T10:00:00Z'), run(44, '2026-11-01T10:40:00Z')], pr: 44, prCreatedAt: '2026-11-01T09:00:00Z' }) === '2026-11-01T10:00:00Z')
 ok('a commit authored two hours before its push does not start the clock early', s(oldCommitFreshPush).status === 'pending')
 ok('subtle-correctness: CodeRabbit and Codex covered, Gemini failed, anthropic substitute -> ok', substituteOk({ bot: 'gemini', records: [subByAnthropic], currentIdentity: id, countedVendors: ['openai'] }))
 ok('standard: one of CodeRabbit or Codex is enough', requiredMet('standard', { coderabbit: 'pending', codex: 'covered' }))
@@ -835,9 +851,10 @@ ok('substitute by a vendor already counted -> not ok', !substituteOk({ bot: 'gem
 - Produces:
   - PR review record `.review/pr/<n>.json`: `{ schema: 1, pr, slots: [{ bot, status: 'covered' | 'substituted', by: string }], findings: [{ id, source, severity, disposition }], reclassified: [{ id, reason }], writtenAt }`. `by` is a review ID, `codex-marker:<comment id>`, `gemini:<comment id>` or a record stem.
   - `blockingFindings(state) -> [{id, source, severity, raisedAt}]`: every unresolved-or-resolved thread **opened by one of the three bot logins** whose first comment is blocking by default (threads a person opens stay with branch protection's conversation resolution), minus bot-resolved threads (§5.5); every outside-diff CodeRabbit finding blocking by default; every finding in **every** usable Gemini verdict on the PR, across identities (the identity skip in Task 20 is what prevents duplicates and loops; findings are never dropped for that purpose). Findings in `substitute:*` records are judged by `substituteOk`, not here. Findings whose `path` starts with `.review/` are excluded (§5.5).
-  - `evaluateGate({state, record, depth}) -> {ok, lines}`: fails first if `diffTooLarge`. Otherwise passes when every required slot is covered or has `substituteOk`, and every `blockingFindings` entry is in the record with an acceptable disposition: `pre-existing` + reason + issue; present in `reclassified` with a reason; or `fixed` + commit SHA, accepted only when that SHA is an ancestor of the head **and** either (a) the finding's bot has usable evidence submitted after the fix commit on a commit with the current identity (for a thread, the thread is also resolved; for Gemini, that evidence is the new verdict the fix commit's changed identity triggers), or (b) an accepted `substitute:<bot>` record's `inherited` assessment marks this finding `resolved`. A bot that re-reports the defect raises it as a **new** blocking finding (a new thread or a new Gemini index), which then needs its own disposition, so a re-review that still finds the problem cannot pass. This is the "clean re-review" of D-7. A record is required when the depth requires any slot or `blockingFindings` is non-empty (§5.5).
+  - `evaluateGate({state, record, depth}) -> {ok, lines}`: fails first if `diffTooLarge`. Otherwise passes when every required slot is covered or has `substituteOk`, and every `blockingFindings` entry is in the record with an acceptable disposition: `pre-existing` + reason + issue; present in `reclassified` with a reason; or `fixed` + commit SHA, accepted only when that SHA is an ancestor of the head **and** either (a) the finding's bot has usable evidence submitted after the fix commit on a commit with the current identity (for a thread, the thread is also resolved; for Gemini, that evidence is the new verdict the fix commit's changed identity triggers), or (b) the chain head of an accepted (`substituteOk`) `substitute:<bot>` chain holds a finding with this gate ID and `disposition.kind === 'fixed'` (Task 22). A bot that re-reports the defect raises it as a **new** blocking finding (a new thread or a new Gemini index), which then needs its own disposition, so a re-review that still finds the problem cannot pass. This is the "clean re-review" of D-7. A record is required when the depth requires any slot or `blockingFindings` is non-empty (§5.5).
+  - `review.mjs run --slot substitute:<bot> --author <vendor>` (extends Task 12's runner): reads the bot's live findings through Task 21's readers, selects the ones Task 22 says a substitute carries (open, or `fixed` without verifying evidence, per the PR review record), passes them as inherited findings under their gate IDs, and fills `{{bot}}` in `.claude/review/slots/substitute.md`. Its readers are injectable (`readersImpl`) so the tests below run without the network.
   - CLI `review.mjs pr-record --pr <n>`: reads live state, writes a draft record listing every slot and blocking finding, leaving dispositions for the author, then prints `evaluateGate`'s lines. `review.mjs check --pr <n>` evaluates without writing.
-  - Workflow `review-gate.yml`: `on: pull_request: types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]` and `pull_request_review: types: [submitted, dismissed]`; `permissions: contents: read, pull-requests: read, checks: read`; job and check name `review-gate`; `fetch-depth: 0`, `persist-credentials: false`; `node scripts/ci/review-gate.mjs`; concurrency keyed on PR number and head SHA, `cancel-in-progress: false`.
+  - Workflow `review-gate.yml`: `on: pull_request: types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]` and `pull_request_review: types: [submitted, dismissed]`; `permissions: contents: read, pull-requests: read, checks: read, actions: read` (`actions` for `prRunsFor`); `env` passes `${{ vars.REVIEW_GATE_REQUIRED_SINCE }}` to `isGrandfathered`; job and check name `review-gate`; `fetch-depth: 0`, `persist-credentials: false`; `node scripts/ci/review-gate.mjs`; concurrency keyed on PR number and head SHA, `cancel-in-progress: false`.
 
 - [ ] **Step 1: Write the failing tests:**
 
@@ -858,9 +875,14 @@ ok('bot finding -> fix -> unrelated commit -> bot fails -> substitute inherits t
 ok('Gemini finding -> fix -> Gemini could-not-run -> substitute resolves it -> ok', evaluateGate({ state: geminiFixedThenFailed, record: withSubResolving, depth: 'subtle-correctness' }).ok)
 ok('re-review repeats the defect as a new Gemini index -> FAIL on the new ID', /gemini:.*:2/.test(evaluateGate({ state: geminiRepeats, record: fixedFirstOnly, depth: 'subtle-correctness' }).lines.join()))
 ok('fixed + SHA with a covering review after the fix and the thread resolved -> ok', evaluateGate({ state: fixedReReviewed, record: fixedRec, depth: 'standard' }).ok)
-ok('pr-record writes every blocking finding with an empty disposition for the author', draft.findings.every((f) => f.disposition === null))
+ok('pr-record writes every blocking finding with an empty disposition for the author', draft.findings.length === blockingFindings(stateWithTwo).length && draft.findings.length === 2 && draft.findings.every((f) => f.disposition === null))
+ok('substitute run, end to end: stubbed live readers -> record -> gate ok', (async () => { const rec = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); return rec.findings.some((f) => f.id === 'thread:PRRT_1' && f.disposition.kind === 'fixed') && evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(rec), depth: 'subtle-correctness' }).ok })())
+ok('substitute run carries a fixed-but-unverified finding, not a verified one', (await runSubstitute({ bot: 'codex', readersImpl: oneVerifiedOneNot, reviewerImpl: captures })).sentInherited.join() === 'thread:PRRT_2')
+ok('second substitute review: an open finding chains under the same gate ID and resolves -> gate ok', (async () => { const r1 = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: leavesOpen }); const r2 = await runSubstitute({ bot: 'codex', supersedes: r1.stem, readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); return r2.findings.some((f) => f.id === 'thread:PRRT_1' && f.disposition.kind === 'fixed') && evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(r1, r2), depth: 'subtle-correctness' }).ok })())
+ok('substitute run fills {{bot}} in substitute.md', (await runSubstitute({ bot: 'gemini', readersImpl: none, reviewerImpl: captures })).prompt.includes('gemini') && !(await runSubstitute({ bot: 'gemini', readersImpl: none, reviewerImpl: captures })).prompt.includes('{{bot}}'))
 ok('API error -> exit 1 "could not judge"', (await quiet(() => main({ env: goodEnv, fetchImpl: stub403 }))).code === 1)
-ok('a PR created before the gate workflow was added is exempt', (await quiet(() => main({ env: goodEnv, fetchImpl: oldPr }))).code === 0)
+ok('a PR created before REVIEW_GATE_REQUIRED_SINCE is exempt; one created after is judged', (await quiet(() => main({ env: { ...goodEnv, REVIEW_GATE_REQUIRED_SINCE: '2026-11-05T00:00:00Z' }, fetchImpl: prCreatedAt('2026-11-04T23:59:59Z', failingState) }))).code === 0 && (await quiet(() => main({ env: { ...goodEnv, REVIEW_GATE_REQUIRED_SINCE: '2026-11-05T00:00:00Z' }, fetchImpl: prCreatedAt('2026-11-05T00:00:01Z', failingState) }))).code === 1)
+ok('REVIEW_GATE_REQUIRED_SINCE unset exempts nothing', (await quiet(() => main({ env: goodEnv, fetchImpl: prCreatedAt('2020-01-01T00:00:00Z', failingState) }))).code === 1)
 ```
 
 - [ ] **Step 2: Run them.** Expected: FAIL.
@@ -873,7 +895,7 @@ ok('a PR created before the gate workflow was added is exempt', (await quiet(() 
 
 - [ ] **Step 1:** on a test PR, submit a review and read `gh api repos/magora-project/magora-portal/commits/<head>/check-runs --jq '.check_runs[] | select(.name=="review-gate") | [.head_sha, .conclusion] | @tsv'`. Record whether the `pull_request_review` run's check is on the PR head (§5.5). If it is not, remove `pull_request_review` from the triggers in a follow-up commit; the record commit is the trigger.
 - [ ] **Step 2:** run each remaining acceptance case once (§6 step 5) and record the run URL and conclusion: a rate-limited CodeRabbit (or a `skipped` check run as its stand-in, said so), a Gemini that couldn't run (a test branch whose workflow run has the key unset), an oversized diff (expect red with "split this PR", whatever substitutes exist), a force-push followed by a full-review request, a Dependabot PR, and an evidence-only commit after a green gate (expect still green, and Gemini posts `skipped-same-identity`).
-- [ ] **Step 3 (David, approved):** a one-line PR sets `REQUIRED_SINCE` in `scripts/ci/review-gate.mjs`, merging first; then add `review-gate` to the required checks. Read back as in Task 16; expect 10 entries.
+- [ ] **Step 3 (David, approved):** add `review-gate` to the required checks and read back as in Task 16; expect 10 entries. Immediately after, `gh variable set REVIEW_GATE_REQUIRED_SINCE --body <current UTC time>`, read it back, and re-run `review-gate` on the PRs open at activation, as in Task 16 Step 3.
 - [ ] **Fork with maintainer edits off:** not run separately for `review-gate`. The gate reads `.review/pr/<n>.json` from a tree the maintainer cannot push to, so §5.3's move-to-a-same-repo-PR path applies, and Task 16 already exercised it.
 
 ---
