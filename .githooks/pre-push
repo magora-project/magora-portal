@@ -1,0 +1,3 @@
+#!/bin/sh
+# Warning-only hook (never blocks). Installed by: npm run setup:hooks
+exec node scripts/hooks/pre-push.mjs "$@"
