@@ -9,7 +9,10 @@ import { fileURLToPath } from 'node:url'
 import { findTests, runTests } from './run-tests.mjs'
 
 let pass = 0, fail = 0
-const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
+const ok = (n, c) => {
+  if (c && typeof c.then === 'function') { fail++; console.log('  FAIL', n, '(unawaited Promise)'); return }
+  if (c) { pass++ } else { fail++; console.log('  FAIL', n) }
+}
 
 const RUNNER = fileURLToPath(new URL('./run-tests.mjs', import.meta.url))
 const tmp = mkdtempSync(join(tmpdir(), 'run-tests-selftest-'))
@@ -24,14 +27,20 @@ try {
   write('good/nested/b.test.mjs', 'process.exit(0)\n')
   write('good/node_modules/pkg/c.test.mjs', 'process.exit(1)\n')
   write('good/.claude/worktrees/x/d.test.mjs', 'process.exit(1)\n')
+  write('good/.claude/hooks/x.test.mjs', 'process.exit(0)\n')
+  write('good/src/worktrees/y.test.mjs', 'process.exit(0)\n')
   write('good/not-a-test.mjs', 'process.exit(1)\n')
   write('bad/a.test.mjs', 'process.exit(0)\n')
   write('bad/b.test.mjs', 'process.exit(3)\n')
   mkdirSync(join(tmp, 'empty'))
 
   const good = join(tmp, 'good')
-  ok('finds nested tests, skips node_modules and .claude, sorted',
-    JSON.stringify(findTests(good)) === JSON.stringify(['a.test.mjs', 'nested/b.test.mjs']))
+  ok('finds nested tests, skips node_modules, sorted',
+    JSON.stringify(findTests(good).filter((f) => !f.startsWith('.claude/') && !f.startsWith('src/'))) ===
+      JSON.stringify(['a.test.mjs', 'nested/b.test.mjs']))
+  ok('finds a test under .claude/hooks', findTests(good).includes('.claude/hooks/x.test.mjs'))
+  ok('skips .claude/worktrees entirely', !findTests(good).some((f) => f.startsWith('.claude/worktrees/')))
+  ok('a directory merely named worktrees elsewhere is not skipped', findTests(good).includes('src/worktrees/y.test.mjs'))
 
   const allPass = runTests(findTests(good), { root: good, stdio: 'ignore' })
   ok('all passing -> ok', allPass.ok === true)
