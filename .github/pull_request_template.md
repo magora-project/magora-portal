@@ -1,3 +1,17 @@
+## Process
+
+<!-- Lane: specced | direct | docs-only | dependency. Rules: .claude/rules/process.md (Lanes) -->
+Lane:
+
+<!-- Spec: repo path of the approved spec; "none" unless the lane is specced -->
+Spec:
+
+<!-- Plan: <path> <task list>; task list is comma-separated T<n> or ranges T<n>-T<m>, e.g. docs/superpowers/plans/x.md T1-T3, T5 -->
+Plan:
+
+<!-- Deviations: one "- <deviation id>: <justification>" line per entry below, or "none" -->
+Deviations:
+
 ## Depth (exactly one; a maintainer applies the matching label)
 
 - [ ] `mechanical` — docs, renames, formatting; nothing beyond CI
@@ -20,6 +34,6 @@
 
 ## Control files
 
-This PR changes control files (`.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`, `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`, `scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`): **yes / no**
+This PR changes control files (`.github/**`, `.claude/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`, `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`, `scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`): **yes / no**
 
 <!-- If yes, say which and why. The merging maintainer reads every control-file change on fork and Dependabot PRs. -->

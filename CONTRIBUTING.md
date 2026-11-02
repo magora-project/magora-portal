@@ -27,6 +27,25 @@ macOS and Windows (PowerShell or cmd) use the same commands; every check is a No
     npm run check:migrations
     npm run check:deno        # needs Deno 2.9.5
 
+## Prerequisites
+
+Process rules: `.claude/rules/process.md`.
+
+- Claude Code
+- Codex CLI, signed in
+- Semgrep
+- Node 24 (see `.nvmrc`)
+- Deno 2.9.5
+- `gh`, the GitHub CLI
+- A Gemini key from the Gemini account David set up (D-15)
+
+## First run
+
+    npm ci
+    npm run setup:hooks
+
+Then start Claude Code in the repo and check that `/skills` lists `brainstorming` and `writing-plans` as project skills.
+
 ## If label-gate shows "cancelled"
 
 The latest label-gate run on your head must finish. If it was cancelled, ask a maintainer to re-run the job from the
