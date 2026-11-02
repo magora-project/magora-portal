@@ -47,7 +47,7 @@ Run Semgrep over the spec if it is available, then review by a model from a diff
 
 `npm run review -- run --slot spec --path <spec> --author <vendor>`
 
-`<vendor>` is the vendor of the model that wrote the document: `anthropic` for Claude Code, `openai` for Codex, `none` when a person wrote it by hand. The command picks the reviewer from it. It is not available yet (it ships with the review tooling); until it lands, run Codex CLI by hand on the spec with an adversarial prompt covering failure modes, integration gaps, test blind spots, ordering and rollback, and say in the spec's review notes that the review was manual.
+`<vendor>` is the vendor of the model that wrote the document: `anthropic` for Claude Code, `openai` for Codex, `none` when a person wrote it by hand. The command picks the reviewer from it. It is not available yet (it ships with the review tooling); until it lands, run the reviewer the dispatch table in `.claude/rules/process.md` names (Codex CLI for a Claude-written document) by hand on the spec, with an adversarial prompt covering failure modes, integration gaps, test blind spots, ordering and rollback, and say in the PR description that the review was manual.
 
 An empty reviewer reply is an unrun review, not a pass. Fix findings inline. What blocks and what is a nit is in `## What blocks`; after two rounds where the new findings all sit in the previous round's fixes, apply `## Stop rule`. Editing the spec changes its blob and voids the record, so review again after any change.
 

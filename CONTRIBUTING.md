@@ -29,7 +29,7 @@ macOS and Windows (PowerShell or cmd) use the same commands; every check is a No
 
 ## Prerequisites
 
-Process rules: `.claude/rules/process.md`.
+Process rules: [.claude/rules/process.md](.claude/rules/process.md).
 
 - Claude Code
 - Codex CLI, signed in

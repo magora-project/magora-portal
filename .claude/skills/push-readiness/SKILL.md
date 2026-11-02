@@ -14,7 +14,7 @@ This skill reports and changes nothing. It never pushes, rebases, merges, stashe
 Capture, or ask for, before running. Do not guess.
 
 - Expected branch name.
-- Base branch (normally `main`).
+- Base ref `<base>` (default `origin/main`).
 - Expected file set: the files this branch should touch.
 - The PR's depth label (`mechanical`, `standard`, `subtle-correctness`), because it decides which review records are required.
 
@@ -40,27 +40,27 @@ PASS when the output is empty.
 
 ### 3. Sync with the base
 
-`git fetch origin main`
+`git fetch origin` (fetches the remote that holds `<base>`)
 
-`git rev-list --left-right --count origin/main...HEAD`
+`git rev-list --left-right --count <base>...HEAD`
 
 The output is two numbers, behind then ahead, separated by whitespace (do not match on exact whitespace). PASS when behind is 0 and ahead is at least 1. If behind is above 0 the base has moved: surface it and let the operator choose rebase or merge; do not do either.
 
-`git merge-base --is-ancestor origin/main HEAD`
+`git merge-base --is-ancestor <base> HEAD`
 
 PASS when the exit status is 0.
 
 ### 4. Diff matches intent
 
-`git diff --name-only origin/main...HEAD`
+`git diff --name-only <base>...HEAD`
 
 PASS when the list equals the expected file set, with nothing extra and nothing missing.
 
-`git diff --stat origin/main...HEAD`
+`git diff --stat <base>...HEAD`
 
 Read it for anything unexpected: control files (listed in `AGENTS.md`) that the PR description does not mention, a `supabase/migrations/` file on a branch not labelled `subtle-correctness`, or a stray lock file.
 
-`git log --oneline origin/main..HEAD`
+`git log --oneline <base>..HEAD`
 
 PASS when every commit is one you expect.
 
@@ -70,7 +70,7 @@ The depth label decides which pre-push slots need a record (`.claude/rules/proce
 
 `npm run review -- check --local`
 
-It lists any slot that has no record for the current identity. PASS when none is missing. The command is not available yet (it ships with the review tooling); until then, report this check as NOT RUN, say which slots the depth requires, and ask the operator whether a manual Codex CLI review of the current head was done.
+It lists any slot that has no record for the current identity. PASS when none is missing. The command is not available yet (it ships with the review tooling); until then, report this check as NOT RUN, say which slots the depth requires, and ask the operator whether a manual review of the current head was done, by the reviewer the dispatch table in `.claude/rules/process.md` names (Codex CLI for a Claude-written change).
 
 ## Summary
 
@@ -82,7 +82,7 @@ PUSH READINESS - <branch>: PASS / FAIL / NOT RUN (check 5)
   Branch:          <name>
   Latest commit:   <hash> <subject>
   Working tree:    clean / dirty
-  Behind / ahead:  <N> / <M> of origin/main
+  Behind / ahead:  <N> / <M> of <base>
   File set:        matches / <differences>
   Depth label:     <label>
   Review records:  complete / missing <slots> / not run

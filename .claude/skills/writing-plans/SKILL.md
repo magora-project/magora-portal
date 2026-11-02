@@ -38,7 +38,7 @@ Every plan starts with:
 ```markdown
 # [Feature Name] Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** [One sentence]
 
@@ -111,7 +111,7 @@ Saving the plan commits it; then review it. Dispatch and what counts as a review
 
 `<vendor>` is the vendor of the model that wrote the plan: `anthropic` for Claude Code, `openai` for Codex, `none` when a person wrote it by hand. If the plan is already on `main` (an amendment), add `--tasks <the tasks not yet landed>`, or `--tasks none` when none remain.
 
-The command is not available yet (it ships with the review tooling). Until it lands, run Codex CLI by hand on the plan, with an adversarial prompt covering missing tasks, wrong ordering, tests that cannot fail, and rollback, and note in the PR that the review was manual.
+The command is not available yet (it ships with the review tooling). Until it lands, run the reviewer the dispatch table in `.claude/rules/process.md` names (Codex CLI for a Claude-written document) by hand on the plan, with an adversarial prompt covering missing tasks, wrong ordering, tests that cannot fail, and rollback, and note in the PR that the review was manual.
 
 An empty reviewer reply is an unrun review, not a pass. Editing the plan changes its blob and voids the record, so review again after any fix. After two rounds where the new findings all sit in the previous round's fixes, apply `## Stop rule`. What blocks is in `## What blocks`.
 
@@ -124,4 +124,4 @@ After saving, self-reviewing and reviewing, link the plan and ask the user to co
 - **Subagent-driven:** a fresh subagent implements each task and a fresh reviewer checks it before the next, then a whole-branch review. Most thorough; costs a context per task and per review.
 - **Native:** you implement every task in this session, then one fresh reviewer checks the whole branch. Cheapest and fastest; no independent review until the end.
 
-Recommend one, with one sentence of reasoning drawn from the plan: how much the tasks depend on each other's interfaces, how many there are, what a shipped mistake would cost. Then use `subagent-driven-development` or `executing-plans` accordingly. Per-task review depth follows the depth labels in `AGENTS.md`.
+Recommend one, with one sentence of reasoning drawn from the plan: how much the tasks depend on each other's interfaces, how many there are, what a shipped mistake would cost. Then use `superpowers:subagent-driven-development` or `superpowers:executing-plans` accordingly. Per-task review follows `.claude/rules/process.md`, `## Review slots and dispatch`.
