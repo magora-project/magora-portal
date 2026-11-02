@@ -3,8 +3,11 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { parseInventory, inventoryProblems, compareNames, listStoreNames, storesOf } from './inventory-check.mjs'
 
-let pass = 0, fail = 0
-const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
+let pass = 0
+// Failures are collected and printed at the end: the stream-silence block below stubs
+// process.stdout.write, which a saved console.log still routes through.
+const failures = []
+const ok = (n, c) => { if (c) { pass++ } else { failures.push(n) } }
 
 const MD = `# Inventory
 
@@ -83,6 +86,9 @@ ok('stores: github:repo recognised', parseInventory('| R_KEY | production | op:/
 const vcalls = []
 const vrun = (results) => (c, a) => { vcalls.push(a.join(' ')); return results.shift() }
 const vt = listStoreNames('vercel:preview', vrun([{ status: 1, stdout: '' }, { status: 0, stdout: 'name  value  environments\nT1  Encrypted  Preview\n' }]))
+const legacy = compareNames(parseInventory('| EXPECTED_KEY | production | op://Magora Project/s/EXPECTED_KEY | vercel:production | no |'),
+  [{ store: 'vercel:production', names: listStoreNames('vercel:production', () => ({ status: 0, stdout: 'name  value  environments\nEXPECTED_KEY  Encrypted  Production\nlegacy_key  Encrypted  Production\n' })) }])
+ok('vercel table: unrecorded lowercase name is flagged', legacy.length === 1 && legacy[0].includes('legacy_key'))
 ok('vercel: retry without --format json parses table', JSON.stringify(vt) === '["T1"]' && vcalls.length === 2 && vcalls[0].includes('--format json') && !vcalls[1].includes('--format'))
 let vboth = ''
 try { listStoreNames('vercel:preview', vrun([{ status: 1, stdout: 'SECRETVALUE' }, { status: 1, stdout: 'SECRETVALUE' }])) } catch (e) { vboth = String(e.message) }
@@ -112,6 +118,7 @@ process.stdout.write = () => { writes++; return true }
 process.stderr.write = () => { writes++; return true }
 const restore = () => { console.log = origLog; console.error = origErr; process.stdout.write = origWrite; process.stderr.write = origErrWrite }
 
+try {
 // listStoreNames with an injected runner
 const calls = []
 const runner = (out) => (cmd, args) => { calls.push([cmd, ...args]); return { status: 0, stdout: out, stderr: '' } }
@@ -125,6 +132,16 @@ ok('list: fly args', calls[2].join(' ') === 'fly secrets list -a app1 --json')
 ok('list: vercel json', JSON.stringify(listStoreNames('vercel:preview', runner('{"envs":[{"key":"V"}]}'))) === '["V"]')
 ok('list: vercel args', calls[3].join(' ') === 'vercel env ls preview --format json')
 ok('list: vercel table fallback', JSON.stringify(listStoreNames('vercel:production', runner('name  value  environments\nT1  Encrypted  Production\nT2  Encrypted  Production\n'))) === '["T1","T2"]')
+// The table renderer prints keys as stored, so lowercase and _-prefixed names must survive
+const mixed = listStoreNames('vercel:production', runner('name  value  environments\nEXPECTED_KEY  Encrypted  Production\nlegacy_key  Encrypted  Production\n_private  Encrypted  Production\n'))
+ok('list: vercel table keeps lowercase and _-prefixed names', JSON.stringify(mixed) === '["EXPECTED_KEY","legacy_key","_private"]')
+ok('list: vercel table drops the header row', !mixed.includes('name'))
+// chalk.bold wraps each key when colour is forced; the escapes must not hide the name
+const ansi = listStoreNames('vercel:production', runner('\u001b[2mname\u001b[22m  \u001b[2mvalue\u001b[22m  environments\n\u001b[1mlegacy_key\u001b[22m  Encrypted  Production\n'))
+ok('list: vercel table strips ANSI colour', JSON.stringify(ansi) === '["legacy_key"]')
+// only the header line is dropped: a real key `name` with plaintext value `value` survives
+ok('list: vercel table keeps a data row that looks like the header', JSON.stringify(listStoreNames('vercel:production', runner('name  value  environments\nname  value  Production\n'))) === '["name"]')
+ok('list: vercel table drops a capitalised header', JSON.stringify(listStoreNames('vercel:production', runner('Name  Value  Environments\nK  Encrypted  Production\n'))) === '["K"]')
 let msg = ''
 try { listStoreNames('supabase-fn:abc', () => ({ status: 1, stdout: 'SECRETVALUE', stderr: 'SECRETVALUE' })) } catch (e) { msg = String(e.message) }
 ok('list: failure throws without output', msg !== '' && !msg.includes('SECRETVALUE'))
@@ -134,8 +151,11 @@ ok('list: bad json throws without output', msg !== '' && !msg.includes('SECRETVA
 let unk = false
 try { listStoreNames('bogus:x', runner('[]')) } catch { unk = true }
 ok('list: unknown store throws', unk)
-
-restore()
+} catch (e) {
+  ok(`stubbed block threw unexpectedly: ${e && e.name}`, false)
+} finally {
+  restore()
+}
 ok('list: nothing written to any output stream', writes === 0)
 
 // win32 ENOENT hint
@@ -147,5 +167,6 @@ let n = ''
 try { listStoreNames('vercel:preview', enoent('x'), 'darwin') } catch (e) { n = String(e.message) }
 ok('list: darwin ENOENT has no shim hint', n !== '' && !n.includes('.cmd'))
 
-console.log(`${pass} passed, ${fail} failed`)
-process.exit(fail ? 1 : 0)
+for (const f of failures) console.log('  FAIL', f)
+console.log(`${pass} passed, ${failures.length} failed`)
+process.exit(failures.length ? 1 : 0)

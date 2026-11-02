@@ -107,6 +107,14 @@ ok('db: https scheme refused', throws(() => assertStaging(`https://${STG_USER}:p
 ok('api: http refused', throws(() => assertStaging(`http://${STAGING_REF}.supabase.co`, 'api')))
 ok('api: userinfo refused', throws(() => assertStaging(`https://u:p@${STAGING_REF}.supabase.co`, 'api')))
 ok('api: explicit port refused', throws(() => assertStaging(`https://${STAGING_REF}.supabase.co:8443`, 'api')))
+// supabase-js appends /rest/v1 to the URL's path, so only the bare root is a usable api target
+ok('api: non-root path refused', throws(() => assertStaging(`https://${STAGING_REF}.supabase.co/custom/`, 'api')))
+ok('api: non-root path without trailing slash refused', throws(() => assertStaging(`https://${STAGING_REF}.supabase.co/rest/v1`, 'api')))
+ok('api: query refused', throws(() => assertStaging(`https://${STAGING_REF}.supabase.co/?x=1`, 'api')))
+ok('api: fragment refused', throws(() => assertStaging(`https://${STAGING_REF}.supabase.co/#x`, 'api')))
+ok('api: trailing-slash root accepted', !throws(() => assertStaging(`https://${STAGING_REF}.supabase.co/`, 'api')))
+const pathMsg = messageOf(() => assertStaging(`https://${STAGING_REF}.supabase.co/s3cret`, 'api'))
+ok('api: path message hides the path', pathMsg.includes('refusing') && !pathMsg.includes('s3cret'))
 ok('fix messages hide password', !messageOf(() => assertStaging(`postgresql://${STG_USER}:s3cret@evil.example/p?host=x`, 'db')).includes('s3cret'))
 
 // Fix round 2: strict raw-URL grammar (libpq vs WHATWG parser differentials)

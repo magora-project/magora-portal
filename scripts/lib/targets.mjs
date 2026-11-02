@@ -45,6 +45,8 @@ function shapeProblem(url, kind) {
     if (u.protocol !== 'https:') return 'api target must use https'
     if (u.username || u.password) return 'api target must not carry credentials'
     if (u.port) return 'api target must not set a port'
+    // supabase-js appends rest/v1 etc. to the URL's path, so anything but the bare root misroutes.
+    if (u.pathname !== '/' || u.search || u.hash) return 'api target must be the project root URL'
     return null
   }
   if (!DB_SCHEMES.has(u.protocol)) return 'db target must use a postgres scheme'

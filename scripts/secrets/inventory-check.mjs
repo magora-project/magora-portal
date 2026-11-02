@@ -79,8 +79,16 @@ const namesFromJson = (text) => {
   const list = Array.isArray(data) ? data : data && Array.isArray(data.envs) ? data.envs : []
   return list.map(nameOf).filter((n) => typeof n === 'string')
 }
-const namesFromTable = (text) =>
-  text.replace(/\r/g, '').split('\n').map((l) => l.trim().split(/\s+/)[0]).filter((n) => /^[A-Z][A-Z0-9_]*$/.test(n))
+// The table renderer prints each key as stored (bold, when colour is on), so strip ANSI escapes
+// and accept any env-var name, not just uppercase ones. Only the header is excluded: the first
+// non-empty line, when its first column is "name". A later row for a real key `name` is kept.
+// eslint-disable-next-line no-control-regex
+const ANSI = /\u001b\[[0-9;]*m/g
+const namesFromTable = (text) => {
+  const lines = text.replace(ANSI, '').replace(/\r/g, '').split('\n').map((l) => l.trim()).filter(Boolean)
+  if (lines.length && /^name\s/i.test(lines[0])) lines.shift()
+  return lines.map((l) => l.split(/\s+/)[0]).filter((n) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n))
+}
 
 const defaultRunner = (cmd, args) => spawnSync(cmd, args, { shell: false, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
 
