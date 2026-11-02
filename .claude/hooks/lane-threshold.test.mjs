@@ -1,5 +1,8 @@
 // Self-test for .claude/hooks/lane-threshold.mjs. Run: node .claude/hooks/lane-threshold.test.mjs
 import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { laneReminder, main } from './lane-threshold.mjs'
 
@@ -33,6 +36,21 @@ ok('a closed stdout does not throw', !throws(() => main({ stdin: '{}', stdout: c
 ok('main writes one JSON line to stdout', (() => { const s = sink(); main({ stdin: '{}', stdout: s, env: {} }); return s.data.endsWith('\n') && !!JSON.parse(s.data) })())
 ok('main kill-switch writes nothing', (() => { const s = sink(); main({ stdin: '{}', stdout: s, env: { LANE_THRESHOLD_DISABLE: '1' } }); return s.data === '' })())
 ok('large stdin does not break the hook', runWith('x'.repeat(2_000_000)).code === 0)
+
+// Run through a symlinked path: the hook must still emit (it once compared unresolved paths).
+const tmp = mkdtempSync(join(tmpdir(), 'lane-threshold-'))
+try {
+  let linked = false
+  try { symlinkSync(fileURLToPath(new URL('.', import.meta.url)), join(tmp, 'hooks-link'), 'junction'); linked = true } catch { /* symlinks not permitted here: skip */ }
+  if (linked) {
+    const link = join(tmp, 'hooks-link', 'lane-threshold.mjs')
+    const opts = { input: '{}', encoding: 'utf8', shell: false }
+    ok('CLI run through a symlinked path still emits', spawnSync(process.execPath, [link], opts).stdout.includes('Specced'))
+    ok('symlinked path with --preserve-symlinks-main still emits', spawnSync(process.execPath, ['--preserve-symlinks-main', link], opts).stdout.includes('Specced'))
+  }
+} finally {
+  rmSync(tmp, { recursive: true, force: true })
+}
 
 console.log(`\n${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

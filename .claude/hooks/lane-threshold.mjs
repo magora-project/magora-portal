@@ -7,7 +7,7 @@
 // Fail-open: every internal failure (unreadable stdin, closed stdout) exits 0 with no output.
 // Termination signals are not trapped. Kill-switch: LANE_THRESHOLD_DISABLE=1.
 // Rules: .claude/rules/process.md § Lanes.
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 export function laneReminder() {
@@ -46,7 +46,19 @@ export function main({ stdin = '', stdout = process.stdout, env = process.env } 
   return 0
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// Compare real paths on both sides: Node resolves symlinks in import.meta.url (unless
+// --preserve-symlinks-main) and never in argv[1], so a symlinked project path would skip main() and
+// emit nothing. This hook fails open, so a realpath error counts as "is main" and emits the reminder.
+function isMain() {
+  if (process.argv[1] === undefined) return false
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return true
+  }
+}
+
+if (isMain()) {
   // Drain stdin first, even when disabled, so the harness never writes into a closed pipe.
   let stdin = ''
   try { stdin = readFileSync(0, 'utf8') } catch { /* fail open */ }
