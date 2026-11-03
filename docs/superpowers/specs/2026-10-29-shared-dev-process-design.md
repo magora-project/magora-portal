@@ -89,7 +89,8 @@ PRs.
   - It diffs `git diff "$BASE_SHA...$HEAD_SHA"`, with no pathspec.
   - `gemini_review.py` refuses diffs over 400,000 bytes.
   - It reports only P0/P1 findings or `NO FINDINGS`, in one PR comment posted with
-    `GITHUB_TOKEN`.
+    `GITHUB_TOKEN`. When the reviewer cannot run, the comment says "Gemini review could not run"
+    instead.
 - `semgrep.yml`, `osv-scan.yml` and `doc-size-ratchet.yml`.
 - `.coderabbit.yaml` `path_filters` excludes `package-lock.json`, `dist/**` and `src/generated/**`.
 - `.gitignore` excludes all of `.claude/`.
@@ -107,7 +108,7 @@ PRs.
   - Does a full review on request.
   - Resolves its own threads once they are addressed.
 - **Codex GitHub App:**
-  - Re-reviews only after an `@codex review` nudge.
+  - Reviews new commits, and re-reviews after an `@codex review` nudge (plan V6).
   - Never resolves its threads.
 
 **claude-b**
