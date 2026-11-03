@@ -250,6 +250,16 @@ CI checks that the fields are present and well formed. It does not judge whether
     branch.
   - Otherwise, the maintainer moves the change onto a same-repo branch, opens a new PR there, and
     regenerates the evidence for it.
+  - Either way, a fork's content is untrusted code. Supplying its evidence runs that code on the
+    maintainer's machine: conformance runs the plan's `command` targets, `npm test` runs its
+    tests, and a push from the checkout runs its `.githooks/pre-push`. Almost any changed file
+    can execute: modules the tests import, `eslint.config.js` and `vite.config.js`, dependencies
+    `package-lock.json` pulls in on `npm ci`, and the `.claude/` settings, hooks and skills an
+    agent session loads, and with `core.hooksPath=.githooks` a fork's `post-checkout` hook runs
+    on checkout itself. So the maintainer reads the PR's **whole** diff before checking the
+    branch out (on the PR page, or `git fetch` then `git diff`, which run none of it), and
+    before any install, test, lint, build, agent session or push from that checkout.
+    (PR #52 Gemini and Codex, ruled by David 2026-11-03.)
 - **Dependabot (D-11):** the maintainer's push stops Dependabot from rebasing the PR. With
   "up to date" required, the maintainer updates the branch by hand.
 
