@@ -24,7 +24,7 @@
 - Substitution timeout: 30 minutes after the head commit's push, or after a full-review request (§5.5, §7).
 - Gemini's diff limit is 400,000 bytes; over it, the PR is split (§5.5). No chunking.
 - Actions are pinned by full SHA with the tag in a comment, using the pins in `ci.yml`: `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`, `actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0`.
-- New workflows trigger on `pull_request` only, never `pull_request_target`, and post no status with any credential: each job's own pass or fail is the check (§2.1). Each job reads PR state live from the API, not the event payload (the `label-gate.mjs` pattern).
+- New workflows trigger on `pull_request` only, never `pull_request_target`. The one exception is `review-gate.yml`, which also triggers on `pull_request_review` (spec §5.5, Task 23). No workflow posts a status with any credential: each job's own pass or fail is the check (§2.1). Each job reads PR state live from the API, not the event payload (the `label-gate.mjs` pattern).
 - `AGENTS.md` is size-ratcheted (`doc-size.conf`): every edit is byte-neutral or smaller. Process rules that do not fit go in `.claude/rules/process.md` (§5.7).
 - Tests follow `scripts/ci/label-gate.test.mjs`: a `*.test.mjs` beside the module, a local `ok(name, cond)` counter, stubbed `fetchImpl` and stubbed spawns, and an `ok` that **counts a thenable `cond` as a failure** ("unawaited Promise"), because a Promise is truthy even when it resolves to `false`: every async assertion is written `ok(name, await …)`, non-zero exit on any failure. The snippets below abbreviate: `slotState` (`s`), `evaluateGate`, `diffTooLarge`, `geminiDiff`, `claudeRun` and the other adapters are async, so await every call before reading a property, and write negative checks as `=== false` or an expected value, never `!x.ok` or `!==`, which pass on `undefined`. Tests that need a real git repo build one in `mkdtemp` and delete it.
 - Every PR in this plan is `subtle-correctness`: each touches `AGENTS.md`, `.github/**`, `package.json`, `scripts/review/**` or `.claude/**`, which are or become control files. Each PR description says which control files it changes.
@@ -727,11 +727,18 @@ This runs in claude-config, not this repo.
 
 ## Phase 4: PR review record and `review-gate` (PR D, rollout step 4)
 
-Requires Task 0's ruling on V2–V5 (accepted by David 2026-11-01; recorded here by PR D, Task 20) **and the OPEN item below, resolved as a plan amendment before Task 22 starts.**
+Requires Task 0's ruling on V2–V5 (accepted by David 2026-11-01; recorded here by PR D, Task 20) **and the OPEN points below, each resolved as a plan amendment before the first task it blocks starts.**
 
-### OPEN: substitution clock and three gate points (block Task 22, and Tasks 23–24 through it)
+### OPEN: substitution clock and three gate points (block Tasks 20–23 where they touch them, and Task 24 through them)
 
-Rounds 4 and 5 of plan review kept finding defects in the stand-in (substitute) part of the PR-stage gate, each in the previous round's fix. Round 5's three points were extracted here; round 6 showed two of them (chained verification, the substitute vendor rule) change PR B's Tasks 11 and 12, so those two are settled there now. The one left is local to Task 22's `headPushedAt` and changes nothing PRs A–C ship. **Task 22 is not settled where it touches this point**; the PR D amendment resolves it with tests and gets its own plan review first:
+Rounds 4 and 5 of plan review kept finding defects in the stand-in (substitute) part of the PR-stage gate, each in the previous round's fix. Round 5's three points were extracted here; round 6 showed two of them (chained verification, the substitute vendor rule) change PR B's Tasks 11 and 12, so those two are settled there now. PR #52's bot reviews added three more. Four points are open, all inside PR D, and none changes what PRs A–C ship:
+
+- point 1 blocks Task 22;
+- point 2 blocks Tasks 20 and 22;
+- point 3 blocks Tasks 21 and 22;
+- point 4 (its `cr:` half) blocks Tasks 21 and 23.
+
+**No task is settled where it touches an open point.** The PR D amendment resolves each one with tests, and gets its own plan review, before the first task it blocks starts:
 
 1. **Clock for a returning head (round 5, P2).** `headPushedAt` (Task 22) takes the earliest run for the head SHA over the whole PR. If a PR moves A → B → back to A, the clock for the current arrival of A starts at A's first arrival, so substitution can be allowed a minute after the head returns. Runs with an empty PR list (fork runs) can also come from another PR. Decide which arrival starts the wait, how that survives gate re-runs, and test a returning SHA and an unrelated empty-list run.
 2. **A late Gemini verdict after substitution (PR #52, Codex App, P2).** If Gemini runs past 30 minutes, a substitute can turn the gate green, and Gemini's later issue comment triggers no gate run, so a new blocking finding in it never reaches the gate. Candidate: Gemini is `needs-substitute` on the clock only when no Gemini run for the head is queued or in progress (`prRunsFor` reads run status), with a job `timeout-minutes` below 30; or a completion-triggered gate run that reports on the current head. Test a late Gemini finding after a green substituted gate. Touches Tasks 20 and 22.

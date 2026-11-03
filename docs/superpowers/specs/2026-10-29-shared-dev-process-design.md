@@ -424,6 +424,8 @@ whose input identity equals the current one.
 - **What it reads, all live from the API:** labels, body fields, reviews and their `commit_id`s,
   threads, review-body markers, Gemini's verdict marker, and the records.
 - **It passes when:**
+  - the diff is within Gemini's 400,000-byte limit. It checks this first: an oversized PR fails
+    with "split this PR", whatever substitutes exist;
   - every required slot is covered or substituted;
   - every finding that blocks by default on the PR appears in the record with an acceptable
     disposition.
@@ -433,6 +435,9 @@ whose input identity equals the current one.
 - **A bot review that arrives after the record** with a new blocking finding fails the gate until the
   record is updated. A nit doesn't. Because the bots never review the evidence directory, this
   cannot loop.
+  - **Not yet met for a late Gemini verdict.** Gemini posts an issue comment, which triggers no gate
+    run, so a blocking finding in a verdict that lands after the gate has passed is not seen until
+    the next run. Plan OPEN point 2 settles this, with tests, before `review-gate` is made required.
 
 ### 5.6 What blocks, and what can be declined (D-7, D-8, D-14)
 
