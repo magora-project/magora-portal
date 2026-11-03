@@ -2,7 +2,8 @@
 
 - **Date:** 2026-10-29
 - **Status:** approved rev 5 (David, 2026-10-29). Rev 5 applies Codex round 4. On approval David
-  also settled the open items on accounts and the trial period (D-15, D-16). See §10.
+  also settled the open items on accounts and the trial period (D-15, D-16; §8). Review history:
+  §10.
 - **Builds on:** Spec 1 (`2026-10-15-repo-harness-design.md`): CI, depth labels, Layer 1 / Layer 2
   review.
 - **Reverses one Spec 1 decision:** pre-push review was "discipline, not a control". Here a skipped
@@ -162,7 +163,7 @@ PRs.
 | 11 | **PR:** template fields and depth label | GitHub | `label-gate` (existing) and `review-evidence` (new) |
 | 12 | **CI** | GitHub | Existing required checks |
 | 13 | **Bot reviews**, triage, then the PR review record (§5.5) | GitHub, then local | `review-gate` (new) |
-| 14 | **Merge:** squash, by the author | GitHub | Branch protection |
+| 14 | **Merge:** squash, by the author (a maintainer, for fork and Dependabot PRs) | GitHub | Branch protection |
 
 ### 5.2 Lane threshold and PR fields
 
@@ -358,8 +359,8 @@ dispatch:
 
 - The evidence directory is added to `.coderabbit.yaml` `path_filters`.
 - Gemini's diff gets the pathspec `':!<evidence-dir>'`.
-- The Codex App has no path filter, so its review guidance in `AGENTS.md` says to skip the evidence
-  directory.
+- The Codex App has no path filter, so review guidance telling it to skip the evidence directory is
+  added to `AGENTS.md` (plan Task 20).
 - Any finding located only in the evidence directory is outside the gate, whichever bot raised it.
   That last rule is what guarantees no loop.
 
@@ -439,6 +440,10 @@ whose input identity equals the current one.
   - **Not yet met for a late Gemini verdict.** Gemini posts an issue comment, which triggers no gate
     run, so a blocking finding in a verdict that lands after the gate has passed is not seen until
     the next run. Plan OPEN point 2 settles this, with tests, before `review-gate` is made required.
+  - **The same gap delays a clean Codex review.** Its `codex-review-state:v1` marker is also an issue
+    comment, so a gate that is waiting for Codex coverage stays red until the next PR event. This
+    fails closed; until OPEN point 2 settles it, the author re-runs `review-gate` after the marker
+    appears.
 
 ### 5.6 What blocks, and what can be declined (D-7, D-8, D-14)
 
@@ -578,7 +583,7 @@ magora PRs, which are `subtle-correctness` because `.claude/**` and `AGENTS.md` 
      - a fork with maintainer edits off;
      - a force-push followed by a full-review request.
 6. **Noah onboards on Windows** from `CONTRIBUTING.md` alone, and the gaps he hits are fixed.
-7. **Next step: talk with Noah about his personal layer** (§8.1).
+7. **Next step: talk with Noah about his personal layer** (§8, item 1).
 
 ## 7. Left to the builder
 
