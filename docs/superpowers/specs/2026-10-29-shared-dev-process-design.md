@@ -433,6 +433,17 @@ Bot severity labels set the defaults, and the author makes the final call.
 **Reclassifying.** Moving a finding from blocking to nit needs a recorded one-line reason, which the
 merging maintainer can see. A nit the author thinks matters can simply be fixed.
 
+**A fixed bot finding.** The record names the fix commit. The gate accepts it only when:
+
+- the fix commit is in the head's history, comes strictly after the commit the finding was reported
+  on, and changes the input identity from that commit's; and
+- usable coverage evidence from the same bot (§5.5) sits on the fix commit or a later one with the
+  current identity (a thread must also be resolved), or an accepted substitute verified the fix.
+
+So the review that raised a finding can never verify its own fix. The gate orders commits by
+ancestry, never by dates, which the author sets. A finding whose reported commit is unknown can be
+verified only by a substitute.
+
 **Pre-existing** applies only when:
 
 - the defect is present on the base revision under the same reachable conditions; and
