@@ -292,8 +292,9 @@ connection strings) in the Rehearsals table, the agent beside him adjusts this r
 
 One such failure is expected now and then, and is not a runbook defect: the two dumps are taken
 separately while production stays writable, so a user deleted between them leaves `public` rows
-pointing at an `auth.users` row the second dump does not hold. Step 4 then fails with a foreign-key
-violation naming a user column (`user_id`, `owner_id` or `id`). Record it and retry as above, with
+pointing at an `auth.users` row the second dump does not hold. The `== step 4 of 5` line (restoring
+(a)) then fails with a foreign-key violation naming a user column (for example `user_id`, `owner_id`
+or `id`). Record it and retry as above, with
 fresh dumps (David, 2026-11-03: accepted rather than taking both dumps from one snapshot).
 
 ## 4. Compare row counts
@@ -377,8 +378,8 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
 
    Both exits must be `0`, and the line count must equal the number the second command prints (the
    restored dump's eligible objects, capped at 20). That number is N, the sample size the later steps
-   check against; write it in your notes. Production held 9 objects in all on 2026-11-03, so expect N of
-   9 or fewer. A non-zero exit or a mismatch is a failed rehearsal. N of `0` means no object would be
+   check against; write it in your notes. (Production held only 9 objects on 2026-11-03, so N below
+   20 is normal.) A non-zero exit or a mismatch is a failed rehearsal. N of `0` means no object would be
    read back, so the rehearsal cannot pass either; if the count is genuinely `0` (every object is
    newer than `<latest>`), retry after the next marked night. In each case record it and run "Clean
    up" steps 1 and 2. Turn the sample into

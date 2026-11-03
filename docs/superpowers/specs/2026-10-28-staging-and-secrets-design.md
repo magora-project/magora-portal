@@ -161,11 +161,13 @@ least the 7 days of database backups.
 
 The job compares objects by MD5 (`--checksum`), and when either side of a comparison has none,
 such as a multipart upload, rclone compares by size only: a changed object of the same size could
-be carried over from the previous night and still pass the check. So the job counts objects
-without an MD5 in each bucket before copying it, and again on both the source and the R2 copy after
-the check; any such object fails that bucket, and the night is not marked complete (David,
-2026-11-03). An object overwritten without an MD5 after the second count is not in that night's
-copy at all, so the marked copy holds its earlier version. On 2026-11-03 all 9 production objects
+be carried over from the previous night and still pass the check, since rclone's check passes a
+comparison it could only make by size. So the job reads MD5s itself: before copying a bucket it
+refuses one holding any object without an MD5, and after the check it lists the R2 copy and then
+the source again and requires that neither lacks an MD5 and that every path on both sides has the
+same MD5. Any failure fails that bucket, and the night is not marked complete (David, 2026-11-03).
+A source change during that last listing shows as a mismatch, so it fails the night rather than
+passing it; a change after it is simply not in that night's copy, which holds the earlier version. On 2026-11-03 all 9 production objects
 had an MD5 (read from `storage.objects`; the runbook's rclone probe is still to confirm it).
 
 ### 5.2 Baseline migration

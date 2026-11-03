@@ -82,9 +82,12 @@ RCLONE_CONFIG_BACKUP_PROBE_ENDPOINT='https://wqxmmuwrfltpaxnuddwk.supabase.co/st
 rm -rf "$PROBE_DIR"
 ```
 
-The job runs the same count on each bucket before copying it, and again on the bucket and its R2
-copy after the check. If any object has no MD5, that bucket fails (`<bucket>: N object(s) without an
-MD5; not copied`, or the after-check line) and the night is not marked complete. If the probe or the
+The job runs the same count on each bucket before copying it. After the check it lists the R2 copy's
+MD5s and the bucket's again, and requires that neither lacks an MD5 and that every path on both
+sides has the same MD5, since `rclone check` passes a comparison it could only make by size. Any
+failure fails that bucket (`<bucket>: N object(s) without an MD5; not copied`, or the after-check
+line) and the night is not marked complete. An object changed while the job runs can fail a night
+this way; the next night copies it. If the probe or the
 job shows this, or `md5sum FAILED`, David decides how that bucket is backed up (for example, copied
 without `--copy-dest` and checked by content with `rclone check --download`); until then it has no
 nightly copy.

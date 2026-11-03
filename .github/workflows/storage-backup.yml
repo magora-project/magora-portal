@@ -100,14 +100,20 @@ jobs:
           fi
 
           # --checksum falls back to size only when either side of a comparison has no MD5 (e.g. a
-          # multipart upload), so --copy-dest could keep a changed object of the same size and the
-          # check would still pass. Prints how many objects under $1 have no MD5; fails if the
-          # listing fails. A missing MD5 prints as spaces; no awk interval syntax, for mawk.
-          count_no_md5() {
-            local sums
-            sums="$(rclone md5sum "$1" </dev/null)" || return 1
-            printf '%s\n' "$sums" \
-              | awk 'NF && !(substr($0, 33, 2) == "  " && substr($0, 1, 32) ~ /^[0-9a-f]+$/) { n++ } END { print n + 0 }'
+          # multipart upload), so --copy-dest could keep a changed object of the same size, and
+          # rclone check passes such a comparison ("hashes could not be checked"). So the job reads
+          # MD5s itself with `rclone md5sum`, whose lines are "<32 hex>  <path>"; a missing MD5
+          # prints as spaces. No awk interval syntax, for mawk.
+          # stdin: md5sum lines. Prints how many carry no MD5.
+          no_md5() {
+            awk 'NF && !(substr($0, 33, 2) == "  " && substr($0, 1, 32) ~ /^[0-9a-f]+$/) { n++ } END { print n + 0 }'
+          }
+          # $1: backup md5sum lines, $2: source md5sum lines. Prints how many paths present on both
+          # sides have different MD5s. Paths only on one side are left to rclone check.
+          md5_mismatches() {
+            awk 'NR == FNR { if (length($0) > 34) d[substr($0, 35)] = substr($0, 1, 32); next }
+                 length($0) > 34 && (substr($0, 35) in d) && d[substr($0, 35)] != substr($0, 1, 32) { n++ }
+                 END { print n + 0 }' <(printf '%s\n' "$1") <(printf '%s\n' "$2")
           }
 
           failed=0
@@ -115,11 +121,12 @@ jobs:
             [ -n "$bucket" ] || continue
             dest="r2:${R2_BUCKET}/nightly/${today}/${bucket}"
             echo "== ${bucket}"
-            if ! nohash="$(count_no_md5 "supabase:${bucket}")"; then
+            if ! src_sums="$(rclone md5sum "supabase:${bucket}" </dev/null)"; then
               echo "::error::${bucket}: listing MD5s failed; not copied"
               failed=1
               continue
             fi
+            nohash="$(printf '%s\n' "$src_sums" | no_md5)"
             if [ "$nohash" -ne 0 ]; then
               echo "::error::${bucket}: ${nohash} object(s) without an MD5; not copied (see docs/runbooks/storage-backup.md)"
               failed=1
@@ -139,15 +146,19 @@ jobs:
               failed=1
               continue
             fi
-            # Recount both sides after the check: an object overwritten without an MD5 while the
-            # bucket was copied, or a copy in R2 that has none, was compared by size only.
-            if ! src_nohash="$(count_no_md5 "supabase:${bucket}")" || ! dst_nohash="$(count_no_md5 "$dest")"; then
+            # The check may have compared some objects by size only, so after it compare the MD5s
+            # here: neither side may lack one, and every path on both sides must match. Backup is
+            # listed first, so a source change in between shows as a mismatch, never a pass.
+            if ! dst_sums="$(rclone md5sum "$dest" </dev/null)" || ! src_sums="$(rclone md5sum "supabase:${bucket}" </dev/null)"; then
               echo "::error::${bucket}: listing MD5s after the check failed"
               failed=1
               continue
             fi
-            if [ "$src_nohash" -ne 0 ] || [ "$dst_nohash" -ne 0 ]; then
-              echo "::error::${bucket}: after the check, ${src_nohash} source and ${dst_nohash} backup object(s) without an MD5"
+            src_nohash="$(printf '%s\n' "$src_sums" | no_md5)"
+            dst_nohash="$(printf '%s\n' "$dst_sums" | no_md5)"
+            mismatched="$(md5_mismatches "$dst_sums" "$src_sums")"
+            if [ "$src_nohash" -ne 0 ] || [ "$dst_nohash" -ne 0 ] || [ "$mismatched" -ne 0 ]; then
+              echo "::error::${bucket}: after the check, ${src_nohash} source and ${dst_nohash} backup object(s) without an MD5, ${mismatched} with different MD5s"
               failed=1
             fi
           done <<< "$buckets"
