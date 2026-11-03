@@ -88,6 +88,7 @@ data restores, not that the app would run on it.
    printf '%s\n' \
      'RCLONE_CONFIG_RESTORE_TARGET_TYPE=s3' \
      'RCLONE_CONFIG_RESTORE_TARGET_PROVIDER=Other' \
+     'RCLONE_CONFIG_RESTORE_TARGET_LIST_VERSION=2' \
      'RCLONE_CONFIG_RESTORE_TARGET_REGION=<region>' \
      'RCLONE_CONFIG_RESTORE_TARGET_ACCESS_KEY_ID="op://Magora Project/<scratch s3 item>/<key id field>"' \
      'RCLONE_CONFIG_RESTORE_TARGET_SECRET_ACCESS_KEY="op://Magora Project/<scratch s3 item>/<secret field>"' \
@@ -464,6 +465,10 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    ```
 
    Anything other than N is a failed rehearsal: record which objects failed and run "Clean up" steps 1 and 2.
+   One cause is not a backup defect: an object moved or renamed after `<latest>` keeps its `created_at`,
+   so step 3 samples its new path, which that night's copy holds under the old one, and step 4 or this
+   step fails on it. If the failed objects are such moves, record that and rehearse again after the
+   next marked night.
 
 ## 6. Clean up
 

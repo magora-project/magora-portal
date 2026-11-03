@@ -68,6 +68,7 @@ PROBE_DIR="$(mktemp -d)"
 printf '%s\n' \
   'RCLONE_CONFIG_BACKUP_PROBE_TYPE=s3' \
   'RCLONE_CONFIG_BACKUP_PROBE_PROVIDER=Other' \
+  'RCLONE_CONFIG_BACKUP_PROBE_LIST_VERSION=2' \
   'RCLONE_CONFIG_BACKUP_PROBE_REGION=<SUPABASE_S3_REGION>' \
   'RCLONE_CONFIG_BACKUP_PROBE_ACCESS_KEY_ID="op://Magora Project/<supabase s3 item>/<key id field>"' \
   'RCLONE_CONFIG_BACKUP_PROBE_SECRET_ACCESS_KEY="op://Magora Project/<supabase s3 item>/<secret field>"' \
@@ -128,6 +129,7 @@ any command prints `REFUSED` or fails, stop and run step 6. The one exception is
    printf '%s\n' \
      'RCLONE_CONFIG_RESTORE_TARGET_TYPE=s3' \
      'RCLONE_CONFIG_RESTORE_TARGET_PROVIDER=Other' \
+     'RCLONE_CONFIG_RESTORE_TARGET_LIST_VERSION=2' \
      'RCLONE_CONFIG_RESTORE_TARGET_REGION=<SUPABASE_S3_REGION>' \
      'RCLONE_CONFIG_RESTORE_TARGET_ACCESS_KEY_ID="op://Magora Project/<supabase s3 item>/<key id field>"' \
      'RCLONE_CONFIG_RESTORE_TARGET_SECRET_ACCESS_KEY="op://Magora Project/<supabase s3 item>/<secret field>"' \
