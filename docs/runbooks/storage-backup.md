@@ -16,6 +16,12 @@ after that date, the lifecycle rule deletes it 14 days after it was written, and
 for the restore. Both restore pickers apply this filter.
 An object uploaded between a bucket's copy and its check is missing from R2, so that night's check fails loudly; the next night copies it.
 An object uploaded after its bucket's check is not in that night's copy, and the night can still be marked complete; the next night copies it.
+Copies run without `-M` (`--metadata`): rclone carries each object's content type, but not
+`Cache-Control` or custom metadata. This was accepted on 2026-11-03 (PR #46): over S3, every production
+object carried only `content-type` and Supabase's default `cache-control` (`max-age=3600`), and none had
+`content-encoding` or user metadata. `docs/runbooks/restore.md` §5 step 7 checks the headers a restore
+serves. If a restore loses a header, or objects start carrying non-default metadata, add `-M` to the
+backup and restore copies.
 
 ## Retention and lock
 

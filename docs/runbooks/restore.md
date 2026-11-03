@@ -469,6 +469,38 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    ```
 
    Anything other than N is a failed rehearsal: record which objects failed and run "Clean up" steps 1 and 2.
+7. Check the restored objects are served with production's `Content-Type` and `Cache-Control`. The
+   backup and restore copies run without `-M`, so rclone carries the content type but not other
+   metadata; this was accepted on 2026-11-03, when every production object had Supabase's default
+   `max-age=3600` and no custom metadata (PR #46). This step shows whether a restore still serves the
+   same headers. List production's values for the N ids (a read) and the headers scratch serves, then
+   compare:
+
+   ```sh
+   cat > "$RESTORE_DIR/meta.sql" <<'SQL'
+   select id, metadata->>'mimetype', metadata->>'cacheControl' from storage.objects where id in (:ids);
+   SQL
+   op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+     'psql "$PROD_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -v ids="$2" -f "$1/meta.sql"' _ "$RESTORE_DIR" "$IDS" \
+     > "$RESTORE_DIR/meta-prod.raw"; echo "prod exit $?"
+   op run --env-file="$RESTORE_DIR/refs.env" -- sh -c '
+     . "$2/guard.sh" && guard "$1" || exit 1
+     while IFS="|" read -r id bucket name; do
+       path="$(node "$2/enc.js" "$bucket/$name")"
+       printf "header = \"Authorization: Bearer %s\"\nheader = \"apikey: %s\"\n" "$SCRATCH_SERVICE_KEY" "$SCRATCH_SERVICE_KEY" |
+         curl -s -K - -o /dev/null -w "$id|%header{content-type}|%header{cache-control}\n" "https://$1.supabase.co/storage/v1/object/authenticated/$path"
+     done < "$2/sample.txt"' _ <scratch-ref> "$RESTORE_DIR" > "$RESTORE_DIR/meta-scratch.raw"; echo "scratch exit $?"
+   LC_ALL=C sort "$RESTORE_DIR/meta-prod.raw" > "$RESTORE_DIR/meta-prod.txt"
+   LC_ALL=C sort "$RESTORE_DIR/meta-scratch.raw" > "$RESTORE_DIR/meta-scratch.txt"
+   wc -l < "$RESTORE_DIR/meta-prod.txt"; wc -l < "$RESTORE_DIR/meta-scratch.txt"
+   diff "$RESTORE_DIR/meta-prod.txt" "$RESTORE_DIR/meta-scratch.txt"; echo "diff exit $?"
+   ```
+
+   `IDS` is step 5's. curl's `%header{}` needs curl 7.84 or later. Expect `prod exit 0`, two counts of
+   N and `diff exit 0`. Record the result in the Rehearsals table's Result column. A differing
+   `Content-Type` is a failed rehearsal: record it and run "Clean up" steps 1 and 2. A differing
+   `Cache-Control` alone is not a failed rehearsal, but it means a restore loses that header: record it
+   and reopen the `-M` decision (`docs/runbooks/storage-backup.md`, "What the job copies").
 
 ## 6. Clean up
 
