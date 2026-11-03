@@ -84,7 +84,9 @@ rm -rf "$PROBE_DIR"
 ```
 
 The job runs the same count on each bucket before copying it, and fails a bucket whose check reports
-`hashes could not be checked`. After the check it lists the R2 copy's
+`hashes could not be checked`. That match is checked against rclone 1.60 (Ubuntu 24.04's package), so
+the job refuses to run on any other rclone version; after a runner or package change, re-check the
+two patterns against the new version's `fs/operations/check.go` and move the pin. After the check it lists the R2 copy's
 MD5s and the bucket's again, and requires that neither lacks an MD5 and that every path on both
 sides has the same MD5, since `rclone check` passes a comparison it could only make by size. Any
 failure fails that bucket (`<bucket>: N object(s) without an MD5; not copied`, or the after-check

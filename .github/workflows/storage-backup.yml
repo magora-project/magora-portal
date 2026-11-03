@@ -33,6 +33,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rclone
           rclone version
+          # The size-only gate in the next step matches rclone 1.60's check output ("N differences
+          # found", "N hashes could not be checked"; fs/operations/check.go at v1.60.1). Another
+          # version may word it differently and let a size-only pass through, so refuse to run
+          # until the gate is re-checked against that version and this pin is moved.
+          version_out="$(rclone version)"
+          case "${version_out%%$'\n'*}" in
+            'rclone v1.60.'*) ;;
+            *)
+              echo "::error::rclone is not 1.60.x; re-check the size-only gate's patterns against this version, then update this pin"
+              exit 1
+              ;;
+          esac
 
       - name: Copy and check every bucket
         env:
