@@ -84,6 +84,7 @@ data restores, not that the app would run on it.
      'PROD_DB_URL="op://Magora Project/<prod db item>/<field>"' \
      'SCRATCH_DB_URL="op://Magora Project/<scratch db item>/<field>"' \
      'SCRATCH_SERVICE_KEY="op://Magora Project/<scratch api item>/<service role field>"' \
+     'PROD_SERVICE_KEY="op://Magora Project/<prod api item>/<service role field>"' \
      > "$RESTORE_DIR/refs.env"
    printf '%s\n' \
      'RCLONE_CONFIG_RESTORE_TARGET_TYPE=s3' \
@@ -104,7 +105,8 @@ data restores, not that the app would run on it.
    Do not add a `RESTORE_TARGET_ENDPOINT` line; the endpoint is written on each command. Keep the
    `NO_CHECK_BUCKET` line: without it, `rclone copy` creates a destination bucket that does not exist, so
    a mistyped bucket name is created and filled instead of failing.
-4. Write the ref guard and the path encoder (the next block, which is unindented so it pastes as is).
+4. Write the ref guard, the path encoder and the header fetcher used in §5 step 7 (the next block,
+   which is unindented so it pastes as is).
    Every command that touches the scratch project calls the guard first, and it refuses to run if the
    target is production or is not the ref you pass. If any command prints `REFUSED`, stop and run
    "Clean up" step 2 (and step 1 if anything was restored).
@@ -150,6 +152,15 @@ GUARD
 cat > "$RESTORE_DIR/enc.js" <<'ENC'
 process.stdout.write(process.argv[2].split("/").map(encodeURIComponent).join("/"));
 ENC
+cat > "$RESTORE_DIR/heads.sh" <<'HEADS'
+# sh heads.sh <ref> <dir>, key in HEADS_KEY. Prints id|status|content-type|cache-control per sampled object.
+while IFS="|" read -r id bucket name; do
+  path="$(node "$2/enc.js" "$bucket/$name")"
+  printf 'header = "Authorization: Bearer %s"\nheader = "apikey: %s"\n' "$HEADS_KEY" "$HEADS_KEY" |
+    curl -s -K - -o /dev/null -w "$id|%{http_code}|%header{content-type}|%header{cache-control}\n" \
+      "https://$1.supabase.co/storage/v1/object/authenticated/$path"
+done < "$2/sample.txt"
+HEADS
 ```
 
 ## 1. Create the scratch project
@@ -473,32 +484,31 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    backup and restore copies run without `-M`, so rclone carries the content type but not other
    metadata; this was accepted on 2026-11-03, when every production object had Supabase's default
    `max-age=3600` and no custom metadata (PR #46). This step shows whether a restore still serves the
-   same headers. List production's values for the N ids (a read) and the headers scratch serves, then
-   compare:
+   same headers. Supabase can change headers when it serves an object (for example, it serves
+   `text/html` as `text/plain`), so the stored metadata is not compared: the same request is made to
+   both projects and the served headers are compared. The production requests are reads (GET, with
+   `PROD_SERVICE_KEY`); this step is the only one that uses that key.
+
+   `heads.sh` was written in "Before you start" step 4.
 
    ```sh
-   cat > "$RESTORE_DIR/meta.sql" <<'SQL'
-   select id, metadata->>'mimetype', metadata->>'cacheControl' from storage.objects where id in (:ids);
-   SQL
    op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
-     'psql "$PROD_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -v ids="$2" -f "$1/meta.sql"' _ "$RESTORE_DIR" "$IDS" \
-     > "$RESTORE_DIR/meta-prod.raw"; echo "prod exit $?"
-   op run --env-file="$RESTORE_DIR/refs.env" -- sh -c '
-     . "$2/guard.sh" && guard "$1" || exit 1
-     while IFS="|" read -r id bucket name; do
-       path="$(node "$2/enc.js" "$bucket/$name")"
-       printf "header = \"Authorization: Bearer %s\"\nheader = \"apikey: %s\"\n" "$SCRATCH_SERVICE_KEY" "$SCRATCH_SERVICE_KEY" |
-         curl -s -K - -o /dev/null -w "$id|%header{content-type}|%header{cache-control}\n" "https://$1.supabase.co/storage/v1/object/authenticated/$path"
-     done < "$2/sample.txt"' _ <scratch-ref> "$RESTORE_DIR" > "$RESTORE_DIR/meta-scratch.raw"; echo "scratch exit $?"
-   LC_ALL=C sort "$RESTORE_DIR/meta-prod.raw" > "$RESTORE_DIR/meta-prod.txt"
-   LC_ALL=C sort "$RESTORE_DIR/meta-scratch.raw" > "$RESTORE_DIR/meta-scratch.txt"
-   wc -l < "$RESTORE_DIR/meta-prod.txt"; wc -l < "$RESTORE_DIR/meta-scratch.txt"
-   diff "$RESTORE_DIR/meta-prod.txt" "$RESTORE_DIR/meta-scratch.txt"; echo "diff exit $?"
+     'HEADS_KEY="$PROD_SERVICE_KEY" sh "$1/heads.sh" wqxmmuwrfltpaxnuddwk "$1"' _ "$RESTORE_DIR" \
+     > "$RESTORE_DIR/heads-prod.raw"; echo "prod exit $?"
+   op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+     '. "$2/guard.sh" && guard "$1" && HEADS_KEY="$SCRATCH_SERVICE_KEY" sh "$2/heads.sh" "$1" "$2"' _ <scratch-ref> "$RESTORE_DIR" \
+     > "$RESTORE_DIR/heads-scratch.raw"; echo "scratch exit $?"
+   LC_ALL=C sort "$RESTORE_DIR/heads-prod.raw" > "$RESTORE_DIR/heads-prod.txt"
+   LC_ALL=C sort "$RESTORE_DIR/heads-scratch.raw" > "$RESTORE_DIR/heads-scratch.txt"
+   wc -l < "$RESTORE_DIR/heads-prod.txt"; wc -l < "$RESTORE_DIR/heads-scratch.txt"
+   diff "$RESTORE_DIR/heads-prod.txt" "$RESTORE_DIR/heads-scratch.txt"; echo "diff exit $?"
    ```
 
-   `IDS` is step 5's. curl's `%header{}` needs curl 7.84 or later. Expect `prod exit 0`, two counts of
-   N and `diff exit 0`. Record the result in the Rehearsals table's Result column. A differing
-   `Content-Type` is a failed rehearsal: record it and run "Clean up" steps 1 and 2. A differing
+   curl's `%header{}` needs curl 7.84 or later. Expect `prod exit 0`, `scratch exit 0`, two counts of
+   N, every status `200`, and `diff exit 0`. Record the result in the Rehearsals table's Result column.
+   A `REFUSED`, a status other than `200`, or a differing `Content-Type` is a failed rehearsal: record
+   it and run "Clean up" steps 1 and 2. (An object changed or deleted in production since `<latest>`
+   also differs; check its `updated_at` before calling it a restore defect.) A differing
    `Cache-Control` alone is not a failed rehearsal, but it means a restore loses that header: record it
    and reopen the `-M` decision (`docs/runbooks/storage-backup.md`, "What the job copies").
 
