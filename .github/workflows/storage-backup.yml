@@ -142,7 +142,7 @@ jobs:
               continue
             fi
             check_rc=0
-            check_log="$(rclone check "supabase:${bucket}" "$dest" --checksum --one-way 2>&1)" || check_rc=$?
+            check_log="$(rclone check "supabase:${bucket}" "$dest" --checksum --one-way --log-level NOTICE 2>&1)" || check_rc=$?
             printf '%s\n' "$check_log"
             if [ "$check_rc" -ne 0 ]; then
               echo "::error::${bucket}: check failed"
@@ -150,7 +150,14 @@ jobs:
               continue
             fi
             # A pass that compared some object by size only ("N hashes could not be checked") is
-            # not a pass: that object may be a stale --copy-dest carry-over.
+            # not a pass: that object may be a stale --copy-dest carry-over. The log level is pinned
+            # so the notice is printed, and the always-printed summary must be present, so a change
+            # in rclone's output fails the bucket instead of hiding the notice.
+            if ! grep -Eq '[0-9]+ differences found' <<< "$check_log"; then
+              echo "::error::${bucket}: check output has no 'differences found' summary; cannot tell how it compared"
+              failed=1
+              continue
+            fi
             if grep -Eq '[1-9][0-9]* hashes could not be checked' <<< "$check_log"; then
               echo "::error::${bucket}: check compared some objects by size only"
               failed=1

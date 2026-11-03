@@ -283,11 +283,11 @@ otherwise fail with `schema "public" already exists` on every rehearsal and stop
 revoke step. The comment on `public` is still restored. The listing is written to `public.full.list`
 first and filtered from that file, so a failed `pg_restore -l` (not only a failed filter or write)
 stops the run before step 1, with `== before step 1: list (a)` as the last `==` line. Nothing has
-been restored then. Do not run "Clean up" for this stop: `$RESTORE_DIR` (with `refs.env`,
-`guard.sh` and the SQL files) is still needed. Fix the cause (usually a missing or truncated
-`public.dump`), redo §2 in full (counts, extensions, both dumps) so the counts still bracket the
-dumps, then run the block again. This is the one failure that needs neither cleanup nor a new
-scratch project.
+been restored then, so the rule at the top applies as written: run "Clean up" step 2 only. The
+scratch project is untouched and can be kept. Fix the cause (usually a missing or truncated
+`public.dump`), then start again from "Before you start" step 2 (a new working directory, the
+references file against the same scratch ref, the guard), then §2 in full, so the counts still
+bracket the dumps, then §3.
 
 Expected messages: `schema "..." already exists, skipping` and `extension "..." already exists, skipping`
 notices from the extensions step are benign. No error is expected from any step. If the lockdown step
