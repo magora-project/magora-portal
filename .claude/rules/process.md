@@ -38,7 +38,7 @@ PR body fields that CI parses (CI checks they are present and well formed, not w
 11. **PR:** template fields and depth label. Evidence: `label-gate` and `review-evidence`.
 12. **CI:** the existing required checks.
 13. **Bot reviews,** triage, then the PR review record. Evidence: `review-gate`.
-14. **Merge:** squash, by the author. Enforced by branch protection.
+14. **Merge:** squash, by the author (a maintainer, for fork and Dependabot PRs). Enforced by branch protection.
 
 ## Review slots and dispatch
 
@@ -79,7 +79,7 @@ On `subtle-correctness`, `completeness` uses whichever of the three vendors is n
 | `dependency` (maintainer supplies) | none | none | none | one `correctness` | per §5.5 |
 | Fork PR (maintainer supplies) | as its lane requires | as its lane requires | as its lane requires | as its lane requires | per §5.5 |
 
-A record covers a review-input identity: for a PR, the patch-id of its own diff against its current merge base, excluding `.review`; for a spec or plan, its git blob hash. A fix commit voids the record that found the problem; the re-review writes a new record that names the one it supersedes, covers the new identity, inherits every undisposed finding, and reviews only the delta (the two identities, or the two blobs for a spec or plan). Its question is "did the fixes break anything, and is anything blocking still open?"
+A record covers a review-input identity: for a PR, the patch-id of its own diff against its current merge base, excluding `.review`; for a spec or plan, its git blob hash. A fix commit voids the record that found the problem; the re-review writes a new record that names the one it supersedes, covers the new identity, inherits every undisposed finding, and reviews only the delta (the two identities, or the two blobs for a spec or plan). Its question is "did the fixes break anything, and is anything blocking still open?" Two exceptions send the full current input instead of the delta alone: when the superseded record's outcome was not `completed` (nobody reviewed the earlier input), and, alongside the delta, when the re-review inherits an undisposed blocking finding (a delta that does not touch a finding cannot show it fixed).
 
 **Substitution.** A bot slot is filled by a local full review of the current identity, by a vendor not already counted on the PR, recorded as `substitute:<bot>`; it inherits that bot's undisposed blocking findings. It applies when the bot is not configured for the PR (Gemini is not configured on fork, Dependabot and draft PRs), after a terminal failure (read only from CodeRabbit's commit-status description such as "Review rate limited" or "Review skipped", an empty review, or the Gemini job's conclusion or its `could-not-run` verdict marker; review bodies are never parsed), or after the timeout with no review (30 minutes after the head commit's push or a full-review request). When all three bots fail on `subtle-correctness`, each of the three vendors fills one slot. A diff over Gemini's 400,000-byte limit means the PR is split.
 
@@ -98,6 +98,10 @@ The bots are told to skip the `.review/` evidence directory (the Codex App has n
 
 **Reclassifying** a finding from blocking to nit needs a recorded one-line reason, which the merging maintainer can see. A nit the author thinks matters can simply be fixed.
 
+**A fixed bot finding** names its fix commit, which must be in the head's history. The gate accepts it when the fix commit comes strictly after the commit the finding was reported on, changes the input identity from that commit's, and the same bot has usable coverage evidence on the fix commit or a later one with the current identity (a thread must also be resolved); or when an accepted substitute verified the fix. Commits are ordered by ancestry, never by dates. So the review that raised a finding never verifies its own fix, and a fix made by amending or rebasing the reported commit needs a substitute: make fixes in a new commit.
+
+**Accepted limitations** (spec §5.6, David, 2026-11-03): an incremental bot review need not re-read a fix, so a fix that a later commit reverts can still pass; and a lockfile cannot be split, so a PR whose diff is over Gemini's limit only because of it cannot pass the gate, and a maintainer merges it by an override outside the gate.
+
 **Pre-existing** applies only when the defect is present on the base revision under the same reachable conditions, and the record gives the reason and the issue that tracks it. An unchanged line that this PR newly makes reachable is this PR's regression, not pre-existing.
 
 The PR review record is required whenever the PR has at least one required slot or any finding that blocks by default; a `mechanical` PR with no such finding needs none. It lists each required slot with the review ID it relies on, each default-blocking finding with its stable ID and disposition, and each reclassification with its reason. Nits appear only if reclassified from blocking. `review-gate` passes when every required slot is covered or substituted, and every finding that blocks by default on the PR appears in the record with an acceptable disposition. A bot review arriving after the record with a new blocking finding fails the gate until the record is updated; a nit does not.
@@ -109,6 +113,8 @@ The PR review record is required whenever the PR has at least one required slot 
 ## Evidence
 
 (spec §5.3) Records are committed to the PR in one evidence directory, `.review/`. PR comments, and checks posted with a personal token, are ruled out. Each record states its type and slot ID, the input identity it covers, the reviewer's model and vendor, the vendor that wrote the change, the outcome, the verdict, each default-blocking finding with a stable ID and disposition, and the record it supersedes. Conformance records also carry the covered task IDs, the deviation IDs, and each `command` target with its exit status.
+
+**Fork PRs** (D-11): if the author allows maintainer edits, the maintainer pushes the evidence commit to the fork branch; otherwise the maintainer moves the change onto a same-repo branch, opens a new PR there, and regenerates the evidence. Either way a fork's content is untrusted code, and supplying its evidence runs it: `command` targets, tests, lint and build configs, dependencies installed by `npm ci`, the `.claude/` settings, hooks and skills an agent session loads, and `.githooks/` hooks, including `post-checkout` on checkout itself. So the maintainer reads the PR's **whole** diff before checking the branch out (on the PR page, or `git fetch` then `git diff`, which run none of it), and before any install, test, lint, build, agent session or push from that checkout.
 
 `review-evidence` passes a record only when all four hold:
 
