@@ -166,9 +166,12 @@ comparison it could only make by size. So the job reads MD5s itself: before copy
 refuses one holding any object without an MD5, and after the check it lists the R2 copy and then
 the source again and requires that neither lacks an MD5 and that every path on both sides has the
 same MD5. Any failure fails that bucket, and the night is not marked complete (David, 2026-11-03).
-A source change during that last listing shows as a mismatch, so it fails the night rather than
-passing it; a change after it is simply not in that night's copy, which holds the earlier version. On 2026-11-03 all 9 production objects
-had an MD5 (read from `storage.objects`; the runbook's rclone probe is still to confirm it).
+An object overwritten after the copy read it and before that last listing shows as a mismatch, so
+it fails the night. An object uploaded under a new name after its bucket's check, or changed after
+the last listing, is not in that night's copy (which holds its earlier version, if any), and the
+night can still be marked complete; the next night copies it. So a marked night is a complete copy
+of each bucket as of that bucket's check. On 2026-11-03 all 9 production objects had an MD5 (read
+from `storage.objects`; the runbook's rclone probe is still to confirm it).
 
 ### 5.2 Baseline migration
 

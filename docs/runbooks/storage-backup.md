@@ -9,12 +9,13 @@ newest earlier dated prefix (`--copy-dest`). The job ends with
 `rclone check --one-way` per bucket (source objects must exist and match in R2; extra objects in R2 are ignored); any failure fails the job. A bucket with any object that has no MD5 is refused (see the checksum note below). The job never deletes anything.
 Only when every bucket's copy and check passed does the job write a completion marker,
 `complete/<YYYY-MM-DD>` (holding the run id), named for the prefix it wrote. A prefix with a marker is a
-complete copy; a prefix without one may be partial. The marker is outside `nightly/`, so no restore copies
+complete copy of each bucket as of that bucket's check; a prefix without one may be partial. The marker is outside `nightly/`, so no restore copies
 it, and it is not under the lock or the lifecycle rule. Markers outlive their prefixes, so a restore
 needs both, and uses a date less than 13 days old: every object in `nightly/<date>/` was written on or
 after that date, the lifecycle rule deletes it 14 days after it was written, and the extra day is margin
 for the restore. Both restore pickers apply this filter.
 An object uploaded between a bucket's copy and its check is missing from R2, so that night's check fails loudly; the next night copies it.
+An object uploaded after its bucket's check is not in that night's copy, and the night can still be marked complete; the next night copies it.
 
 ## Retention and lock
 
