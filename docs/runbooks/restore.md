@@ -317,7 +317,7 @@ Record the three numbers for every table. Any `FAIL` line (a table outside its b
 empty or malformed counts file, or a failed count) is a failed rehearsal: record it and run "Clean up"
 steps 1 and 2.
 
-## 5. Restore 20 objects from R2
+## 5. Restore up to 20 objects from R2
 
 The data restore brought back the `storage.buckets` and `storage.objects` rows, not the bytes.
 
@@ -356,8 +356,8 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    ```
 
    If a bucket named in the sample (step 3 below) is missing, stop and run "Clean up" steps 1 and 2.
-3. Record 20 rows (`id|bucket_id|name`) from `storage.objects`, only objects created before the latest
-   nightly date (`<latest>`), so the R2 copy contains them:
+3. Record up to 20 rows (`id|bucket_id|name`) from `storage.objects`, only objects created before the
+   latest nightly date (`<latest>`), so the R2 copy contains them:
 
    ```sh
    op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
@@ -366,7 +366,10 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    wc -l "$RESTORE_DIR/sample.txt"
    ```
 
-   Expect 20 lines. Turn it into per-bucket file lists:
+   The line count is N, the sample size the later steps check against: 20, or fewer when production
+   holds fewer eligible objects (it held 9 objects in all on 2026-11-03). Write N in your notes. If N is
+   0, there is nothing to rehearse: record that and run "Clean up" steps 1 and 2. Turn it into
+   per-bucket file lists:
 
    ```sh
    awk -F'|' -v d="$RESTORE_DIR" '{print $3 > (d "/" $2 ".files")}' "$RESTORE_DIR/sample.txt"
@@ -416,7 +419,7 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    the production comparison reports a restored object as identical. Any other line is a failed
    rehearsal: record it and run "Clean up" steps 1 and 2.
 5. An upload through Supabase S3 can upsert the `storage.objects` row, so check the rows are the ones
-   restored from the dump. The same 20 ids must still exist; expected result: `20`:
+   restored from the dump. The same N ids must still exist; expected result: N:
 
    ```sh
    IDS="$(cut -d'|' -f1 "$RESTORE_DIR/sample.txt" | sed "s/.*/'&'/" | paste -sd, -)"
@@ -424,8 +427,8 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
      '. "$3/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -At -c "select count(*) from storage.objects where id in ($2)"' _ <scratch-ref> "$IDS" "$RESTORE_DIR"
    ```
 
-6. Download each of the 20 through the Storage API with the scratch service-role key and count the HTTP
-   200s; expected result: `20`. Each path segment is percent-encoded (names with spaces, `#`, `?` or `%`
+6. Download each of the N through the Storage API with the scratch service-role key and count the HTTP
+   200s; expected result: N. Each path segment is percent-encoded (names with spaces, `#`, `?` or `%`
    are real and stay in the sample). The key goes to curl as the `Authorization` and `apikey` headers on
    stdin (`-K -`), never on a command line:
 
@@ -439,7 +442,7 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
      done < "$2/sample.txt" | grep -c "^200$"' _ <scratch-ref> "$RESTORE_DIR"
    ```
 
-   Anything other than `20` is a failed rehearsal: record which objects failed and run "Clean up" steps 1 and 2.
+   Anything other than N is a failed rehearsal: record which objects failed and run "Clean up" steps 1 and 2.
 
 ## 6. Clean up
 
@@ -457,6 +460,6 @@ The first daily backup appeared in the Supabase dashboard on: `<YYYY-MM-DD, fill
 
 ## Rehearsals
 
-| Date | Who | Counts (before / scratch / after: nodes, detections, aci_logs, species, node_habitat) | Pre-copy comparison (`*` / `+` / `!`) | Objects resolved (of 20) | Result |
+| Date | Who | Counts (before / scratch / after: nodes, detections, aci_logs, species, node_habitat) | Pre-copy comparison (`*` / `+` / `!`) | Objects resolved (of N) | Result |
 |---|---|---|---|---|---|
 |  |  |  |  |  |  |
