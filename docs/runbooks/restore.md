@@ -489,11 +489,16 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    production's service-role key. That key is in its own env file, `prod-read.env`, used only by the
    first command below, so no other command in this runbook resolves it.
 
-   Both projects must run the same Storage version, or a difference may come from the version and not
-   the restore (production's is old: see `src/lib/storageUpload.js`). Before running this, note each
-   project's Storage version from the dashboard (Project Settings, Infrastructure) in the Rehearsals
-   row. If they differ, still run the step, but a header difference is attributed to the restore only
-   after the version difference is ruled out.
+   If the two projects run different Storage versions, a header difference may come from the version
+   and not the restore. Record both versions in the Rehearsals row (the endpoint needs no key):
+
+   ```sh
+   curl -s https://wqxmmuwrfltpaxnuddwk.supabase.co/storage/v1/version; echo " production"
+   curl -s https://<scratch-ref>.supabase.co/storage/v1/version; echo " scratch"
+   ```
+
+   If they differ, still run the step, but attribute a header difference to the restore only after
+   the version difference is ruled out.
 
    `heads.sh` was written in "Before you start" step 4.
 
@@ -508,7 +513,7 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    LC_ALL=C sort "$RESTORE_DIR/heads-prod.raw" > "$RESTORE_DIR/heads-prod.txt"
    LC_ALL=C sort "$RESTORE_DIR/heads-scratch.raw" > "$RESTORE_DIR/heads-scratch.txt"
    wc -l < "$RESTORE_DIR/heads-prod.txt"; wc -l < "$RESTORE_DIR/heads-scratch.txt"
-   cut -d'|' -f2 "$RESTORE_DIR/heads-prod.txt" "$RESTORE_DIR/heads-scratch.txt" | grep -cvx 200
+   printf 'non-200: %s\n' "$(cut -d'|' -f2 "$RESTORE_DIR/heads-prod.txt" "$RESTORE_DIR/heads-scratch.txt" | grep -cvx 200)"
    cut -d'|' -f1-3 "$RESTORE_DIR/heads-prod.txt" > "$RESTORE_DIR/types-prod.txt"
    cut -d'|' -f1-3 "$RESTORE_DIR/heads-scratch.txt" > "$RESTORE_DIR/types-scratch.txt"
    diff "$RESTORE_DIR/types-prod.txt" "$RESTORE_DIR/types-scratch.txt"; echo "type diff exit $?"
@@ -517,15 +522,16 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
 
    The exits only show each loop ran: curl reports an HTTP error as a status, not an exit code, so the
    status count is the check. curl's `%header{}` needs curl 7.84 or later. Expect `prod exit 0`,
-   `scratch exit 0`, two counts of N, a non-200 count of `0`, and `type diff exit 0`. Record the result,
+   `scratch exit 0`, two counts of N, `non-200: 0`, and `type diff exit 0`. Record the result,
    both Storage versions and any `full diff` lines in the Rehearsals table's Result column.
 
-   A `REFUSED`, a non-200 count other than `0`, or a `type diff` line (status or `Content-Type`) is a
+   A `REFUSED`, a `non-200` other than `0`, or a `type diff` line (status or `Content-Type`) is a
    failed rehearsal: record it and run "Clean up" steps 1 and 2. An object changed or deleted in
-   production since `<latest>` also differs, so first check the differing ids in production (a read,
-   with step 5's `IDS`):
+   production since `<latest>` also differs, so first list the sampled ids' production `updated_at`
+   (a read; `IDS` is rebuilt as in step 5 in case the shell was restarted) and look at the differing ones:
 
    ```sh
+   IDS="$(cut -d'|' -f1 "$RESTORE_DIR/sample.txt" | sed "s/.*/'&'/" | paste -sd, -)"
    op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
      'psql "$PROD_DB_URL" -X -At -c "select id, updated_at from storage.objects where id in ($1)"' _ "$IDS"
    ```
