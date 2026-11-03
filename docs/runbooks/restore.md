@@ -361,14 +361,21 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
 
    ```sh
    op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
-     '. "$3/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -At -F "|" -c "select id, bucket_id, name from storage.objects where created_at < $2::date order by random() limit 20"' \
-     _ <scratch-ref> "'<latest>'" "$RESTORE_DIR" > "$RESTORE_DIR/sample.txt"
-   wc -l "$RESTORE_DIR/sample.txt"
+     '. "$3/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -c "select id, bucket_id, name from storage.objects where created_at < $2::date order by random() limit 20"' \
+     _ <scratch-ref> "'<latest>'" "$RESTORE_DIR" > "$RESTORE_DIR/sample.txt"; echo "sample exit $?"
+   op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
+     '. "$3/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -At -v ON_ERROR_STOP=1 -c "select least(count(*), 20) from storage.objects where created_at < $2::date"' \
+     _ <scratch-ref> "'<latest>'" "$RESTORE_DIR"; echo "count exit $?"
+   wc -l < "$RESTORE_DIR/sample.txt"
    ```
 
-   The line count is N, the sample size the later steps check against: 20, or fewer when production
-   holds fewer eligible objects (it held 9 objects in all on 2026-11-03). Write N in your notes. If N is
-   0, there is nothing to rehearse: record that and run "Clean up" steps 1 and 2. Turn it into
+   Both exits must be `0`, and the line count must equal the number the second command prints (the
+   restored dump's eligible objects, capped at 20). That number is N, the sample size the later steps
+   check against; write it in your notes. Production held 9 objects in all on 2026-11-03, so expect N of
+   9 or fewer. A non-zero exit or a mismatch is a failed rehearsal. N of `0` means no object would be
+   read back, so the rehearsal cannot pass either; if the count is genuinely `0` (every object is
+   newer than `<latest>`), retry after the next marked night. In each case record it and run "Clean
+   up" steps 1 and 2. Turn the sample into
    per-bucket file lists:
 
    ```sh
@@ -460,6 +467,6 @@ The first daily backup appeared in the Supabase dashboard on: `<YYYY-MM-DD, fill
 
 ## Rehearsals
 
-| Date | Who | Counts (before / scratch / after: nodes, detections, aci_logs, species, node_habitat) | Pre-copy comparison (`*` / `+` / `!`) | Objects resolved (of N) | Result |
+| Date | Who | Counts (before / scratch / after: nodes, detections, aci_logs, species, node_habitat) | Pre-copy comparison (`*` / `+` / `!`) | Objects resolved / N (e.g. 9/9) | Result |
 |---|---|---|---|---|---|
 |  |  |  |  |  |  |
