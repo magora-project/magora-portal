@@ -238,6 +238,9 @@ CI checks that the fields are present and well formed. It does not judge whether
 - **Delta only after a completed review:** the delta is sent only when the superseded record's
   outcome is `completed`. Otherwise nobody reviewed the earlier input, so the re-review gets the
   full current input. An empty reply or a timeout stays an unrun review, never a pass.
+- **Full input while a finding is open:** a re-review that inherits an undisposed blocking finding
+  gets the full current input as well as the delta. A delta that does not touch a finding cannot
+  show it fixed.
 
 **Where records live:** committed to the PR, in one evidence directory.
 
@@ -433,12 +436,13 @@ Bot severity labels set the defaults, and the author makes the final call.
 **Reclassifying.** Moving a finding from blocking to nit needs a recorded one-line reason, which the
 merging maintainer can see. A nit the author thinks matters can simply be fixed.
 
-**A fixed bot finding.** The record names the fix commit. The gate accepts it only when:
+**A fixed bot finding.** The record names the fix commit, which must be in the head's history. The
+gate then accepts it when either:
 
-- the fix commit is in the head's history, comes strictly after the commit the finding was reported
-  on, and changes the input identity from that commit's; and
-- usable coverage evidence from the same bot (§5.5) sits on the fix commit or a later one with the
-  current identity (a thread must also be resolved), or an accepted substitute verified the fix.
+- the fix commit comes strictly after the commit the finding was reported on and changes the
+  input identity from that commit's, and usable coverage evidence from the same bot (§5.5) sits on
+  the fix commit or a later one with the current identity (a thread must also be resolved); or
+- an accepted substitute verified the fix.
 
 So the review that raised a finding can never verify its own fix. The gate orders commits by
 ancestry, never by dates, which the author sets. A finding whose reported commit is unknown can be
