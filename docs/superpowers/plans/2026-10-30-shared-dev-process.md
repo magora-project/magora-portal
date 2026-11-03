@@ -305,8 +305,13 @@ Runs after Tasks 1–7 are committed in the worktree and before PR A is pushed, 
 
 - [ ] **Step 1 (agent, read-only):** list every symlink: `find ~/.claude-b -maxdepth 1 -type l -exec ls -l {} \;`. Expected: 12 links (V7). Write the list into `docs/process/claude-b-inventory.md` as a table: link, target, action (`copy-trimmed`, `copy-whole`, `drop`).
 - [ ] **Step 2 (agent):** propose the trim per link. Kept layer (§5.7): secrets handling, machine safety and local guards, push approval, shell and platform rules. Removed: every personal skill whose name matches a repo skill (`brainstorming`, `writing-plans`, `codex-review`, `push-readiness`, `conformance`), and every process rule now in `.claude/rules/process.md`. For each removed rule, the inventory names where it now lives. David reviews the proposal.
-- [ ] **Step 3 (David, approved):** for each link, `cp -RL <link> <link>.frozen && rm <link> && mv <link>.frozen <link>`, then apply the approved trims to the copies. `settings.json` is copied before any edit, because today it **is** claude-config's file.
-- [ ] **Step 4 (read back):** `find ~/.claude-b -maxdepth 1 -type l` prints nothing; `git -C ~/code/claude-config status --porcelain` is unchanged from before Step 3.
+- [ ] **Step 3 (David, approved; amended 2026-11-03):** freeze through a clone, not per-link copies (spec §5.7 rev 6). Copying the links could not freeze claude-b, because the kept hooks, scripts and rules call `~/code/claude-config` by absolute path. Instead:
+  - clone claude-config to `~/.claude-b-config` on the local branch `claude-b-frozen`;
+  - commit a rewrite of every runtime path to `~/.claude-b-config` (`8357f2e2`);
+  - commit the approved trims (`1e280679`);
+  - copy in `plugins/` and `.venv/` with their absolute paths repointed;
+  - run `bash ~/Desktop/claude-b-freeze.sh`. It writes the rollback `~/Desktop/claude-b-unfreeze.sh` first, then repoints the 11 links into the clone and leaves `plans` alone.
+- [ ] **Step 4 (read back; amended 2026-11-03):** `find ~/.claude-b -maxdepth 1 -type l` prints 12 links: 11 into `~/.claude-b-config`, and `plans` into `~/code/claude-memory/plans/claude-b`. No runtime file names `code/claude-config`. `git -C ~/code/claude-config status --porcelain` is unchanged from before Step 3. Every wired hook path exists. (`claude-b-freeze.sh` read back PASS, 2026-11-03.)
 - [ ] **Step 5:** commit the inventory to PR A (`docs(process): claude-b unlink inventory`). Restart the claude-b session.
 
 ### Task 9 (operator): Verify which skills load (macOS)

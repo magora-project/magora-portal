@@ -96,7 +96,7 @@ clone instead:
   - no runtime file names `code/claude-config`;
   - claude-config's working tree is unchanged;
   - every hook path exists.
-- **Owed in PR A:** spec §5.7 and plan Task 8 Steps 3–4 are amended to say this. The links stay
+- **Amended in PR A:** spec §5.7 (rev 6) and plan Task 8 Steps 3–4 now say this. The links stay
   symlinks, now into the frozen clone, and promotion is a reviewed merge into `claude-b-frozen`.
 
 ## Questions as asked
