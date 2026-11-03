@@ -19,10 +19,11 @@ The owner decisions from Spec 2 §4 carry over unchanged:
 - **E-6:** the gate includes a read-only production check.
 - **E-10:** production migrations wait for a maintainer's approval click; on any failure the job
   stops and alerts, with no automatic rollback.
-- **Rev 4 choice (David, 2026-10-28):** the pre-merge gate runs on a throwaway Supabase stack in
-  the CI runner, and the shared staging project is written only from `main`. Before merge a
-  migration meets synthetic data only; real data meets it in a read-only data check after merge
-  and approval.
+- **Rev 4 choice (David, 2026-10-28):** once this spec is built, the pre-merge gate runs on a
+  throwaway Supabase stack in the CI runner, and the shared staging project is written only from
+  `main`. Before merge a migration meets synthetic data only; real data meets it in a read-only
+  data check after merge and approval. Until then, the interim procedure (Spec 2 §5.5, step 1)
+  still applies a PR's migration to the shared staging project before merge.
 
 ## 2. Starting design
 
