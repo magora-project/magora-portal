@@ -341,7 +341,8 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    objects after 14 days, so the list keeps only dates less than 13 days old (UTC calendar days) and
    leaves a day's margin for the restore itself. This lists the marked dates that have a prefix and are
    less than 13 days old, oldest first; take the last line. If nothing prints (it then exits non-zero),
-   there is no usable complete backup: stop and run "Clean up" step 2.
+   there is no usable complete backup: stop and run "Clean up" steps 1 and 2 (§3 has already restored
+   production data into the scratch project).
 
    ```sh
    op run --env-file="$RESTORE_DIR/rclone.env" -- sh -c '
