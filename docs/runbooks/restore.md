@@ -419,6 +419,10 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    and `!` in the Rehearsals table; which symbol Supabase gives an object that has a row but no bytes
    has not been observed before. A `REFUSED`, a listing exit other than 0, unequal counts, or any `=`
    line is a failed rehearsal: record it and run "Clean up" steps 1 and 2.
+   One cause of unequal counts (`.src` shorter than `.files`) is not a backup defect: an object moved
+   or renamed after that night's copy ran keeps its `created_at`, so step 3 samples its new path, while
+   the copy holds it under the old one. If the missing objects are such moves, record that and
+   rehearse again after the next marked night, which copies the new path.
 
 4. Read the `<scratch-ref>` in the endpoint aloud and match it against the dashboard, as in step 3. Then,
    for each bucket in the sample, copy only its listed objects. The guard runs in the same command and refuses
@@ -465,10 +469,6 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    ```
 
    Anything other than N is a failed rehearsal: record which objects failed and run "Clean up" steps 1 and 2.
-   One cause is not a backup defect: an object moved or renamed after `<latest>` keeps its `created_at`,
-   so step 3 samples its new path, which that night's copy holds under the old one, and step 4 or this
-   step fails on it. If the failed objects are such moves, record that and rehearse again after the
-   next marked night.
 
 ## 6. Clean up
 
