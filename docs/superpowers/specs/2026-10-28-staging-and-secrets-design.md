@@ -162,8 +162,9 @@ least the 7 days of database backups.
 The job compares objects by MD5 (`--checksum`), and when either side of a comparison has none,
 such as a multipart upload, rclone compares by size only: a changed object of the same size could
 be carried over from the previous night and still pass the check, since rclone's check passes a
-comparison it could only make by size. So the job reads MD5s itself: before copying a bucket it
-refuses one holding any object without an MD5, and after the check it lists the R2 copy and then
+comparison it could only make by size. So the job fails a bucket whose check reports any hash it
+could not check, and reads MD5s itself: before copying a bucket it refuses one holding any object
+without an MD5, and after the check it lists the R2 copy and then
 the source again and requires that neither lacks an MD5 and that every path on both sides has the
 same MD5. Any failure fails that bucket, and the night is not marked complete (David, 2026-11-03).
 An object overwritten after the copy read it and before that last listing shows as a mismatch, so

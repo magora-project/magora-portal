@@ -141,8 +141,18 @@ jobs:
               failed=1
               continue
             fi
-            if ! rclone check "supabase:${bucket}" "$dest" --checksum --one-way; then
+            check_rc=0
+            check_log="$(rclone check "supabase:${bucket}" "$dest" --checksum --one-way 2>&1)" || check_rc=$?
+            printf '%s\n' "$check_log"
+            if [ "$check_rc" -ne 0 ]; then
               echo "::error::${bucket}: check failed"
+              failed=1
+              continue
+            fi
+            # A pass that compared some object by size only ("N hashes could not be checked") is
+            # not a pass: that object may be a stale --copy-dest carry-over.
+            if grep -Eq '[1-9][0-9]* hashes could not be checked' <<< "$check_log"; then
+              echo "::error::${bucket}: check compared some objects by size only"
               failed=1
               continue
             fi
