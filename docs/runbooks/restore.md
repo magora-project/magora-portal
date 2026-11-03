@@ -253,6 +253,7 @@ revoke all on all tables in schema public from public, anon, authenticated;
 revoke all on all sequences in schema public from public, anon, authenticated;
 revoke all on all functions in schema public from public, anon, authenticated;
 SQL
+echo "== before step 1: list (a)" &&
 pg_restore -l "$RESTORE_DIR/public.dump" > "$RESTORE_DIR/public.full.list" &&
 grep -v -E '^[0-9]+; [0-9]+ [0-9]+ SCHEMA - public ' "$RESTORE_DIR/public.full.list" > "$RESTORE_DIR/public.list" &&
 echo "== step 1 of 5: lockdown" &&
@@ -271,17 +272,19 @@ echo "== step 5 of 5: revoke" &&
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
   '. "$2/guard.sh" && guard "$1" && psql "$SCRATCH_DB_URL" -X -v ON_ERROR_STOP=1 -f "$2/revoke.sql"' _ <scratch-ref> "$RESTORE_DIR" &&
 echo "== all 5 steps done" ||
-{ echo "RESTORE STOPPED at the last '== step' line above; nothing after it ran. Follow the paragraph below this block."; false; }
+{ echo "RESTORE STOPPED at the last '==' line above; nothing after it ran. Follow the paragraph below this block."; false; }
 ```
 
-The commands are chained with `&&`, so a failure stops the run at that step: the last `== step` line
-printed names it, and `RESTORE STOPPED` follows. `pg_restore` exits non-zero on any error it skips
+The commands are chained with `&&`, so a failure stops the run at that step: the last `==` line
+printed names it (`== before step 1` if listing (a) failed), and `RESTORE STOPPED` follows. `pg_restore` exits non-zero on any error it skips
 past, so every step must run clean. That is why (a) is restored from `public.list`: the dump's own
 `CREATE SCHEMA public` entry is left out (the scratch project already has `public`), which would
 otherwise fail with `schema "public" already exists` on every rehearsal and stop the run before the
 revoke step. The comment on `public` is still restored. The listing is written to `public.full.list`
 first and filtered from that file, so a failed `pg_restore -l` (not only a failed filter or write)
-stops the run before step 1.
+stops the run before step 1, with `== before step 1: list (a)` as the last `==` line. Nothing has
+been restored then: fix the cause (usually a missing or truncated `public.dump`) and run the block
+again.
 
 Expected messages: `schema "..." already exists, skipping` and `extension "..." already exists, skipping`
 notices from the extensions step are benign. No error is expected from any step. If the lockdown step
