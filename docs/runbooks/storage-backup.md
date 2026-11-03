@@ -24,11 +24,13 @@ serves. If a restore loses a header, or objects start carrying non-default metad
 backup and restore copies.
 A change to an object's content type alone, with the bytes unchanged, is not backed up: `--checksum
 --copy-dest` reuses the earlier night's copy, with its old type, and the check compares only size and
-MD5. `-M` would not change that. This is accepted because the app cannot produce it. Each upload path
-derives the file name from the type or makes it unique (`avatar.<ext>` with the extension taken from the
-type in `src/lib/listener.js`, `<id>.<ext>` for audio, a timestamped name for banners), so a new type is
-a new path. Only an edit made outside the app (the dashboard or the Storage API) can change a type in
-place; after one, upload the object again under a new name.
+MD5. `-M` would not change that. This is accepted because the app's client never produces it: each
+upload path derives the file name from the type or makes it unique (`avatar.<ext>` with the extension
+taken from the type in `src/lib/listener.js`, `<id>.<ext>` for audio, a timestamped name for banners),
+so a new type is a new path. A type can still change in place through the dashboard, the Storage API,
+or a direct call to the `storage-upload` Edge Function, which takes the file name and type separately
+and upserts (a signed-in user can do this to their own files only). After such an edit, upload the
+object again under a new name.
 
 ## Retention and lock
 
