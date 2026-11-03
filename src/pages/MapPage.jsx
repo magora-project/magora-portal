@@ -14,6 +14,7 @@ import EcologicalCommons from '../components/EcologicalCommons'
 import ListenButton from '../components/ListenButton'
 import MobileDetectionCard from '../components/MobileDetectionCard'
 import { AMBER } from '../lib/listen'
+import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
 
 function MapController({ points }) {
   const map = useMap()
@@ -98,7 +99,7 @@ export default function MapPage() {
     todayStart.setHours(0, 0, 0, 0)
 
     try {
-      const [nodesRes, detRes, aciRes, todayRes, mobileRes, sessionsRes] = await Promise.all([
+      const results = await Promise.allSettled([
         // All nodes that have SPOKEN, regardless of whether they still are.
         //
         // Two different rules live in this one query, and they pull in opposite directions:
@@ -138,24 +139,38 @@ export default function MapPage() {
         supabase.from('public_listen_sessions').select('*').order('started_at', { ascending: false }).limit(50),
       ])
 
-      // supabase-js resolves with { data, error } even on API failures — surface those too
-      const firstErr = nodesRes.error || detRes.error || aciRes.error || todayRes.error
-      if (firstErr) throw firstErr
+      const settled = results.map(result => result.status === 'fulfilled'
+        ? result.value
+        : { data: null, error: result.reason })
+      const [nodesRes, detRes, aciRes, todayRes, mobileRes, sessionsRes] = settled
 
-      // Drop the embedded `detections` existence-probe so a node object keeps exactly the shape
-      // the rest of the page (and NodePage) expects — the join is a filter, not data.
-      setNodes((nodesRes.data || []).map(row => {
-        const node = { ...row }
-        delete node.detections
-        return node
-      }))
-      setDetections(detRes.data || [])
-      setMobileDetections(mobileRes.data || [])
-      setSessions(sessionsRes.data || [])
-      setAciLogs(aciRes.data || [])
-      setTodayDetections(todayRes.data || [])
-      setTodaySpeciesCount(new Set((todayRes.data || []).map(d => d.species_name).filter(n => n && !isHiddenSpecies(n))).size)
-      setError(false)
+      if (nodesRes.error) {
+        console.warn('MapPage nodes query failed:', nodesRes.error)
+        setNodes([])
+      } else {
+        // Drop the embedded `detections` existence-probe so a node object keeps exactly the shape
+        // the rest of the page (and NodePage) expects — the join is a filter, not data.
+        setNodes((nodesRes.data || []).map(row => {
+          const node = { ...row }
+          delete node.detections
+          return node
+        }))
+      }
+
+      setDetections(detRes.error ? [] : (detRes.data || []))
+      setMobileDetections(mobileRes.error ? [] : (mobileRes.data || []))
+      setSessions(sessionsRes.error ? [] : (sessionsRes.data || []))
+      setAciLogs(aciRes.error ? [] : (aciRes.data || []))
+      const todayData = todayRes.error ? [] : (todayRes.data || [])
+      setTodayDetections(todayData)
+      setTodaySpeciesCount(new Set(todayData.map(d => d.species_name).filter(n => n && !isHiddenSpecies(n))).size)
+
+      const sectionError = [detRes, aciRes, todayRes, mobileRes, sessionsRes]
+        .find(res => res.error)?.error
+      if (sectionError) {
+        console.warn('MapPage data section failed:', sectionError)
+      }
+      setError(Boolean(sectionError))
     } catch (e) {
       console.warn('MapPage fetch failed:', e)
       setError(true)
@@ -389,8 +404,8 @@ export default function MapPage() {
             <MapContainer center={[39.5, -105.5]} zoom={5} style={{ height: '230px', width: '100%' }} zoomControl={true}>
               <MapController points={mapPoints} />
               <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                attribution="© OpenStreetMap © CARTO"
+                url={OPENSTREETMAP_TILE_URL}
+                attribution={OPENSTREETMAP_ATTRIBUTION}
               />
               {mappableNodes.map(node => (
                 <CircleMarker
