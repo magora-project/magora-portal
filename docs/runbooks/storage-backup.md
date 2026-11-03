@@ -6,7 +6,7 @@
 It lists every Supabase Storage bucket and copies each one into the R2 bucket
 under `nightly/<YYYY-MM-DD>/<bucket>/` (UTC date). The R2 bucket name is held in the `R2_BUCKET` secret and is `magora-storage-backup`; below it is written `<R2_BUCKET>`. Unchanged objects are server-side copied from the
 newest earlier dated prefix (`--copy-dest`). The job ends with
-`rclone check --one-way` per bucket (source objects must exist and match in R2; extra objects in R2 are ignored); any failure fails the job. The job never deletes anything.
+`rclone check --one-way` per bucket (source objects must exist and match in R2; extra objects in R2 are ignored); any failure fails the job. A bucket with any object that has no MD5 is refused (see the checksum note below). The job never deletes anything.
 Only when every bucket's copy and check passed does the job write a completion marker,
 `complete/<YYYY-MM-DD>` (holding the run id), named for the prefix it wrote. A prefix with a marker is a
 complete copy; a prefix without one may be partial. The marker is outside `nightly/`, so no restore copies
@@ -54,8 +54,9 @@ After the workflow merges, run the checksum probe below, then trigger the workfl
 run, or on a day it has not yet succeeded: after a same-day success the dispatch copies and checks
 nothing.
 
-First-dispatch checksum note: the job uses `--checksum`, and an object without an MD5 is compared by
-size only. Before the first dispatch, count each bucket's objects without an MD5. This only reads
+First-dispatch checksum note: the job uses `--checksum`, which compares an object without an MD5 by
+size only, so the job refuses any bucket holding one (below). Before the first dispatch, count each
+bucket's objects without an MD5, so a refusal is expected rather than a surprise. This only reads
 production (`rclone lsf` and `rclone md5sum`). It uses its own remote, `backup_probe` (never
 `restore_target` or the job's `supabase`), the Supabase S3 keys through `op run --env-file`, and the
 production endpoint written on the command. Replace the placeholders with the region and the vault
@@ -81,8 +82,12 @@ RCLONE_CONFIG_BACKUP_PROBE_ENDPOINT='https://wqxmmuwrfltpaxnuddwk.supabase.co/st
 rm -rf "$PROBE_DIR"
 ```
 
-If any bucket shows objects without an MD5, or `md5sum FAILED`, David decides whether those buckets drop
-`--checksum`.
+The job runs the same count on each bucket before copying it, and again on the bucket and its R2
+copy after the check. If any object has no MD5, that bucket fails (`<bucket>: N object(s) without an
+MD5; not copied`, or the after-check line) and the night is not marked complete. If the probe or the
+job shows this, or `md5sum FAILED`, David decides how that bucket is backed up (for example, copied
+without `--copy-dest` and checked by content with `rclone check --download`); until then it has no
+nightly copy.
 
 ## Restoring objects into production
 

@@ -99,22 +99,55 @@ jobs:
             exit 1
           fi
 
+          # --checksum falls back to size only when either side of a comparison has no MD5 (e.g. a
+          # multipart upload), so --copy-dest could keep a changed object of the same size and the
+          # check would still pass. Prints how many objects under $1 have no MD5; fails if the
+          # listing fails. A missing MD5 prints as spaces; no awk interval syntax, for mawk.
+          count_no_md5() {
+            local sums
+            sums="$(rclone md5sum "$1" </dev/null)" || return 1
+            printf '%s\n' "$sums" \
+              | awk 'NF && !(substr($0, 33, 2) == "  " && substr($0, 1, 32) ~ /^[0-9a-f]+$/) { n++ } END { print n + 0 }'
+          }
+
           failed=0
           while IFS= read -r bucket; do
             [ -n "$bucket" ] || continue
             dest="r2:${R2_BUCKET}/nightly/${today}/${bucket}"
             echo "== ${bucket}"
+            if ! nohash="$(count_no_md5 "supabase:${bucket}")"; then
+              echo "::error::${bucket}: listing MD5s failed; not copied"
+              failed=1
+              continue
+            fi
+            if [ "$nohash" -ne 0 ]; then
+              echo "::error::${bucket}: ${nohash} object(s) without an MD5; not copied (see docs/runbooks/storage-backup.md)"
+              failed=1
+              continue
+            fi
             args=(--checksum)
             if [ -n "$prev" ]; then
               args+=(--copy-dest "r2:${R2_BUCKET}/nightly/${prev}/${bucket}")
             fi
             if ! rclone copy "supabase:${bucket}" "$dest" "${args[@]}"; then
-              echo "copy failed for ${bucket}" >&2
+              echo "::error::${bucket}: copy failed"
               failed=1
               continue
             fi
             if ! rclone check "supabase:${bucket}" "$dest" --checksum --one-way; then
-              echo "check failed for ${bucket}" >&2
+              echo "::error::${bucket}: check failed"
+              failed=1
+              continue
+            fi
+            # Recount both sides after the check: an object overwritten without an MD5 while the
+            # bucket was copied, or a copy in R2 that has none, was compared by size only.
+            if ! src_nohash="$(count_no_md5 "supabase:${bucket}")" || ! dst_nohash="$(count_no_md5 "$dest")"; then
+              echo "::error::${bucket}: listing MD5s after the check failed"
+              failed=1
+              continue
+            fi
+            if [ "$src_nohash" -ne 0 ] || [ "$dst_nohash" -ne 0 ]; then
+              echo "::error::${bucket}: after the check, ${src_nohash} source and ${dst_nohash} backup object(s) without an MD5"
               failed=1
             fi
           done <<< "$buckets"

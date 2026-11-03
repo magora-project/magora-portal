@@ -159,6 +159,15 @@ scratch project and checks that rows
 referencing them resolve. Retention and versioning are left to the builder, but must cover at
 least the 7 days of database backups.
 
+The job compares objects by MD5 (`--checksum`), and when either side of a comparison has none,
+such as a multipart upload, rclone compares by size only: a changed object of the same size could
+be carried over from the previous night and still pass the check. So the job counts objects
+without an MD5 in each bucket before copying it, and again on both the source and the R2 copy after
+the check; any such object fails that bucket, and the night is not marked complete (David,
+2026-11-03). An object overwritten without an MD5 after the second count is not in that night's
+copy at all, so the marked copy holds its earlier version. On 2026-11-03 all 9 production objects
+had an MD5 (read from `storage.objects`; the runbook's rclone probe is still to confirm it).
+
 ### 5.2 Baseline migration
 
 Today's schema is not enough to replay history: `20260725` alters a policy on `public.users`,
