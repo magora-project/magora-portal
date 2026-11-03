@@ -119,9 +119,8 @@ Do not edit a committed plan to tick off progress; track checkboxes in your sess
 
 ## Execution Handoff
 
-After saving, self-reviewing and reviewing, link the plan and ask the user to confirm it captures what they want. If they have not named an execution method, offer:
+After saving, self-reviewing and reviewing, link the plan and ask the user to confirm it captures what they want.
 
-- **Subagent-driven:** a fresh subagent implements each task and a fresh reviewer checks it before the next, then a whole-branch review. Most thorough; costs a context per task and per review.
-- **Native:** you implement every task in this session, then one fresh reviewer checks the whole branch. Cheapest and fastest; no independent review until the end.
+Execution is subagent-driven (`.claude/rules/process.md`, `## Stages`, stage 6): a fresh subagent implements each task, a fresh reviewer checks it by depth before the next, then a whole-branch review. Use `superpowers:subagent-driven-development`. Per-task review follows `.claude/rules/process.md`, `## Review slots and dispatch`.
 
-Recommend one, with one sentence of reasoning drawn from the plan: how much the tasks depend on each other's interfaces, how many there are, what a shipped mistake would cost. Then use `superpowers:subagent-driven-development` or `superpowers:executing-plans` accordingly. Per-task review follows `.claude/rules/process.md`, `## Review slots and dispatch`.
+If the user asks to implement the tasks in this session instead (`superpowers:executing-plans`), say that this departs from stage 6, keep a fresh reviewer on each task by depth before the next task starts, and name the departure in the PR description.

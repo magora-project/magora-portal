@@ -48,7 +48,8 @@ ok('every skill has frontmatter name equal to its directory', skills.every((s) =
 ok('every skill has a description', skills.every((s) => (s.frontmatter.description ?? '').length > 0))
 ok('no skill references ~/code or claude-config', skills.every((s) => !/~\/code|claude-config|\.claude-[a-z]\b/.test(s.body)))
 ok('no skill tells the agent to run bash or a .sh script', skills.every((s) => !/\bbash\b|\.sh\b/.test(s.body)))
-ok('every repo-relative path a skill names exists', skills.flatMap((s) => s.repoPaths).every((p) => existsSync(join(root, p))))
+const namedPaths = skills.flatMap((s) => s.repoPaths)
+ok('every repo-relative path a skill names exists', namedPaths.length > 0 && namedPaths.every((p) => existsSync(join(root, p))))
 
 // The checker itself: it must be able to fail.
 const fake = (dir, text) => parseSkill(dir, text)

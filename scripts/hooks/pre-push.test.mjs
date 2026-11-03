@@ -1,9 +1,9 @@
 // Self-test for scripts/hooks/pre-push.mjs and scripts/hooks/setup.mjs. Real spawns use a scratch dir.
 // Run: node scripts/hooks/pre-push.test.mjs
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { main } from './pre-push.mjs'
 import { setup } from './setup.mjs'
@@ -35,16 +35,17 @@ ok('async check is awaited', /WARNING.*y/s.test((await runHook({ localCheck: asy
 ok('a malformed result still exits 0', (await runHook({ localCheck: () => ({ ok: false }) })).code === 0)
 ok('kill-switch prints nothing', (await runHook({ localCheck: () => ({ ok: false, lines: ['x'] }), env: { PREPUSH_REVIEW_WARN_DISABLE: '1' } })).err === '')
 
-// Real process: scratch dir with and without a review-evidence module; run through a symlink.
+// Real process: scratch dir with and without a review-evidence module; run through a symlinked
+// directory where the OS permits one (a junction on Windows needs no privilege), else the real path.
 const spawnHook = (script, cwd) =>
   spawnSync(process.execPath, [script], { cwd, input: 'refs/heads/a 1 refs/heads/a 0\n', encoding: 'utf8', shell: false })
 const scratch = mkdtempSync(join(tmpdir(), 'prepush-'))
 try {
-  const link = join(scratch, 'link.mjs')
-  symlinkSync(hookPath, link)
+  let link = hookPath, how = 'real path'
+  try { symlinkSync(here, join(scratch, 'hooks-link'), 'junction'); link = join(scratch, 'hooks-link', 'pre-push.mjs'); how = 'symlinked path' } catch { /* symlinks not permitted here: run the real path */ }
   const missing = spawnHook(link, scratch)
-  ok('spawn (symlinked path), no module: exit 0', missing.status === 0)
-  ok('spawn (symlinked path), no module: the one line', missing.stderr === 'review-evidence not available yet\n')
+  ok(`spawn (${how}), no module: exit 0`, missing.status === 0)
+  ok(`spawn (${how}), no module: the one line`, missing.stderr === 'review-evidence not available yet\n')
 
   mkdirSync(join(scratch, 'scripts', 'ci'), { recursive: true })
   const mod = join(scratch, 'scripts', 'ci', 'review-evidence.mjs')
@@ -74,23 +75,32 @@ try {
   rmSync(scratch, { recursive: true, force: true })
 }
 
-// The shim itself: run with sh from a scratch tree root (skipped where sh is absent).
+// The shim itself: run with sh from a scratch tree root (skipped where sh is absent). The no-node
+// cases replace PATH, so sh is resolved to an absolute native path first (Git for Windows' sh.exe
+// has no /bin/sh that native Node can spawn).
 const shimSrc = join(here, '..', '..', '.githooks', 'pre-push')
-const hasSh = spawnSync('sh', ['-c', 'exit 0'], { shell: false }).status === 0
+const findSh = () => {
+  for (const d of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
+    for (const n of ['sh', 'sh.exe']) { if (existsSync(join(d, n))) return join(d, n) }
+  }
+  return null
+}
+const sh = findSh()
+const hasSh = sh !== null && spawnSync(sh, ['-c', 'exit 0'], { shell: false }).status === 0
 if (hasSh) {
   const tree = mkdtempSync(join(tmpdir(), 'prepush-shim-'))
   try {
     mkdirSync(join(tree, 'scripts', 'hooks'), { recursive: true })
     copyFileSync(hookPath, join(tree, 'scripts', 'hooks', 'pre-push.mjs'))
     copyFileSync(shimSrc, join(tree, 'shim'))
-    const withNode = spawnSync('sh', [join(tree, 'shim')], { cwd: tree, input: '', encoding: 'utf8', shell: false })
+    const withNode = spawnSync(sh, [join(tree, 'shim')], { cwd: tree, input: '', encoding: 'utf8', shell: false })
     ok('shim with node: exit 0 and runs the hook', withNode.status === 0 && withNode.stderr === 'review-evidence not available yet\n')
     const bin = join(tree, 'bin')
     mkdirSync(bin)
-    const noNode = spawnSync('/bin/sh', [join(tree, 'shim')], { cwd: tree, env: { PATH: bin }, input: '', encoding: 'utf8', shell: false })
+    const noNode = spawnSync(sh, [join(tree, 'shim')], { cwd: tree, env: { PATH: bin }, input: '', encoding: 'utf8', shell: false })
     ok('shim without node on PATH: exit 0 and one line', noNode.status === 0 && noNode.stderr === 'node not found; review-evidence warning skipped\n')
     writeFileSync(join(bin, 'node'), '#!/bin/sh\nexit 7\n', { mode: 0o755 })
-    const nodeFails = spawnSync('/bin/sh', [join(tree, 'shim')], { cwd: tree, env: { PATH: bin }, input: '', encoding: 'utf8', shell: false })
+    const nodeFails = spawnSync(sh, [join(tree, 'shim')], { cwd: tree, env: { PATH: bin }, input: '', encoding: 'utf8', shell: false })
     ok('shim whose node exits non-zero: still exit 0', nodeFails.status === 0)
   } finally {
     rmSync(tree, { recursive: true, force: true })
