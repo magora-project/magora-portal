@@ -464,6 +464,12 @@ full-review request from one that merely came after it, and Codex exposes only i
 marker. This review layer is discipline, not the control (AGENTS.md), so the limitation is
 accepted rather than worked around.
 
+**Accepted limitation (David, 2026-11-03): an unsplittable diff.** The 400,000-byte limit (§5.5)
+applies to every PR, and a lockfile cannot be split. `package-lock.json` is 292,316 bytes, and the
+largest of the last 40 Dependabot diffs on `main` is 47,349 bytes, so only a near-total lockfile
+rewrite can cross the limit. Such a PR cannot pass the gate, and a maintainer merges it by an
+override outside the gate. (PR #52 Gemini.)
+
 **Pre-existing** applies only when:
 
 - the defect is present on the base revision under the same reachable conditions; and
