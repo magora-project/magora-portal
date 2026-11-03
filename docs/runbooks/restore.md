@@ -290,6 +290,12 @@ prints `LOCKDOWN FAILED` or fails in any way, stop before restoring anything and
 connection strings) in the Rehearsals table, the agent beside him adjusts this runbook, and you run
 "Clean up" steps 1 and 2. Retry only after deleting and recreating the scratch project, with a fresh dump.
 
+One such failure is expected now and then, and is not a runbook defect: the two dumps are taken
+separately while production stays writable, so a user deleted between them leaves `public` rows
+pointing at an `auth.users` row the second dump does not hold. Step 4 then fails with a foreign-key
+violation naming a user column (`user_id`, `owner_id` or `id`). Record it and retry as above, with
+fresh dumps (David, 2026-11-03: accepted rather than taking both dumps from one snapshot).
+
 ## 4. Compare row counts
 
 Count the scratch project with the same query, then compare. Each table passes only if
