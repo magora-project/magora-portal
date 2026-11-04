@@ -333,7 +333,9 @@ ok('gemini: upgrade whose DELETE fails -> that run fails but dispatches; the re-
   rg9a.code === 1 && rg9b.code === 0 && W(g9.state) === W(['subtle-correctness']) && W(g9.dispatches) === W([DISPATCH]))
 
 // The dispatched run must execute main's YAML, never a branch's (decision 5 of gemini-review.yml).
-const gyml = readFileSync(new URL('../../.github/workflows/gemini-review.yml', import.meta.url), 'utf8')
+// CRLF normalised: a Windows checkout with core.autocrlf has CRLF, and the pins below assume LF.
+const lf = (s) => s.replace(/\r\n/g, '\n')
+const gyml = lf(readFileSync(new URL('../../.github/workflows/gemini-review.yml', import.meta.url), 'utf8'))
 ok("gemini workflow: a dispatched run is gated on refs/heads/main",
   /\(github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'\) \|\|/.test(gyml))
 // The concurrency group is what keeps a skipping run from cancelling a dispatched review (#58).
@@ -342,7 +344,7 @@ ok('gemini workflow: concurrency group (noop for skipping runs) is exactly as re
   gyml.includes("  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ ((github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')) && format('-noop-{0}', github.run_id) || '' }}\n  cancel-in-progress: true\n"))
 ok('gemini workflow: the PR number input is read through env, never expanded into a script',
   /INPUT_PR: \$\{\{ inputs\.pr_number \}\}/.test(gyml) && (gyml.match(/inputs\.pr_number/g) ?? []).length === 2)
-const lyml = readFileSync(new URL('../../.github/workflows/label-gate.yml', import.meta.url), 'utf8')
+const lyml = lf(readFileSync(new URL('../../.github/workflows/label-gate.yml', import.meta.url), 'utf8'))
 ok('label-gate workflow: can dispatch, and only for same-repo non-Dependabot PRs into main',
   /^\s*actions: write\b/m.test(lyml) &&
   /GEMINI_DISPATCH: \$\{\{ github\.event\.pull_request\.head\.repo\.full_name == github\.repository && github\.event\.pull_request\.user\.login != 'dependabot\[bot\]' && github\.event\.pull_request\.base\.ref == 'main' \}\}/.test(lyml))

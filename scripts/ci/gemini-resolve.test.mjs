@@ -1,8 +1,12 @@
 // Executes the "Resolve the PR" step of .github/workflows/gemini-review.yml: its Python heredoc is
 // extracted from the YAML and run with `python3 -I` against a local stub of the pulls API, so the
-// test exercises the exact text the workflow runs. Needs python3 (present on CI runners).
+// test exercises the exact text the workflow runs.
+// Where it runs: the step runs only on ubuntu-latest, so this is skipped on Windows (CI's
+// windows-latest job included), where python3, line endings and a socket-ready env all differ.
+// Elsewhere it needs python3: CI runners have it and there it is required; on a laptop without
+// it, the file is skipped with a message, so `npm test` stays Node-only for contributors.
 // Run: node scripts/ci/gemini-resolve.test.mjs
-import { execFile } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -11,11 +15,36 @@ import { join } from 'node:path'
 let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
 
+// The resolve step's heredoc, bounded to that one step so another step's heredoc can never be
+// taken for it. CRLF is normalised first: a Windows checkout with core.autocrlf has CRLF.
+export function extractResolve(yaml) {
+  const y = yaml.replace(/\r\n/g, '\n')
+  const start = y.indexOf('      - name: Resolve the PR\n')
+  if (start < 0) return null
+  const next = y.indexOf('\n      - ', start + 1)
+  const step = next < 0 ? y.slice(start) : y.slice(start, next + 1)
+  const m = step.match(/python3 -I - <<'PY'\n([\s\S]*?)\n {10}PY\n/)
+  return m ? m[1].split('\n').map((l) => l.replace(/^ {10}/, '')).join('\n') : null
+}
+
 const yml = readFileSync(new URL('../../.github/workflows/gemini-review.yml', import.meta.url), 'utf8')
-const step = yml.slice(yml.indexOf('      - name: Resolve the PR'))
-const m = step.match(/python3 -I - <<'PY'\n([\s\S]*?)\n {10}PY\n/)
-if (!m) { console.log('  FAIL could not find the resolve heredoc in gemini-review.yml'); process.exit(1) }
-const script = m[1].split('\n').map((l) => l.replace(/^ {10}/, '')).join('\n')
+const script = extractResolve(yml)
+if (!script) { console.log('  FAIL could not find the resolve heredoc in gemini-review.yml'); process.exit(1) }
+ok('extract: a CRLF checkout yields the same script', extractResolve(yml.replace(/\r?\n/g, '\r\n')) === script)
+ok('extract: bounded to the resolve step (no match when its heredoc is gone, even if a later step has one)',
+  extractResolve(yml.replace(/\r\n/g, '\n').replace("python3 -I - <<'PY'\n", 'python3 -I - <<EOF\n').replace('- name: Post the review', "- name: Post the review\n        run: |\n          python3 -I - <<'PY'\n          x\n          PY\n")) === null)
+
+if (process.platform === 'win32') {
+  console.log('  SKIP resolver cases: the step runs only on ubuntu-latest')
+  console.log(`\n${pass} passed, ${fail} failed`)
+  process.exit(fail ? 1 : 0)
+}
+if (spawnSync('python3', ['--version']).status !== 0) {
+  if (process.env.CI) { console.log('  FAIL python3 is required in CI to run the resolver cases'); process.exit(1) }
+  console.log('  SKIP resolver cases: no python3 on this machine; CI always runs them')
+  console.log(`\n${pass} passed, ${fail} failed`)
+  process.exit(fail ? 1 : 0)
+}
 
 const REPO = 'o/r', A = 'a'.repeat(40), B = 'b'.repeat(40)
 const goodPr = () => ({
