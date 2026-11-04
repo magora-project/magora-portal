@@ -105,6 +105,8 @@ clone instead:
 - **Amended in PR A:** spec §5.7 (rev 6) and plan Task 8 Steps 3–4 now say this. The links stay
   symlinks, now into the frozen clone, and promotion is an all-or-nothing reviewed merge into `claude-b-frozen` that must not undo the
   freeze (spec §5.7; the check is plan Task 19 Step 5).
+- **Trim commits** (the freeze check in plan Task 19 Step 5 reads this list; a later trim is
+  added here with the reviewed change that makes it): `1e280679`.
 - **Known mismatch (found 2026-11-04, not yet reconciled):** the clone's `CLAUDE.md` still has two
   Moment entries beyond the kept four (Session-start, Subagent-dispatch) and its `## Index`,
   which the table above lists as dropped. Either the table or the clone is wrong; David decides,
