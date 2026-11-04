@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url'
 const git = (args, cwd) => spawnSync('git', args, { cwd, encoding: 'utf8', shell: false })
 
 export function setup({ cwd = process.cwd(), out = console.log, err = console.error } = {}) {
+  // An existing, different hooksPath (husky, a personal hooks dir) stops running once replaced: say so.
+  const before = git(['config', '--get', 'core.hooksPath'], cwd)
+  const old = before.status === 0 ? before.stdout.trim() : ''
+  if (old !== '' && old !== '.githooks') err(`replacing core.hooksPath ${old}; hooks there no longer run`)
   const set = git(['config', 'core.hooksPath', '.githooks'], cwd)
   if (set.error || set.status !== 0) {
     err(`could not set core.hooksPath: ${set.error?.message ?? set.stderr.trim()}`)

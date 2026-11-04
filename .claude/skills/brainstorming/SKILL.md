@@ -43,7 +43,7 @@ Read the spec once with fresh eyes and fix inline:
 
 ## Spec review
 
-Run Semgrep over the spec if it is available, then review by a model from a different vendor than the one that wrote it. Dispatch and what counts as a review are in `.claude/rules/process.md` under `## Review slots and dispatch`. Run:
+Run Semgrep over the spec, then review by a model from a different vendor than the one that wrote it. If Semgrep cannot run (not installed, or the spec has no code blocks), record that check as UNRUN, never as a pass, and say so in the PR. Dispatch and what counts as a review are in `.claude/rules/process.md` under `## Review slots and dispatch`. Run:
 
 `npm run review -- run --slot spec --path <spec> --author <vendor>`
 

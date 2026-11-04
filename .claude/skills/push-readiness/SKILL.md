@@ -66,7 +66,7 @@ PASS when every commit is one you expect.
 
 ### 5. Review records
 
-The depth label decides which pre-push slots need a record (`.claude/rules/process.md`, `## Review slots and dispatch`): none for `mechanical`; `correctness` for `standard`; `correctness` and `completeness`, from different models, for `subtle-correctness`. A record covers a review-input identity, the patch-id of the branch's diff against its merge base, excluding `.review/`. A commit that changes that identity voids the record; a commit that only adds or changes evidence under `.review/` does not. Run:
+The lane and depth label decide which pre-push slots need a record (`.claude/rules/process.md`, `## Review slots and dispatch`, the records table): none for the `docs-only` lane; one `correctness` for the `dependency` lane; otherwise by depth: none for `mechanical`, `correctness` for `standard`, `correctness` and `completeness`, from different models, for `subtle-correctness`. A record covers a review-input identity, the patch-id of the branch's diff against its merge base, excluding `.review/`. A commit that changes that identity voids the record; a commit that only adds or changes evidence under `.review/` does not. Run:
 
 `npm run review -- check --local`
 

@@ -110,7 +110,7 @@ Fix issues inline.
 
 ## Plan Review
 
-Saving the plan commits it; then review it. Plan review is three checks (`.claude/rules/process.md` stage 5): the typed reference check, Semgrep, and a reviewer. Dispatch and what counts as a review are in `.claude/rules/process.md` under `## Review slots and dispatch`. Run Semgrep over the plan if it is available, then:
+Saving the plan commits it; then review it. Plan review is three checks (`.claude/rules/process.md` stage 5): the typed reference check, Semgrep, and a reviewer. Dispatch and what counts as a review are in `.claude/rules/process.md` under `## Review slots and dispatch`. Run Semgrep over the plan, then:
 
 `npm run review -- run --slot plan --path <plan> --author <vendor>`
 
@@ -119,7 +119,7 @@ Saving the plan commits it; then review it. Plan review is three checks (`.claud
 The command is not available yet (it ships with the review tooling). Until it lands, do all three by hand:
 
 1. **Typed reference check:** at the merge base (`git merge-base origin/main HEAD`, after `git fetch origin main`), walking the in-scope tasks in order, each `existing` and `modify` target is a file there or is created by an earlier task, and is not deleted by one; no `create` target is already a file there or created by an earlier task; no Files line is untyped. Each problem is a P1 finding.
-2. **Semgrep** over the plan, if it is available; say so if it is not.
+2. **Semgrep** over the plan. If it cannot run (not installed, or no code blocks), record that check as UNRUN, never as a pass.
 3. **Reviewer:** the one the dispatch table names (Codex CLI for a Claude-written document), by hand on the plan, with an adversarial prompt covering missing tasks, wrong ordering, tests that cannot fail, and rollback.
 
 Note in the PR that the review was manual, and which of the three ran.

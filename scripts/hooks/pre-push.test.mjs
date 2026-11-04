@@ -144,6 +144,7 @@ if (hasSh) {
     writeFileSync(join(bin, 'node'), '#!/bin/sh\nexit 7\n', { mode: 0o755 })
     const nodeFails = spawnSync(sh, [join(tree, 'shim')], { cwd: tree, env: { PATH: bin }, input: '', encoding: 'utf8', shell: false })
     ok('shim whose node exits non-zero: still exit 0', nodeFails.status === 0)
+    ok('shim whose node exits non-zero: says so, with the exit code', /hook failed \(node exit 7\)/.test(nodeFails.stderr))
   } finally {
     rmSync(tree, { recursive: true, force: true })
   }
@@ -160,6 +161,11 @@ try {
   ok('setup: prints the value read back', out === 'core.hooksPath = .githooks')
   const back = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd: repo, encoding: 'utf8', shell: false })
   ok('setup: git really holds the value', back.stdout.trim() === '.githooks')
+  let e3 = ''
+  ok('setup: re-running over its own value warns about nothing', setup({ cwd: repo, out: () => {}, err: (s) => { e3 += s } }) === 0 && e3 === '')
+  spawnSync('git', ['config', 'core.hooksPath', '.husky'], { cwd: repo, shell: false })
+  let e4 = ''
+  ok('setup: replacing another hooksPath names it', setup({ cwd: repo, out: () => {}, err: (s) => { e4 += s } }) === 0 && /replacing core\.hooksPath \.husky/.test(e4))
   let e2 = ''
   ok('setup: failure exits 1 and says so', setup({ cwd: join(repo, 'does-not-exist'), out: () => {}, err: (s) => { e2 += s } }) === 1 && /could not set/.test(e2))
 } finally {
