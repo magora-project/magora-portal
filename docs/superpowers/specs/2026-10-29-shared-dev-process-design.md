@@ -541,12 +541,14 @@ well as the model.
 - **The other direction:** the same reviewed step carries claude-config changes into claude-b's
   frozen layer, as a reviewed merge into the clone's `claude-b-frozen` branch (rev 6). It is
   all or nothing: David reviews every claude-config commit since the last promotion and accepts
-  or rejects the range as a whole, so no accepted change can depend on a rejected one. To leave
-  something out, revert it in claude-config first. The merge must not undo the freeze:
-  afterwards no runtime file reads live claude-config, and nothing the freeze removed is back (a
-  personal skill sharing a repo skill's name, a dropped hook wiring, a dropped `CLAUDE.md`
-  entry), and every wired hook still runs. The promotion script checks this after the merge; on
-  a failure it resets the branch to its pre-merge commit and the range is rejected. Plan Task 19
+  or rejects the range as a whole, so no accepted change can depend on a rejected one. A merge
+  conflict, which edits to a file the freeze trimmed will cause, is resolved by David keeping the
+  trim. To leave a change out of claude-b, he reverts it on `claude-b-frozen` after the merge,
+  never in live claude-config. The result must not undo the freeze: no runtime file reads live
+  claude-config, nothing the freeze removed is back (a personal skill sharing a repo skill's
+  name, a dropped hook wiring, a dropped `CLAUDE.md` entry), and every wired hook still runs.
+  The promotion script checks this on the final result; on a failure it resets the branch to
+  its pre-merge commit and the range is rejected. Plan Task 19
   defines the checks. (Added 2026-11-04 for PR #56's CodeRabbit finding and push-gate review.)
 - **Cadence:** set by David.
 - **First promotion:** right after conformance ships (D-4).
