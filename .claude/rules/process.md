@@ -23,7 +23,7 @@ PR body fields that CI parses (CI checks they are present and well formed, not w
 
 ## Stages
 
-(spec §5.1) Every change moves through these stages, in order.
+(spec §5.1) A Specced change moves through these stages, in order. Other lanes skip the stages whose records § Review slots and dispatch does not require for them: a Direct change has no spec, plan or conformance stage (2-5 and 8).
 
 1. **Lane:** Specced or Direct. Evidence: PR body fields; `review-evidence`.
 2. **Brainstorm, then spec.** Local, repo skill.
