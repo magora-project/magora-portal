@@ -1,7 +1,7 @@
 // Self-test for scripts/hooks/pre-push.mjs and scripts/hooks/setup.mjs. Real spawns use a scratch dir.
 // Run: node scripts/hooks/pre-push.test.mjs
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -93,23 +93,33 @@ try {
 
 // Real process in a git fixture: the hook reads git's ref lines from stdin and compares with HEAD.
 // Reverting main({ stdin }) to main() would silence the warning; this catches it.
-// The git fixtures below must not see the developer's global or system git config (a global
-// core.hooksPath, commit.gpgsign, templates): point git at an empty global file, skip the system one,
-// and put both variables back afterwards. Spawned processes, the hook included, inherit this.
-const isolateGitConfig = (dir) => {
-  const saved = { GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM }
+// The git fixtures below must see only their own scratch repo. Every inherited GIT_* variable is
+// removed for the fixture's duration: repository location (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE,
+// set when tests run inside a git hook) would point the fixture's add, commit and config at the
+// developer's checkout, and config variables would change behaviour. Then git is pointed at an empty
+// global config file, skipping the system one (a global core.hooksPath, commit.gpgsign, templates).
+// Everything is put back afterwards. Spawned processes, the hook included, inherit this.
+const isolateGit = (dir) => {
+  const saved = Object.fromEntries(Object.entries(process.env).filter(([k]) => /^GIT_/i.test(k)))
+  for (const k of Object.keys(saved)) delete process.env[k]
   process.env.GIT_CONFIG_GLOBAL = join(dir, 'empty-global-gitconfig')
   process.env.GIT_CONFIG_NOSYSTEM = '1'
   return () => {
-    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v }
+    for (const k of Object.keys(process.env)) { if (/^GIT_/i.test(k)) delete process.env[k] }
+    Object.assign(process.env, saved)
   }
 }
+// The fixture's git resolves to the fixture itself, not to a repository named by the environment.
+// realpathSync.native expands Windows 8.3 short names (RUNNER~1); Windows paths compare case-blind.
+const canon = (p) => { const r = realpathSync.native(p); return process.platform === 'win32' ? r.toLowerCase() : r }
+const gitDirIsInside = (dir, r) => r.status === 0 && canon(r.stdout.trim()).startsWith(canon(dir))
 
 const gitScratch = mkdtempSync(join(tmpdir(), 'prepush-git-'))
-const restoreGitScratch = isolateGitConfig(gitScratch)
+const restoreGitScratch = isolateGit(gitScratch)
 try {
   const git = (...a) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd: gitScratch, encoding: 'utf8', shell: false })
   if (git('init', '-q').status === 0) {
+    ok('git fixture: git resolves the fixture repo', gitDirIsInside(gitScratch, git('rev-parse', '--absolute-git-dir')))
     mkdirSync(join(gitScratch, 'scripts', 'ci'), { recursive: true })
     writeFileSync(join(gitScratch, 'scripts', 'ci', 'review-evidence.mjs'), 'export const localCheck = () => ({ ok: true, lines: [] })\n')
     git('add', '-A')
@@ -166,10 +176,11 @@ if (hasSh) {
 
 // setup.mjs only ever runs in a scratch repo here, never in this checkout.
 const repo = mkdtempSync(join(tmpdir(), 'prepush-setup-'))
-const restoreRepo = isolateGitConfig(repo)
+const restoreRepo = isolateGit(repo)
 try {
   const init = spawnSync('git', ['init', '-q'], { cwd: repo, shell: false })
   ok('scratch repo initialised', init.status === 0)
+  ok('setup fixture: git resolves the fixture repo', gitDirIsInside(repo, spawnSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: repo, encoding: 'utf8', shell: false })))
   let out = '', err = ''
   const code = setup({ cwd: repo, out: (s) => { out += s }, err: (s) => { err += s } })
   ok('setup: exit 0', code === 0 && err === '')
