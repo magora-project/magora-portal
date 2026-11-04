@@ -14,6 +14,7 @@ import EcologicalCommons from '../components/EcologicalCommons'
 import ListenButton from '../components/ListenButton'
 import MobileDetectionCard from '../components/MobileDetectionCard'
 import { AMBER } from '../lib/listen'
+import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
 
 function MapController({ points }) {
   const map = useMap()
@@ -41,8 +42,10 @@ export default function MapPage() {
   const [mobileDetections, setMobileDetections] = useState([])
   const [sessions, setSessions] = useState([])
   const [nodes, setNodes] = useState([])
+  const [nodesAvailable, setNodesAvailable] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [partialFeedError, setPartialFeedError] = useState(false)
   const [wikiData, setWikiData] = useState({})
   const [insights, setInsights] = useState({})
   // Mobile-Listen ecosystem insight (state + generation + open-in-modal), shared
@@ -98,7 +101,7 @@ export default function MapPage() {
     todayStart.setHours(0, 0, 0, 0)
 
     try {
-      const [nodesRes, detRes, aciRes, todayRes, mobileRes, sessionsRes] = await Promise.all([
+      const results = await Promise.allSettled([
         // All nodes that have SPOKEN, regardless of whether they still are.
         //
         // Two different rules live in this one query, and they pull in opposite directions:
@@ -132,32 +135,52 @@ export default function MapPage() {
           .or('range_status.is.null,range_status.neq.quarantined')
           .order('detected_at', { ascending: false }).limit(50),
         supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
-        supabase.from('detections').select('species_name').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString())
+        supabase.from('detections').select('species_name, raw_label').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString())
           .or('range_status.is.null,range_status.neq.quarantined'),
         supabase.from('public_mobile_detections').select('*').order('detected_at', { ascending: false }).limit(50),
         supabase.from('public_listen_sessions').select('*').order('started_at', { ascending: false }).limit(50),
       ])
 
-      // supabase-js resolves with { data, error } even on API failures — surface those too
-      const firstErr = nodesRes.error || detRes.error || aciRes.error || todayRes.error
-      if (firstErr) throw firstErr
+      const settled = results.map(result => result.status === 'fulfilled'
+        ? result.value
+        : { data: null, error: result.reason })
+      const [nodesRes, detRes, aciRes, todayRes, mobileRes, sessionsRes] = settled
 
-      // Drop the embedded `detections` existence-probe so a node object keeps exactly the shape
-      // the rest of the page (and NodePage) expects — the join is a filter, not data.
-      setNodes((nodesRes.data || []).map(row => {
-        const node = { ...row }
-        delete node.detections
-        return node
-      }))
-      setDetections(detRes.data || [])
-      setMobileDetections(mobileRes.data || [])
-      setSessions(sessionsRes.data || [])
-      setAciLogs(aciRes.data || [])
-      setTodayDetections(todayRes.data || [])
-      setTodaySpeciesCount(new Set((todayRes.data || []).map(d => d.species_name).filter(n => n && !isHiddenSpecies(n))).size)
-      setError(false)
+      if (nodesRes.error) {
+        console.warn('MapPage nodes query failed:', nodesRes.error)
+        setNodes([])
+        setNodesAvailable(false)
+      } else {
+        // Drop the embedded `detections` existence-probe so a node object keeps exactly the shape
+        // the rest of the page (and NodePage) expects — the join is a filter, not data.
+        const loadedNodes = (nodesRes.data || []).map(row => {
+          const node = { ...row }
+          delete node.detections
+          return node
+        })
+        setNodes(loadedNodes)
+        setNodesAvailable(true)
+      }
+
+      setDetections(detRes.error ? [] : (detRes.data || []))
+      setMobileDetections(mobileRes.error ? [] : (mobileRes.data || []))
+      setSessions(sessionsRes.error ? [] : (sessionsRes.data || []))
+      setAciLogs(aciRes.error ? [] : (aciRes.data || []))
+      const todayData = todayRes.error ? null : (todayRes.data || [])
+      setTodayDetections(todayData || [])
+      setTodaySpeciesCount(todayData == null
+        ? null
+        : new Set(todayData.map(d => d.species_name || d.raw_label).filter(n => n && !isHiddenSpecies(n))).size)
+
+      const feedErrors = [detRes, mobileRes, sessionsRes].filter(res => res.error)
+      if (feedErrors.length > 0 && feedErrors.length < 3) {
+        console.warn('MapPage feed section failed:', feedErrors.map(res => res.error))
+      }
+      setPartialFeedError(feedErrors.length > 0 && feedErrors.length < 3)
+      setError(feedErrors.length === 3)
     } catch (e) {
       console.warn('MapPage fetch failed:', e)
+      setPartialFeedError(false)
       setError(true)
     } finally {
       setLoading(false)
@@ -197,6 +220,11 @@ export default function MapPage() {
   }, [detections])
 
   async function requestInsight(d) {
+    const node = nodesAvailable ? nodeById[d.node_id] : null
+    if (!node) {
+      setInsights(prev => ({ ...prev, [d.id]: { unavailable: true } }))
+      return
+    }
     setInsights(prev => ({ ...prev, [d.id]: { loading: true } }))
     try {
       const res = await fetch('/api/insight', {
@@ -207,7 +235,7 @@ export default function MapPage() {
           species_name:    d.species_name || d.raw_label,
           scientific_name: d.raw_label?.split('_')[1] || '',
           confidence:      d.confidence,
-          location:        nodes[0]?.habitat_type || 'montane scrub, Wyoming',
+          location:        node.habitat_type || node.name,
           is_dawn_chorus:  d.is_dawn_chorus,
         }),
       })
@@ -223,9 +251,9 @@ export default function MapPage() {
     }
   }
 
-  const speciesCountToday = (todayDetections || []).reduce((acc, d) => {
-    const name = d.species_name
-    if (name) acc[name] = (acc[name] || 0) + 1
+  const speciesCountToday = todaySpeciesCount == null ? null : (todayDetections || []).reduce((acc, d) => {
+    const name = d.species_name || d.raw_label
+    if (name && !isHiddenSpecies(name)) acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})
   // Following tab gates on the "empty room" problem: hidden until the network is
@@ -389,8 +417,8 @@ export default function MapPage() {
             <MapContainer center={[39.5, -105.5]} zoom={5} style={{ height: '230px', width: '100%' }} zoomControl={true}>
               <MapController points={mapPoints} />
               <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                attribution="© OpenStreetMap © CARTO"
+                url={OPENSTREETMAP_TILE_URL}
+                attribution={OPENSTREETMAP_ATTRIBUTION}
               />
               {mappableNodes.map(node => (
                 <CircleMarker
@@ -472,6 +500,12 @@ export default function MapPage() {
             </div>
           )}
 
+          {partialFeedError && (
+            <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', background: '#1f3326', border: '1px solid #3a6247', color: C.textSub, fontSize: '13px' }}>
+              Some live-feed sources couldn't load. Showing what is available.
+            </div>
+          )}
+
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Loading...</div>
           ) : feedItems.length > 0 ? (
@@ -503,8 +537,9 @@ export default function MapPage() {
                 ) : (
                   <DetectionCard
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
-                    count={speciesCountToday[item.d.species_name || item.d.raw_label] || 1}
+                    count={speciesCountToday == null ? null : (speciesCountToday[item.d.species_name || item.d.raw_label] ?? 0)}
                     insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
+                    insightsAvailable={Boolean(item.d.insight) || nodesAvailable !== false}
                   />
                 )
               ))}

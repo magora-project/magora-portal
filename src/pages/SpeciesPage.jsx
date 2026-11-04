@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-le
 import 'leaflet/dist/leaflet.css'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { parseNodeLocation } from '../lib/geo'
+import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
 
 const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
@@ -183,8 +184,8 @@ export default function SpeciesPage() {
             <MapContainer center={points[0] || [20, 0]} zoom={points.length ? 4 : 2} style={{ height: '260px', width: '100%' }} scrollWheelZoom={false} worldCopyJump={true}>
               <FitBounds points={points} />
               <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-                attribution="© OpenStreetMap © CARTO"
+                url={OPENSTREETMAP_TILE_URL}
+                attribution={OPENSTREETMAP_ATTRIBUTION}
               />
               {taxonKey && (
                 <TileLayer
