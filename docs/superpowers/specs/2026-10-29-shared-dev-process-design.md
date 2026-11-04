@@ -543,8 +543,10 @@ well as the model.
   all or nothing: David reviews every claude-config commit since the last promotion and accepts
   or rejects the range as a whole, so no accepted change can depend on a rejected one. A merge
   conflict, which edits to a file the freeze trimmed will cause, is resolved by David keeping the
-  trim. To leave a change out of claude-b, he reverts it on `claude-b-frozen` after the merge,
-  never in live claude-config. The result must not undo the freeze: no runtime file reads live
+  trim, and in no other way. There is no one-off exclusion: to keep a change out of claude-b,
+  David makes it a freeze trim (a reviewed change to `docs/process/claude-b-inventory.md`), or
+  rejects the range; live claude-config is never edited for claude-b. The result must not undo
+  the freeze: no runtime file reads live
   claude-config, nothing the freeze removed is back (a personal skill sharing a repo skill's
   name, a dropped hook wiring, a dropped `CLAUDE.md` entry), and every wired hook still runs.
   The promotion script checks this on the final result; on a failure it resets the branch to
