@@ -238,7 +238,9 @@ jobs:
             echo "trusted base $BASE_SHA lacks scripts/review/gemini_review.py or AGENTS.md; refusing to run the PR's own copy" > /tmp/review.err
             rc=1
           else
-            python3 trusted/scripts/review/gemini_review.py "$PR_TITLE" --rules trusted/AGENTS.md \
+            # `--` before the title: a PR titled `--help` otherwise prints usage and exits 0, and
+            # that usage text would be posted as the review (Gemini's own finding on this PR).
+            python3 trusted/scripts/review/gemini_review.py --rules trusted/AGENTS.md -- "$PR_TITLE" \
               < /tmp/review.diff > /tmp/review.out 2> /tmp/review.err || rc=$?
           fi
           echo "rc=$rc" >> "$GITHUB_OUTPUT"

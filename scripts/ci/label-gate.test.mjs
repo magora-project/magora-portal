@@ -342,6 +342,8 @@ ok("gemini workflow: a dispatched run is gated on refs/heads/main",
 // Pinned whole: actionlint checks its types, not its logic, so any edit must be deliberate.
 ok('gemini workflow: concurrency group (noop for skipping runs) is exactly as reviewed',
   gyml.includes("  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ ((github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')) && format('-noop-{0}', github.run_id) || '' }}\n  cancel-in-progress: true\n"))
+ok('gemini workflow: the PR title follows `--`, so a title like --help is never read as an option',
+  gyml.includes('gemini_review.py --rules trusted/AGENTS.md -- "$PR_TITLE"') && !/gemini_review\.py "\$PR_TITLE"/.test(gyml))
 ok('gemini workflow: the PR number input is read through env, never expanded into a script',
   /INPUT_PR: \$\{\{ inputs\.pr_number \}\}/.test(gyml) && (gyml.match(/inputs\.pr_number/g) ?? []).length === 2)
 const lyml = lf(readFileSync(new URL('../../.github/workflows/label-gate.yml', import.meta.url), 'utf8'))
