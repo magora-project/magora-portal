@@ -539,12 +539,14 @@ well as the model.
 - **Landing:** accepted items land as a claude-config commit that names the magora commit they came
   from.
 - **The other direction:** the same reviewed step carries claude-config changes into claude-b's
-  frozen layer, as a reviewed merge into the clone's `claude-b-frozen` branch (rev 6). The merge
-  must not undo the freeze: afterwards no runtime file reads live claude-config, and nothing the
-  freeze removed is back (a personal skill sharing a repo skill's name, a dropped hook wiring, a
-  dropped `CLAUDE.md` entry). The promotion script checks this after every merge; on a failure it
-  resets the branch to its pre-merge commit and the item is rejected. Plan Task 19 defines the
-  check. (Added 2026-11-04 for PR #56's CodeRabbit finding.)
+  frozen layer, as reviewed commits on the clone's `claude-b-frozen` branch (rev 6). Each
+  accepted item is applied on its own (cherry-picked, not merged), so a rejected commit never
+  comes along with a later one. An applied item must not undo the freeze: afterwards no runtime
+  file reads live claude-config, and nothing the freeze removed is back (a personal skill sharing
+  a repo skill's name, a dropped hook wiring, a dropped `CLAUDE.md` entry). The promotion script
+  checks this after every item; on a failure it resets the branch to the commit before that item
+  and the item is rejected. Plan Task 19 defines the check. (Added 2026-11-04 for PR #56's
+  CodeRabbit finding and push-gate review.)
 - **Cadence:** set by David.
 - **First promotion:** right after conformance ships (D-4).
 
@@ -632,4 +634,4 @@ Settled on approval: accounts (D-15) and no trial period (D-16).
 | 2 | Codex CLI, read-only, rev 2: closure of round 1, and what the fixes broke | REWORK: 5 P1, 4 P2 | This was the second self-inflicted round, so the gate was restructured as D-13 (David). The rest were applied in rev 3. |
 | 3 | Fable subagent, read-only, rev 3. Changed model and question: completeness, executability, what rev 3 broke, proportion | REWORK: 3 P1, 6 P2, 3 P3, plus one proportion cut | All applied in rev 4. P1-1: bots exclude the evidence directory. P1-2: coverage by the latest review's identity, and full review by the author's request. P1-3: a record is required whenever a blocking finding exists. P2-1: bot-resolved threads pass. P2-2: immediate substitution when a bot isn't configured, and a split when the diff is oversize. P2-3: conformance runs before pre-push review. P2-4: `-U0` identity, and re-review chaining. P2-5: slot IDs with prompt files. P2-6: failure is read from statuses only. The P3s are §5.3, §5.4 and the triggers. Proportion became D-14 (David). |
 | 4 | Codex CLI, read-only, rev 4, scoped: did rev 4 close round 3, and what did it break | REWORK: 1 new P1, 2 new P2. Of round 3's items, 4 partial; the rest addressed. | All applied in rev 5. New P1: a failed review never establishes coverage. P2: the identity uses `git patch-id --stable`, which ignores line numbers. P2: coverage after a rewrite needs a usable review answering the full-review request. Partial items: Codex App skips the evidence directory via `AGENTS.md`, findings there are outside the gate, and the Gemini failure signal is its job conclusion or verdict marker. **Rev 5's changes have not been re-reviewed.** |
-| — | Rev 6 amendment (David's Task 8 rulings, 2026-11-03; `docs/process/claude-b-inventory.md`) | §5.7 only: frozen clone instead of frozen copies; `plans` stays linked; model routing and verify-against-source join the kept layer; the reverse promotion is a reviewed merge into `claude-b-frozen`; 2026-11-04 addition (PR #56, CodeRabbit): that merge must not undo the freeze, checked after each merge (plan Task 19 Step 5), with reset and rejection on failure | **Not yet reviewed.** |
+| — | Rev 6 amendment (David's Task 8 rulings, 2026-11-03; `docs/process/claude-b-inventory.md`) | §5.7 only: frozen clone instead of frozen copies; `plans` stays linked; model routing and verify-against-source join the kept layer; the reverse promotion lands on `claude-b-frozen`; 2026-11-04 addition (PR #56, CodeRabbit and push-gate review): each accepted item is cherry-picked on its own, not merged, and must not undo the freeze, checked after each item (plan Task 19 Step 5), with reset and rejection on failure | **Not yet reviewed.** |
