@@ -25,6 +25,13 @@ const C = {
 
 const IMAGE_URL = 'https://github.com/magora-project/magora-acoustic-biodiversity/releases/latest/download/magora-node.img.xz'
 
+function generatePassword() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  const values = new Uint32Array(12)
+  crypto.getRandomValues(values)
+  return Array.from(values, value => chars[value % chars.length]).join('')
+}
+
 export default function RegisterNode() {
   const { user, openSignIn } = useAuth()
   const [step, setStep] = useState(1)
@@ -33,6 +40,7 @@ export default function RegisterNode() {
     nodeName: '', wifi_ssid: '', wifi_password: '',
     lat: '', lon: '', elevation: '', elevation_unit: 'ft', habitat: 'montane-scrub',
   })
+  const [sshPassword] = useState(() => generatePassword())
   const [nodeId, setNodeId]       = useState(null)
   const [nodeEmail, setNodeEmail] = useState(null)
   const [nodePassword, setNodePassword] = useState(null)
@@ -156,6 +164,7 @@ export default function RegisterNode() {
       lon:              parseFloat(form.lon),
       wifi_ssid:        form.wifi_ssid,
       wifi_password:    form.wifi_password,
+      ssh_password:    sshPassword,
     }, null, 2)
   }
 
