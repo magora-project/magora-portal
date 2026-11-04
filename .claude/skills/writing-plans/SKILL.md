@@ -38,7 +38,7 @@ Every plan starts with:
 ```markdown
 # [Feature Name] Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task, with a fresh reviewer on each task by depth (`.claude/rules/process.md`, stage 6). Use superpowers:executing-plans only if the user explicitly asks for in-session execution; keep the per-task reviewer and name the departure in the PR description. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** [One sentence]
 

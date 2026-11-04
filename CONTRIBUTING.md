@@ -31,7 +31,9 @@ macOS and Windows (PowerShell or cmd) use the same commands; every check is a No
 
 Process rules: [.claude/rules/process.md](.claude/rules/process.md).
 
-- Claude Code
+- Claude Code, with the Superpowers plugin installed (`/plugin install superpowers@claude-plugins-official`): plans
+  execute through its `subagent-driven-development` skill. Its `brainstorming` and `writing-plans` are replaced by the
+  repo's own copies.
 - Codex CLI, signed in
 - Semgrep
 - Node 24 (see `.nvmrc`)
@@ -44,7 +46,8 @@ Process rules: [.claude/rules/process.md](.claude/rules/process.md).
     npm ci
     npm run setup:hooks
 
-Then start Claude Code in the repo and check that `/skills` lists `brainstorming` and `writing-plans` as project skills.
+Then start Claude Code in the repo and check that `/skills` lists `brainstorming` and `writing-plans` as project skills,
+and `superpowers:subagent-driven-development` from the plugin.
 
 ## Fork PRs (maintainers)
 
