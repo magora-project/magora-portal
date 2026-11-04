@@ -93,14 +93,27 @@ try {
 
 // Real process in a git fixture: the hook reads git's ref lines from stdin and compares with HEAD.
 // Reverting main({ stdin }) to main() would silence the warning; this catches it.
+// The git fixtures below must not see the developer's global or system git config (a global
+// core.hooksPath, commit.gpgsign, templates): point git at an empty global file, skip the system one,
+// and put both variables back afterwards. Spawned processes, the hook included, inherit this.
+const isolateGitConfig = (dir) => {
+  const saved = { GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM }
+  process.env.GIT_CONFIG_GLOBAL = join(dir, 'empty-global-gitconfig')
+  process.env.GIT_CONFIG_NOSYSTEM = '1'
+  return () => {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v }
+  }
+}
+
 const gitScratch = mkdtempSync(join(tmpdir(), 'prepush-git-'))
+const restoreGitScratch = isolateGitConfig(gitScratch)
 try {
   const git = (...a) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd: gitScratch, encoding: 'utf8', shell: false })
   if (git('init', '-q').status === 0) {
     mkdirSync(join(gitScratch, 'scripts', 'ci'), { recursive: true })
     writeFileSync(join(gitScratch, 'scripts', 'ci', 'review-evidence.mjs'), 'export const localCheck = () => ({ ok: true, lines: [] })\n')
     git('add', '-A')
-    git('commit', '-q', '-m', 'one')
+    ok('git fixture: commit succeeded', git('commit', '-q', '-m', 'one').status === 0)
     const head = git('rev-parse', 'HEAD').stdout.trim()
     const other = 'b'.repeat(40), zero = '0'.repeat(40)
     const send = (input) => spawnSync(process.execPath, [hookPath], { cwd: gitScratch, input, encoding: 'utf8', shell: false })
@@ -114,6 +127,7 @@ try {
     ok('git is available for the stdin fixture in CI', !process.env.CI)
   }
 } finally {
+  restoreGitScratch()
   rmSync(gitScratch, { recursive: true, force: true })
 }
 
@@ -152,6 +166,7 @@ if (hasSh) {
 
 // setup.mjs only ever runs in a scratch repo here, never in this checkout.
 const repo = mkdtempSync(join(tmpdir(), 'prepush-setup-'))
+const restoreRepo = isolateGitConfig(repo)
 try {
   const init = spawnSync('git', ['init', '-q'], { cwd: repo, shell: false })
   ok('scratch repo initialised', init.status === 0)
@@ -169,6 +184,7 @@ try {
   let e2 = ''
   ok('setup: failure exits 1 and says so', setup({ cwd: join(repo, 'does-not-exist'), out: () => {}, err: (s) => { e2 += s } }) === 1 && /could not set/.test(e2))
 } finally {
+  restoreRepo()
   rmSync(repo, { recursive: true, force: true })
 }
 
