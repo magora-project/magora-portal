@@ -42,7 +42,7 @@ export default function MapPage() {
   const [mobileDetections, setMobileDetections] = useState([])
   const [sessions, setSessions] = useState([])
   const [nodes, setNodes] = useState([])
-  const [nodesAvailable, setNodesAvailable] = useState(false)
+  const [nodesAvailable, setNodesAvailable] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [partialFeedError, setPartialFeedError] = useState(false)
@@ -500,7 +500,7 @@ export default function MapPage() {
             </div>
           )}
 
-          {partialFeedError && feedItems.length > 0 && (
+          {partialFeedError && (
             <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', background: '#1f3326', border: '1px solid #3a6247', color: C.textSub, fontSize: '13px' }}>
               Some live-feed sources couldn't load. Showing what is available.
             </div>
@@ -539,7 +539,7 @@ export default function MapPage() {
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
                     count={speciesCountToday == null ? null : (speciesCountToday[item.d.species_name || item.d.raw_label] ?? 0)}
                     insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
-                    insightsAvailable={(Boolean(item.d.insight) || nodesAvailable && Boolean(nodeById[item.d.node_id]))}
+                    insightsAvailable={Boolean(item.d.insight) || nodesAvailable !== false}
                   />
                 )
               ))}
