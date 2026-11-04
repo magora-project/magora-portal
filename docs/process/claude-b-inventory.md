@@ -85,8 +85,11 @@ clone instead:
   - Every one of the 18 wired hooks runs from the clone with a harmless payload (exit 0, no
     missing-file errors).
   - Frozen and live `destructive_bash_check.sh` and `push_review_gate.sh` respond identically to a
-    deny payload. Neither returned a JSON decision for that payload shape, so the deny path is
-    proven in Task 9's live session, not here.
+    deny payload. Neither returned a JSON decision for that payload shape, so this did not prove
+    the deny path. Task 9 did not run either hook with a deny payload either. Later on 2026-11-03,
+    a claude-b session rooted in this worktree saw `push_review_gate.sh` deny live: it blocked
+    Bash calls whose text mentioned a push alongside a variable assignment (class c).
+    `destructive_bash_check.sh`'s deny path is still unverified.
 - **Known dangling pointer:** `skills/plan-reviewer/SKILL.md` names the dropped
   `skills/writing-plans/SKILL.md`.
 - **Step 3:** David runs `bash ~/Desktop/claude-b-freeze.sh`. It writes

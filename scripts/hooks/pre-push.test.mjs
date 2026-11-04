@@ -5,7 +5,7 @@ import { copyFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { main } from './pre-push.mjs'
+import { main, refsNotHead } from './pre-push.mjs'
 import { setup } from './setup.mjs'
 
 let pass = 0, fail = 0
@@ -34,6 +34,22 @@ ok('passing check prints nothing', (await runHook({ localCheck: () => ({ ok: tru
 ok('async check is awaited', /WARNING.*y/s.test((await runHook({ localCheck: async () => ({ ok: false, lines: ['y'] }) })).err))
 ok('a malformed result still exits 0', (await runHook({ localCheck: () => ({ ok: false }) })).code === 0)
 ok('kill-switch prints nothing', (await runHook({ localCheck: () => ({ ok: false, lines: ['x'] }), env: { PREPUSH_REVIEW_WARN_DISABLE: '1' } })).err === '')
+
+// Refs sent that are not HEAD: the check covers the checkout, so the hook names what it did not check.
+const H = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', O = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', Z = '0000000000000000000000000000000000000000'
+const line = (ref, sha) => `${ref} ${sha} ${ref} ${Z}\n`
+ok('refsNotHead: the HEAD ref is not reported', refsNotHead(line('refs/heads/a', H), H).length === 0)
+ok('refsNotHead: another ref is reported', JSON.stringify(refsNotHead(line('refs/heads/a', H) + line('refs/heads/b', O), H)) === JSON.stringify([{ ref: 'refs/heads/b', sha: O }]))
+ok('refsNotHead: a deletion is skipped', refsNotHead(`(delete) ${Z} refs/heads/b ${O}\n`, H).length === 0)
+ok('refsNotHead: unknown HEAD or garbage reports nothing', refsNotHead(line('refs/heads/b', O), null).length === 0 && refsNotHead('garbage', H).length === 0)
+const runRefs = async (stdin, head = () => H) => {
+  let err = ''
+  const code = await main({ cwd: '.', env: {}, stderr: { write: (s) => { err += s } }, loadCheck: async () => () => ({ ok: true, lines: [] }), stdin, head })
+  return { code, err }
+}
+ok('a ref that is not HEAD warns, naming it, even when HEAD passes', /covers HEAD only.*refs\/heads\/b \(bbbbbbbbbbbb\)/.test((await runRefs(line('refs/heads/b', O))).err))
+ok('only HEAD sent: no note', (await runRefs(line('refs/heads/a', H))).err === '')
+ok('a throwing head lookup still exits 0 with a failure warning', await (async () => { const r = await runRefs(line('refs/heads/b', O), () => { throw new Error('nogit') }); return r.code === 0 && /check failed: nogit/.test(r.err) })())
 
 // Real process: scratch dir with and without a review-evidence module; run through a symlinked
 // directory where the OS permits one (a junction on Windows needs no privilege), else the real path.

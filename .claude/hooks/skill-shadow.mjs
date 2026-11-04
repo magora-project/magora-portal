@@ -1,5 +1,6 @@
-// PreToolUse hook on the Skill tool: steers agents from the superpowers plugin's brainstorming and
-// writing-plans skills to this repo's own copies of them.
+// Steers from the superpowers plugin's brainstorming and writing-plans skills to this repo's own
+// copies, on both paths a skill starts by: PreToolUse on the Skill tool (Claude invokes it) and
+// UserPromptExpansion (a person types /superpowers:<name>, which never reaches PreToolUse).
 //
 // It steers; it is not a security boundary. Fail-open: any parse failure or internal error allows
 // (prints nothing, exits 0).
@@ -27,9 +28,31 @@ export function decide(payload) {
   }
 }
 
+// UserPromptExpansion payload -> null (allow) | { decision: 'block', reason }. command_name carries
+// the plugin prefix (observed 2026-11-03: "superpowers:brainstorming", command_source "plugin"), so
+// the project skill typed as /brainstorming is not matched.
+export function decideExpansion(payload) {
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return null
+  if (payload.hook_event_name !== 'UserPromptExpansion') return null
+  const name = payload.command_name
+  if (typeof name !== 'string' || !Object.hasOwn(SHADOWED, name)) return null
+  const mine = SHADOWED[name]
+  return {
+    decision: 'block',
+    reason: `This repo has its own \`${mine}\` skill, which replaces \`${name}\`. Type /${mine} instead ` +
+      `(the project copy under .claude/skills/${mine}/).`,
+  }
+}
+
 export function main({ stdin = '', stdout = process.stdout } = {}) {
   try {
-    const verdict = decide(JSON.parse(stdin))
+    const payload = JSON.parse(stdin)
+    if (payload !== null && typeof payload === 'object' && payload.hook_event_name === 'UserPromptExpansion') {
+      const verdict = decideExpansion(payload)
+      if (verdict) stdout.write(JSON.stringify(verdict) + '\n')
+      return 0
+    }
+    const verdict = decide(payload)
     if (verdict) {
       stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', ...verdict } }) + '\n')
     }

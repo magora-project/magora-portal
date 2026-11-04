@@ -40,7 +40,7 @@ PASS when the output is empty.
 
 ### 3. Sync with the base
 
-`git fetch origin` (fetches the remote that holds `<base>`)
+`git fetch <remote>`, where `<remote>` is the remote part of `<base>`: `origin` for `origin/main`, `upstream` for `upstream/main`. Fetching any other remote leaves `<base>` stale, and the checks below then compare against an old base.
 
 `git rev-list --left-right --count <base>...HEAD`
 
@@ -66,7 +66,7 @@ PASS when every commit is one you expect.
 
 ### 5. Review records
 
-The depth label decides which pre-push slots need a record (`.claude/rules/process.md`, `## Review slots and dispatch`): none for `mechanical`; `correctness` for `standard`; `correctness` and `completeness`, from different models, for `subtle-correctness`. A record covers the current diff, so a commit made after a review voids it. Run:
+The depth label decides which pre-push slots need a record (`.claude/rules/process.md`, `## Review slots and dispatch`): none for `mechanical`; `correctness` for `standard`; `correctness` and `completeness`, from different models, for `subtle-correctness`. A record covers a review-input identity, the patch-id of the branch's diff against its merge base, excluding `.review/`. A commit that changes that identity voids the record; a commit that only adds or changes evidence under `.review/` does not. Run:
 
 `npm run review -- check --local`
 
