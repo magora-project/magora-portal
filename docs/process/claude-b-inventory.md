@@ -26,7 +26,7 @@ links other than `plans` point into `~/.claude-b-config` instead.
 | `plugins` | `~/code/claude-config/plugins` | copy-whole | superpowers stays installed; the repo's `skill-shadow.mjs` routes its same-name skills to the repo copies. |
 | `.mcp.json` | `~/code/claude-config/.mcp.json` | copy-whole | |
 | `reflections` | `~/code/claude-config/reflections` | copy-whole | Personal data, not process. |
-| `plans` | `~/code/claude-memory/plans/claude-b` | **keep linked** | Storage, not process: how approved plans survive a crashed session (Q3). The only link left after Step 3. |
+| `plans` | `~/code/claude-memory/plans/claude-b` | **keep linked** | Storage, not process: how approved plans survive a crashed session (Q3). The only link that still points outside `~/.claude-b-config` after Step 3. |
 
 ## Hooks (settings.json wiring)
 
@@ -63,7 +63,7 @@ links other than `plans` point into `~/.claude-b-config` instead.
 - **Q1: keep both.** Model routing and verify-against-source stay in claude-b. Spec §5.7's kept-layer
   list is amended in PR A to name them: personal working discipline, not repo process.
 - **Q3: `plans` stays a link.** Spec §5.7 is amended in PR A to except it as storage. Step 4's
-  read-back expects exactly this one link.
+  read-back expects it as the one link outside the clone.
 - **Q4: keep the Shuksan-only skills.** Only the four repo-named skills are dropped.
 
 ## How the freeze is built: a frozen clone (David, 2026-11-03)
@@ -103,7 +103,8 @@ clone instead:
   - claude-config's working tree is unchanged;
   - every hook path exists.
 - **Amended in PR A:** spec §5.7 (rev 6) and plan Task 8 Steps 3–4 now say this. The links stay
-  symlinks, now into the frozen clone, and promotion is a reviewed merge into `claude-b-frozen`.
+  symlinks, now into the frozen clone, and promotion is a reviewed merge into `claude-b-frozen`, after which the read-back above and
+  the trims are re-checked (spec §5.7, plan Task 19 Step 4).
 
 ## Questions as asked
 

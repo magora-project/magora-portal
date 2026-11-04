@@ -85,7 +85,7 @@ A record covers a review-input identity: for a PR, the patch-id of its own diff 
 
 **After a rewrite that changes the identity,** ask for a full review: `@coderabbitai full review` and `@codex review`. An incremental review alone does not restore coverage.
 
-The bots are told to skip the `.review/` evidence directory (the Codex App has no path filter, so its guidance in `AGENTS.md` says so); a finding located only there is outside the gate, whichever bot raised it.
+The bots are told to skip the `.review/` evidence directory once plan Task 20 ships (the Codex App has no path filter, so that task adds the guidance to `AGENTS.md`); a finding located only there is outside the gate, whichever bot raised it.
 
 ## What blocks
 
@@ -125,4 +125,4 @@ The PR review record is required whenever the PR has at least one required slot 
 
 ## Promotion
 
-(spec §5.7) The repo carries the process: `AGENTS.md` plus the committed `.claude/` (settings, Node hooks, skills, slot prompt files, and these rules). `.claude/**` is a control file. A script on David's Mac lists every change to the process files since the last promoted magora commit; David accepts or rejects each item, and accepted items land in claude-config as a commit naming the magora commit they came from. The same reviewed step carries claude-config changes into claude-b's frozen layer, as a reviewed merge into the clone's `claude-b-frozen` branch. David sets the cadence; the first promotion follows right after conformance ships (D-4). Noah and later developers change the process only through magora PRs, which are `subtle-correctness`.
+(spec §5.7) The repo carries the process: `AGENTS.md` plus the committed `.claude/` (settings, Node hooks, skills, slot prompt files, and these rules). `.claude/**` is a control file. A script on David's Mac lists every change to the process files since the last promoted magora commit; David accepts or rejects each item, and accepted items land in claude-config as a commit naming the magora commit they came from. The same reviewed step carries claude-config changes into claude-b's frozen layer, as a reviewed merge into the clone's `claude-b-frozen` branch; after the merge the freeze's read-back and trims are re-checked, and on a failure the branch is reset and the item rejected. David sets the cadence; the first promotion follows right after conformance ships (D-4). Noah and later developers change the process only through magora PRs, which are `subtle-correctness`.
