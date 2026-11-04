@@ -251,6 +251,9 @@ export async function buildNodeInsightPrompt(body) {
   if (!detection_id && !fallbackSpecies) {
     return { error: 'detection_id or species_name required', status: 400 }
   }
+  if (!fallbackLocation && !detection_id) {
+    return { error: 'location required without detection_id', status: 400 }
+  }
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL
   const apiKey      = process.env.VITE_SUPABASE_ANON_KEY
@@ -336,7 +339,8 @@ export async function buildNodeInsightPrompt(body) {
   const season         = detection?.season ?? null
   const phenoWeek      = detection?.phenological_week ?? null
   const sciName        = species?.scientific_name || fallbackSci || ''
-  const locationLabel  = habitat?.notes?.split('.')[0] || node?.name || fallbackLocation || 'the American West'
+  const locationLabel  = habitat?.notes?.split('.')[0] || node?.name || fallbackLocation
+  if (!locationLabel) return { error: 'node location context required', status: 400 }
 
   // --- Build prompt ---
   const timingDesc = localTimeContext(detection?.detected_at || new Date().toISOString(), minutesFromSun)
