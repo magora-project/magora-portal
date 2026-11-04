@@ -543,8 +543,16 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
      'psql "$PROD_DB_URL" -X -At -c "select id, updated_at from storage.objects where id in ($1)"' _ "$IDS"
    ```
 
-   An id missing here, or with an `updated_at` on or after `<latest>`, is not a restore defect: record
-   it and rehearse again after the next marked night. A `full diff` line that differs only in
+   `<latest>` is a date, and the backup ran some time during that day, so compare with the time the
+   completion marker was written instead. Every bucket had been copied by then:
+
+   ```sh
+   op run --env-file="$RESTORE_DIR/rclone.env" -- rclone lsjson "r2:<R2_BUCKET>/complete/<latest>" | grep -o '"ModTime":"[^"]*"'
+   ```
+
+   An id missing here, or with an `updated_at` later than that time, is not a restore defect: record
+   it and rehearse again after the next marked night. Any other difference counts as a defect, even
+   one whose `updated_at` falls during the run itself. A `full diff` line that differs only in
    `Cache-Control` is not a failed rehearsal, but it means a restore serves a different cache header:
    record it and reopen the `-M` decision (`docs/runbooks/storage-backup.md`, "What the job copies").
 
