@@ -43,8 +43,10 @@
 #    checkouts keeps the job token out of `.git/config`. RESIDUAL, NOT MITIGATED
 #    BY REVIEW: this YAML runs from the PR ref on open, before any review, so a
 #    PR editing these steps can read the key. Bounded by push access; method-project#2834.
-#    A `workflow_dispatch` run (label-gate starts one, issue #58) has no such residual: its `if:`
-#    requires `refs/heads/main`, so the YAML that runs is the protected branch's.
+#    label-gate's `workflow_dispatch` runs (issue #58) use main's YAML, because label-gate
+#    dispatches with `ref: main`. The job's `refs/heads/main` guard only stops main-guarded copies
+#    from running on other refs: a pusher who dispatches on their own branch runs that branch's
+#    YAML, which can drop the guard. That is the same push-access residual as above.
 #
 # COST: method-project's 2026-08-16 Actions audit cut two sweeps because GitHub bills
 # every job rounded UP to a whole minute. This adds one job per PR head, and the
@@ -62,7 +64,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: Pull request number to review
+        description: Pull request number to review (digits only)
         required: true
         type: string
 
@@ -74,10 +76,13 @@ concurrency:
   # Per PR, not per repo: two PRs must review in parallel. Cancel-in-progress
   # drops a run whose head has already been superseded -- its verdict would
   # describe a SHA nobody will merge.
-  # A `pull_request` run that will skip -- a `labeled` event for any other label, or a payload
-  # without `subtle-correctness` -- gets a unique group (suffix `-noop-<run_id>`), so it cannot
-  # cancel a review already in flight for the same PR (such as one label-gate just dispatched).
-  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ (github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) && format('-noop-{0}', github.run_id) || '' }}
+  # A run that will skip gets a unique group (suffix `-noop-<run_id>`), so it cannot cancel a
+  # review already in flight for the same PR (such as one label-gate just dispatched): a
+  # `pull_request` run for a `labeled` event of any other label or whose payload lacks
+  # `subtle-correctness`, and a dispatch on any ref but main.
+  # Accepted cost: a push to a PR whose label was just changed away from `subtle-correctness` no
+  # longer cancels a review in flight for the previous head; that review still posts, naming its SHA.
+  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ ((github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')) && format('-noop-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -131,7 +136,7 @@ jobs:
               if not re.fullmatch(r"[1-9][0-9]{0,9}", number):
                   sys.exit(f"pr_number must be a positive integer, got {number!r}")
               req = urllib.request.Request(
-                  f"https://api.github.com/repos/{repo}/pulls/{number}",
+                  f"{env.get('GITHUB_API_URL', 'https://api.github.com')}/repos/{repo}/pulls/{number}",
                   headers={"Authorization": f"Bearer {env['GH_TOKEN']}", "Accept": "application/vnd.github+json"})
               with urllib.request.urlopen(req, timeout=30) as r:
                   pr = json.load(r)
@@ -153,7 +158,7 @@ jobs:
           for sha in (base, head):
               if not re.fullmatch(r"[0-9a-f]{40}", sha):
                   sys.exit(f"unexpected sha {sha!r}")
-          with open("/tmp/pr-title", "w", encoding="utf-8") as fh:
+          with open(os.path.join(env["RUNNER_TEMP"], "pr-title"), "w", encoding="utf-8") as fh:
               fh.write(title)
           out(run="true", number=number, base_sha=base, head_sha=head)
           PY
@@ -207,7 +212,7 @@ jobs:
           BASE_SHA: ${{ steps.pr.outputs.base_sha }}
         run: |
           set -uo pipefail
-          PR_TITLE="$(cat /tmp/pr-title)"
+          PR_TITLE="$(cat "$RUNNER_TEMP/pr-title")"
           # 🔴 `|| rc=$?` IS LOAD-BEARING, AND `set -uo pipefail` DOES NOT MAKE IT
           # REDUNDANT. GitHub's default shell for a `run:` step is `bash -e {0}`,
           # so `-e` is ALREADY ON before this script's first line, and `set -uo

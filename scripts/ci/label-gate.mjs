@@ -213,18 +213,13 @@ export async function main({ env = process.env, fetchImpl, readAgents = () => re
     return 1
   }
   let botAppliedSubtle = false
-  if (env.AUTO_LABEL === 'true') {
-    const onApply = (label) => { if (label === 'subtle-correctness') botAppliedSubtle = true }
-    try { names = await autoLabel({ repo, pr, token, names, readAgents, log: console.log, onApply, ...f, ...(sleep ? { sleep } : {}) }) } catch (e) {
-      // Fail closed: a failed reconcile may have left a label the paths no longer allow (a refused
-      // upgrade) or two labels. Re-running the job retries it.
-      console.error(`label-gate: FAIL (could not judge): auto-label failed (${e.message}); re-run label-gate on the PR's latest commit to retry`)
-      return 1
-    }
-  }
-  const v = evaluateLabels(names)
-  ;(v.ok ? console.log : console.error)(v.line)
-  if (v.ok && botAppliedSubtle && names.includes('subtle-correctness') && env.GEMINI_DISPATCH === 'true') {
+  // Dispatch whenever this run applied subtle-correctness, EVEN IF the run then fails: a re-run
+  // finds the label already there, applies nothing, and so would never dispatch (Codex review).
+  // The dispatched run reads the PR's live labels and skips if the label has gone.
+  // Residual: a POST that lands on GitHub but whose response is lost never calls onApply, so that
+  // head has no Gemini review until a person labels it or a later push carries the label.
+  const maybeDispatch = async () => {
+    if (!botAppliedSubtle || env.GEMINI_DISPATCH !== 'true') return
     try {
       await dispatchGemini({ repo, pr, token, ...f })
       console.log('label-gate: started gemini-review for this PR (the bot applied subtle-correctness)')
@@ -232,6 +227,19 @@ export async function main({ env = process.env, fetchImpl, readAgents = () => re
       console.log(`::warning::label-gate could not start gemini-review (${e.message}); this head has no Gemini review. Run "Gemini review" by hand from main with this PR's number.`)
     }
   }
+  if (env.AUTO_LABEL === 'true') {
+    const onApply = (label) => { if (label === 'subtle-correctness') botAppliedSubtle = true }
+    try { names = await autoLabel({ repo, pr, token, names, readAgents, log: console.log, onApply, ...f, ...(sleep ? { sleep } : {}) }) } catch (e) {
+      // Fail closed: a failed reconcile may have left a label the paths no longer allow (a refused
+      // upgrade) or two labels. Re-running the job retries it.
+      console.error(`label-gate: FAIL (could not judge): auto-label failed (${e.message}); re-run label-gate on the PR's latest commit to retry`)
+      await maybeDispatch()
+      return 1
+    }
+  }
+  const v = evaluateLabels(names)
+  ;(v.ok ? console.log : console.error)(v.line)
+  await maybeDispatch()
   return v.ok ? 0 : 1
 }
 

@@ -319,10 +319,27 @@ const g8 = gh({ files: [{ filename: 'scripts/ci/x.mjs' }], failWrites: true })
 const rg8 = await quiet(() => main({ env: gem, fetchImpl: g8.fetchImpl, readAgents }))
 ok('gemini: label write refused -> gate fails, no dispatch', rg8.code === 1 && g8.dispatches.length === 0)
 
+// A run that applied the label but then failed still dispatches: its re-run applies nothing, so it
+// would never dispatch (Codex review: one DELETE 503 lost the review).
+const g9 = gh({ labels: ['standard'], events: [labeled('standard', BOT)], files: [{ filename: 'supabase/migrations/x.sql' }] })
+let del503 = true
+const flaky = async (u, o = {}) => {
+  if (o.method === 'DELETE' && del503) { del503 = false; return { ok: false, status: 503, json: async () => ({}) } }
+  return g9.fetchImpl(u, o)
+}
+const rg9a = await quiet(() => main({ env: gem, fetchImpl: flaky, readAgents }))
+const rg9b = await quiet(() => main({ env: gem, fetchImpl: flaky, readAgents }))
+ok('gemini: upgrade whose DELETE fails -> that run fails but dispatches; the re-run passes; one dispatch in all',
+  rg9a.code === 1 && rg9b.code === 0 && W(g9.state) === W(['subtle-correctness']) && W(g9.dispatches) === W([DISPATCH]))
+
 // The dispatched run must execute main's YAML, never a branch's (decision 5 of gemini-review.yml).
 const gyml = readFileSync(new URL('../../.github/workflows/gemini-review.yml', import.meta.url), 'utf8')
 ok("gemini workflow: a dispatched run is gated on refs/heads/main",
   /\(github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'\) \|\|/.test(gyml))
+// The concurrency group is what keeps a skipping run from cancelling a dispatched review (#58).
+// Pinned whole: actionlint checks its types, not its logic, so any edit must be deliberate.
+ok('gemini workflow: concurrency group (noop for skipping runs) is exactly as reviewed',
+  gyml.includes("  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ ((github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')) && format('-noop-{0}', github.run_id) || '' }}\n  cancel-in-progress: true\n"))
 ok('gemini workflow: the PR number input is read through env, never expanded into a script',
   /INPUT_PR: \$\{\{ inputs\.pr_number \}\}/.test(gyml) && (gyml.match(/inputs\.pr_number/g) ?? []).length === 2)
 const lyml = readFileSync(new URL('../../.github/workflows/label-gate.yml', import.meta.url), 'utf8')
