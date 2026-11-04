@@ -541,7 +541,7 @@ well as the model.
 - **The other direction:** the same reviewed step carries claude-config changes into claude-b's
   frozen layer, as a reviewed merge into the clone's `claude-b-frozen` branch (rev 6). It is
   all or nothing: David reviews every claude-config commit since the last promotion and accepts
-  or rejects the range as a whole, so no accepted change can depend on a rejected one. A merge
+  or rejects the range as a whole, so no accepted change depends on a rejected commit. A merge
   conflict, which edits to a file the freeze trimmed will cause, is resolved by David keeping the
   trim, and in no other way. There is no one-off exclusion: to keep a change out of claude-b,
   David makes it a freeze trim (a reviewed change to `docs/process/claude-b-inventory.md`), or
@@ -552,6 +552,11 @@ well as the model.
   The promotion script checks this on the final result; on a failure it resets the branch to
   its pre-merge commit and the range is rejected. Plan Task 19
   defines the checks. (Added 2026-11-04 for PR #56's CodeRabbit finding and push-gate review.)
+- **Accepted limitation (David, 2026-11-04):** trimming, at the freeze or by keeping a trim in a
+  conflict, can leave a kept file calling trimmed content. The checks catch a kept file that
+  names a trimmed skill or path, other than the known dangling pointers the inventory lists;
+  they cannot catch a call no harmless hook run reaches. David's review of the range is the
+  mitigation.
 - **Cadence:** set by David.
 - **First promotion:** right after conformance ships (D-4).
 

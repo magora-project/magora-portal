@@ -93,8 +93,8 @@ clone instead:
     a claude-b session rooted in this worktree saw `push_review_gate.sh` deny live: it blocked
     Bash calls whose text mentioned a push alongside a variable assignment (class c).
     `destructive_bash_check.sh`'s deny path is still unverified.
-- **Known dangling pointer:** `skills/plan-reviewer/SKILL.md` names the dropped
-  `skills/writing-plans/SKILL.md`.
+- **Known dangling pointers** (plan Task 19 Step 5 check (e) allows exactly these):
+  `skills/plan-reviewer/SKILL.md` names the dropped `skills/writing-plans/SKILL.md`.
 - **Step 3:** David runs `bash ~/Desktop/claude-b-freeze.sh`. It writes
   `~/Desktop/claude-b-unfreeze.sh` (the rollback) first, repoints the 11 links into the clone,
   leaves `plans` alone, and reads back:
