@@ -15,6 +15,7 @@ import {
   getListenerAvatarUrl,
   uploadListenerAvatar,
 } from '../lib/listener'
+import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
 
 const C = {
   bg: '#0d2818', card: '#163d22', border: '#1f5230',
@@ -471,8 +472,8 @@ export default function JournalPage() {
           <div style={{ height: '340px', minHeight: '280px' }}>
             <MapContainer style={{ width: '100%', height: '100%', borderRadius: '16px' }} center={mapPoints[0]} zoom={6} scrollWheelZoom={false}>
               <TileLayer
-                attribution='&copy; OpenStreetMap contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution={OPENSTREETMAP_ATTRIBUTION}
+                url={OPENSTREETMAP_TILE_URL}
               />
               <MapController points={mapPoints} />
               {entries.filter(e => e.lat != null && e.lon != null).map((entry) => (
