@@ -65,12 +65,17 @@ ok('infer: never mechanical', inferLabel([], CF) === 'standard')
 // write is recorded, and `events` grows with each bot POST, as GitHub's would.
 const BOT = 'github-actions[bot]'
 function labeled(name, login) { return { event: 'labeled', label: { name }, actor: { login } } }
-const gh = ({ labels = [], files = [], events = [], failWrites = false } = {}) => {
-  const state = [...labels], log = [...events], writes = []
+const gh = ({ labels = [], files = [], events = [], failWrites = false, dispatchStatus = 204 } = {}) => {
+  const state = [...labels], log = [...events], writes = [], dispatches = []
   const fetchImpl = async (url, opts = {}) => {
     const u = new URL(url), method = opts.method ?? 'GET'
     const page = Number(u.searchParams.get('page') ?? 1)
     const slice = (arr) => arr.slice((page - 1) * 100, page * 100)
+    // A workflow dispatch answers 204 with no body: json() throws, as a real empty body would.
+    if (u.pathname.endsWith('/dispatches')) {
+      dispatches.push(`${method} ${u.pathname} ${opts.body}`)
+      return { ok: dispatchStatus < 300, status: dispatchStatus, json: async () => { throw new Error('no body') } }
+    }
     if (method !== 'GET') {
       writes.push(`${method} ${decodeURIComponent(u.pathname.split('/labels')[1] || '')} ${opts.body ?? ''}`.trim())
       if (failWrites) return { ok: false, status: 403, json: async () => ({}) }
@@ -89,7 +94,7 @@ const gh = ({ labels = [], files = [], events = [], failWrites = false } = {}) =
     if (u.pathname.endsWith('/events')) return { ok: true, json: async () => slice(log) }
     return { ok: false, status: 404, json: async () => ({}) }
   }
-  return { fetchImpl, writes, state }
+  return { fetchImpl, writes, state, dispatches }
 }
 const auto = { ...goodEnv, AUTO_LABEL: 'true' }
 const readAgents = () => AGENTS
@@ -279,6 +284,51 @@ ok("auto: person removed their label, bot re-applied it, person overrides -> bot
 const a23 = gh({ labels: ['standard', 'subtle-correctness'], events: [labeled('standard', 'alice'), unl('standard', BOT), labeled('standard', BOT), labeled('subtle-correctness', BOT)] })
 const r23 = await quiet(() => main({ env: auto, fetchImpl: a23.fetchImpl, readAgents }))
 ok("auto: bot delete + restore of a person's label leaves it theirs", r23.code === 0 && W(a23.state) === W(['standard']))
+
+// Gemini dispatch (issue #58): only when this run's bot applies subtle-correctness.
+const gem = { ...auto, GEMINI_DISPATCH: 'true' }
+const DISPATCH = 'POST /repos/o/r/actions/workflows/gemini-review.yml/dispatches {"ref":"main","inputs":{"pr_number":"1"}}'
+const g1 = gh({ files: [{ filename: 'scripts/ci/x.mjs' }] })
+const rg1 = await quiet(() => main({ env: gem, fetchImpl: g1.fetchImpl, readAgents }))
+ok('gemini: bot applies subtle-correctness at open -> one dispatch on main with the PR number (204 handled)',
+  rg1.code === 0 && W(g1.dispatches) === W([DISPATCH]) && /started gemini-review/.test(rg1.lines.join()))
+const g2 = gh({ labels: ['standard'], events: [labeled('standard', BOT)], files: [{ filename: 'supabase/migrations/x.sql' }] })
+const rg2 = await quiet(() => main({ env: gem, fetchImpl: g2.fetchImpl, readAgents }))
+ok('gemini: bot upgrades its standard to subtle-correctness -> dispatches',
+  rg2.code === 0 && W(g2.state) === W(['subtle-correctness']) && W(g2.dispatches) === W([DISPATCH]))
+const g3 = gh({ files: [{ filename: 'src/a.js' }] })
+await quiet(() => main({ env: gem, fetchImpl: g3.fetchImpl, readAgents }))
+ok('gemini: bot applies standard -> no dispatch', W(g3.state) === W(['standard']) && g3.dispatches.length === 0)
+const g4 = gh({ labels: ['subtle-correctness'], events: [labeled('subtle-correctness', BOT)], files: [{ filename: 'scripts/ci/x.mjs' }] })
+await quiet(() => main({ env: gem, fetchImpl: g4.fetchImpl, readAgents }))
+ok('gemini: bot subtle-correctness already there -> no dispatch (the run that applied it dispatched)', g4.dispatches.length === 0)
+const g5 = gh({ labels: ['subtle-correctness'], events: [labeled('subtle-correctness', 'alice')] })
+await quiet(() => main({ env: gem, fetchImpl: g5.fetchImpl, readAgents }))
+ok("gemini: a person's subtle-correctness -> no dispatch (their labeled event runs Gemini)", g5.dispatches.length === 0)
+const g5b = gh({ events: [labeled('subtle-correctness', 'alice'), unl('subtle-correctness', BOT)], files: [{ filename: 'scripts/ci/x.mjs' }] })
+await quiet(() => main({ env: gem, fetchImpl: g5b.fetchImpl, readAgents }))
+ok("gemini: restoring a person's raced subtle-correctness -> no dispatch", W(g5b.state) === W(['subtle-correctness']) && g5b.dispatches.length === 0)
+const g6 = gh({ files: [{ filename: 'scripts/ci/x.mjs' }] })
+await quiet(() => main({ env: auto, fetchImpl: g6.fetchImpl, readAgents }))
+ok('gemini: no GEMINI_DISPATCH -> applies subtle-correctness, never dispatches', W(g6.state) === W(['subtle-correctness']) && g6.dispatches.length === 0)
+const g7 = gh({ files: [{ filename: 'scripts/ci/x.mjs' }], dispatchStatus: 422 })
+const rg7 = await quiet(() => main({ env: gem, fetchImpl: g7.fetchImpl, readAgents }))
+ok('gemini: dispatch refused -> gate still passes, with a ::warning:: naming the status',
+  rg7.code === 0 && g7.dispatches.length === 1 && /::warning::.*422/.test(rg7.lines.join()))
+const g8 = gh({ files: [{ filename: 'scripts/ci/x.mjs' }], failWrites: true })
+const rg8 = await quiet(() => main({ env: gem, fetchImpl: g8.fetchImpl, readAgents }))
+ok('gemini: label write refused -> gate fails, no dispatch', rg8.code === 1 && g8.dispatches.length === 0)
+
+// The dispatched run must execute main's YAML, never a branch's (decision 5 of gemini-review.yml).
+const gyml = readFileSync(new URL('../../.github/workflows/gemini-review.yml', import.meta.url), 'utf8')
+ok("gemini workflow: a dispatched run is gated on refs/heads/main",
+  /\(github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'\) \|\|/.test(gyml))
+ok('gemini workflow: the PR number input is read through env, never expanded into a script',
+  /INPUT_PR: \$\{\{ inputs\.pr_number \}\}/.test(gyml) && (gyml.match(/inputs\.pr_number/g) ?? []).length === 2)
+const lyml = readFileSync(new URL('../../.github/workflows/label-gate.yml', import.meta.url), 'utf8')
+ok('label-gate workflow: can dispatch, and only for same-repo non-Dependabot PRs into main',
+  /^\s*actions: write\b/m.test(lyml) &&
+  /GEMINI_DISPATCH: \$\{\{ github\.event\.pull_request\.head\.repo\.full_name == github\.repository && github\.event\.pull_request\.user\.login != 'dependabot\[bot\]' && github\.event\.pull_request\.base\.ref == 'main' \}\}/.test(lyml))
 
 // Labels belong to the PR, so runs for different heads must not overlap their writes (Codex review).
 const yml = readFileSync(new URL('../../.github/workflows/label-gate.yml', import.meta.url), 'utf8')

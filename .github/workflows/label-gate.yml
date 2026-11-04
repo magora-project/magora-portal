@@ -21,6 +21,10 @@ permissions:
   contents: read
   pull-requests: write # auto-label: add or remove a depth label on same-repo PRs
   issues: read
+  # Dispatch gemini-review.yml after the bot applies subtle-correctness (GEMINI_DISPATCH). A label
+  # written with this token starts no `labeled` run, so without this that head gets no Gemini review.
+  # Fork PRs get a read-only token whatever this says.
+  actions: write
 
 concurrency:
   group: label-gate-${{ github.event.pull_request.number }}
@@ -43,3 +47,5 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           AUTO_LABEL: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' }}
+          # gemini-review.yml reviews only PRs into main.
+          GEMINI_DISPATCH: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.base.ref == 'main' }}

@@ -11,8 +11,12 @@
 // - A person applied a depth label: remove the bot's, so a person's label always wins. A person's
 //   labels are never removed.
 // After any write the labels are re-read and that state is judged.
-// Known gap: Gemini review starts from the event payload, so a bot-applied `subtle-correctness`
-// gets its Gemini comment on the next push, not at open.
+// Gemini (GEMINI_DISPATCH=true): a label written with the workflow token starts no `labeled` run, and
+// gemini-review.yml's `pull_request` runs judge the event payload's labels, so a head the bot raises
+// to `subtle-correctness` would get no Gemini review. When this run applies `subtle-correctness`
+// itself, it dispatches gemini-review.yml on `main` (a `workflow_dispatch` event always starts a run,
+// even from the workflow token). That run reads the PR from the API and reviews its current head.
+// A failed dispatch is a warning, not a failed gate: Gemini is advisory and gates nothing.
 // Without AUTO_LABEL (fork and Dependabot PRs, read-only token) the gate only judges, as before.
 // Run (CI): GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo PR_NUMBER=n [AUTO_LABEL=true] node scripts/ci/label-gate.mjs
 import { readFileSync } from 'node:fs'
@@ -58,7 +62,8 @@ async function api(fetchImpl, token, url, method = 'GET', body) {
     ...(body ? { body: JSON.stringify(body) } : {}),
   })
   if (!res.ok) throw new Error(`GitHub API ${res.status} on ${method} ${new URL(url).pathname}`)
-  return res.json()
+  // A workflow dispatch answers 204 No Content (or 200 with run details, on newer API versions).
+  return res.status === 204 ? null : res.json()
 }
 
 async function paginate(fetchImpl, token, base) {
@@ -130,7 +135,8 @@ async function ownershipOf(present, { repo, pr, token, fetchImpl, sleep, tries =
 // - Otherwise (none, or only the bot's): the target is the label inferred from the CURRENT paths,
 //   but never lower than a bot `subtle-correctness` already there (upgrade only, so a later push
 //   adding a migration raises `standard`, and nothing lowers it). Add the target, remove the rest.
-export async function autoLabel({ repo, pr, token, names, fetchImpl = fetch, readAgents, log, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+// `onApply(label)` is called after the bot itself applies a label (not after a restore of a person's).
+export async function autoLabel({ repo, pr, token, names, fetchImpl = fetch, readAgents, log, onApply = () => {}, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const base = `https://api.github.com/repos/${repo}/issues/${pr}/labels`
   const depth = names.filter((n) => DEPTH_LABELS.includes(n))
   const ctx = { repo, pr, token, fetchImpl, sleep }
@@ -159,6 +165,7 @@ export async function autoLabel({ repo, pr, token, names, fetchImpl = fetch, rea
   if (add) {
     await api(fetchImpl, token, base, 'POST', { labels: [add] })
     log(`label-gate: applied ${add} from the changed paths (add a different depth label to override)`)
+    onApply(add)
   }
   // Ownership is re-read just before deleting: a person may have applied one of these since.
   const stillBot = drop.length ? (await fetchOwnership(ctx)).bot : new Set()
@@ -186,6 +193,13 @@ export async function autoLabel({ repo, pr, token, names, fetchImpl = fetch, rea
   return fetchLabels({ repo, pr, token, fetchImpl })
 }
 
+// Starts gemini-review.yml from `main`'s copy of the workflow, never the PR's: the dispatched run's
+// YAML comes from the protected branch. It takes only the PR number and resolves the rest itself.
+export async function dispatchGemini({ repo, pr, token, fetchImpl = fetch }) {
+  await api(fetchImpl, token, `https://api.github.com/repos/${repo}/actions/workflows/gemini-review.yml/dispatches`, 'POST',
+    { ref: 'main', inputs: { pr_number: String(pr) } })
+}
+
 export async function main({ env = process.env, fetchImpl, readAgents = () => readFileSync('AGENTS.md', 'utf8'), sleep } = {}) {
   const { GITHUB_TOKEN: token, GITHUB_REPOSITORY: repo, PR_NUMBER: pr } = env
   if (!token || !repo || !pr) {
@@ -198,8 +212,10 @@ export async function main({ env = process.env, fetchImpl, readAgents = () => re
     console.error(`label-gate: FAIL (could not judge): ${e.message}`)
     return 1
   }
+  let botAppliedSubtle = false
   if (env.AUTO_LABEL === 'true') {
-    try { names = await autoLabel({ repo, pr, token, names, readAgents, log: console.log, ...f, ...(sleep ? { sleep } : {}) }) } catch (e) {
+    const onApply = (label) => { if (label === 'subtle-correctness') botAppliedSubtle = true }
+    try { names = await autoLabel({ repo, pr, token, names, readAgents, log: console.log, onApply, ...f, ...(sleep ? { sleep } : {}) }) } catch (e) {
       // Fail closed: a failed reconcile may have left a label the paths no longer allow (a refused
       // upgrade) or two labels. Re-running the job retries it.
       console.error(`label-gate: FAIL (could not judge): auto-label failed (${e.message}); re-run label-gate on the PR's latest commit to retry`)
@@ -208,6 +224,14 @@ export async function main({ env = process.env, fetchImpl, readAgents = () => re
   }
   const v = evaluateLabels(names)
   ;(v.ok ? console.log : console.error)(v.line)
+  if (v.ok && botAppliedSubtle && names.includes('subtle-correctness') && env.GEMINI_DISPATCH === 'true') {
+    try {
+      await dispatchGemini({ repo, pr, token, ...f })
+      console.log('label-gate: started gemini-review for this PR (the bot applied subtle-correctness)')
+    } catch (e) {
+      console.log(`::warning::label-gate could not start gemini-review (${e.message}); this head has no Gemini review. Run "Gemini review" by hand from main with this PR's number.`)
+    }
+  }
   return v.ok ? 0 : 1
 }
 
