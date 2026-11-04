@@ -10,7 +10,10 @@ in `.claude/rules/process.md`.
 
 ## Links
 
-| Link | Target | Action | Notes |
+The `Original target` column is each link's target before the unlink. Since Task 8 Step 3, the 11
+links other than `plans` point into `~/.claude-b-config` instead.
+
+| Link | Original target | Action | Notes |
 |---|---|---|---|
 | `CLAUDE.md` | `~/code/claude-config/CLAUDE.md` | copy-trimmed | See "CLAUDE.md trim" below. |
 | `settings.json` | `~/code/claude-config/settings.json` | copy-trimmed | Copied before any edit (today it **is** claude-config's file). See "Hooks". |

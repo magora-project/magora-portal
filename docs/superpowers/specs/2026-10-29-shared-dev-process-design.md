@@ -538,7 +538,10 @@ well as the model.
 - **Landing:** accepted items land as a claude-config commit that names the magora commit they came
   from.
 - **The other direction:** the same reviewed step carries claude-config changes into claude-b's
-  frozen layer, as a reviewed merge into the clone's `claude-b-frozen` branch (rev 6).
+  frozen layer, as a reviewed merge into the clone's `claude-b-frozen` branch (rev 6). The merge
+  can reintroduce what the freeze removed, so after it the script re-runs the freeze read-back: no
+  runtime file names `code/claude-config`, and no trimmed skill is back under the clone's
+  `skills/`. On a failure the branch is reset to its pre-merge commit and the item is rejected.
 - **Cadence:** set by David.
 - **First promotion:** right after conformance ships (D-4).
 
