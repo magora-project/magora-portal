@@ -45,6 +45,7 @@ export default function MapPage() {
   const [nodesAvailable, setNodesAvailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [partialFeedError, setPartialFeedError] = useState(false)
   const [wikiData, setWikiData] = useState({})
   const [insights, setInsights] = useState({})
   // Mobile-Listen ecosystem insight (state + generation + open-in-modal), shared
@@ -134,7 +135,7 @@ export default function MapPage() {
           .or('range_status.is.null,range_status.neq.quarantined')
           .order('detected_at', { ascending: false }).limit(50),
         supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
-        supabase.from('detections').select('species_name').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString())
+        supabase.from('detections').select('species_name, raw_label').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString())
           .or('range_status.is.null,range_status.neq.quarantined'),
         supabase.from('public_mobile_detections').select('*').order('detected_at', { ascending: false }).limit(50),
         supabase.from('public_listen_sessions').select('*').order('started_at', { ascending: false }).limit(50),
@@ -169,16 +170,17 @@ export default function MapPage() {
       setTodayDetections(todayData || [])
       setTodaySpeciesCount(todayData == null
         ? null
-        : new Set(todayData.map(d => d.species_name).filter(n => n && !isHiddenSpecies(n))).size)
+        : new Set(todayData.map(d => d.species_name || d.raw_label).filter(n => n && !isHiddenSpecies(n))).size)
 
-      const feedError = [detRes, mobileRes, sessionsRes]
-        .find(res => res.error)?.error
-      if (feedError) {
-        console.warn('MapPage feed failed:', feedError)
+      const feedErrors = [detRes, mobileRes, sessionsRes].filter(res => res.error)
+      if (feedErrors.length > 0) {
+        console.warn('MapPage feed section failed:', feedErrors.map(res => res.error))
       }
-      setError(Boolean(feedError))
+      setPartialFeedError(feedErrors.length > 0)
+      setError(feedErrors.length === 3)
     } catch (e) {
       console.warn('MapPage fetch failed:', e)
+      setPartialFeedError(false)
       setError(true)
     } finally {
       setLoading(false)
@@ -250,8 +252,8 @@ export default function MapPage() {
   }
 
   const speciesCountToday = todaySpeciesCount == null ? null : (todayDetections || []).reduce((acc, d) => {
-    const name = d.species_name
-    if (name) acc[name] = (acc[name] || 0) + 1
+    const name = d.species_name || d.raw_label
+    if (name && !isHiddenSpecies(name)) acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})
   // Following tab gates on the "empty room" problem: hidden until the network is
@@ -495,6 +497,12 @@ export default function MapPage() {
                   </button>
                 )
               })}
+            </div>
+          )}
+
+          {partialFeedError && feedItems.length > 0 && (
+            <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', background: '#1f3326', border: '1px solid #3a6247', color: C.textSub, fontSize: '13px' }}>
+              Some live-feed sources couldn't load. Showing what is available.
             </div>
           )}
 
