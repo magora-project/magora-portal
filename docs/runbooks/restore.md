@@ -354,8 +354,10 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
 
 1. Pick `<latest>`: the newest date that has a completion marker `complete/<date>` and a matching
    `nightly/<date>/` prefix, never just the newest prefix. The job writes the marker only after every
-   bucket's copy and check passed, under the date of the prefix it actually wrote; a failed night leaves
-   a partial prefix and no marker. Markers never expire, but the lifecycle rule deletes `nightly/`
+   bucket's copy and check passed, under the date of the prefix it actually wrote. A night whose copy or
+   check failed can leave a partial prefix and no marker. A night whose final marker write failed
+   leaves a complete prefix with no marker; it is still not used, because without the marker the
+   prefix cannot be told apart from a partial one. Markers never expire, but the lifecycle rule deletes `nightly/`
    objects after 14 days, so the list keeps only dates less than 13 days old (UTC calendar days) and
    leaves a day's margin for the restore itself. This lists the marked dates that have a prefix and are
    less than 13 days old, oldest first; take the last line. If nothing prints (it then exits non-zero),
