@@ -103,8 +103,12 @@ clone instead:
   - claude-config's working tree is unchanged;
   - every hook path exists.
 - **Amended in PR A:** spec §5.7 (rev 6) and plan Task 8 Steps 3–4 now say this. The links stay
-  symlinks, now into the frozen clone, and promotion is a reviewed merge into `claude-b-frozen`, after which the read-back above and
-  the trims are re-checked (spec §5.7, plan Task 19 Step 4).
+  symlinks, now into the frozen clone, and promotion is a reviewed merge into `claude-b-frozen` that must not undo the freeze (spec §5.7;
+  the check is plan Task 19 Step 5).
+- **Known mismatch (found 2026-11-04, not yet reconciled):** the clone's `CLAUDE.md` still has two
+  Moment entries beyond the kept four (Session-start, Subagent-dispatch) and its `## Index`,
+  which the table above lists as dropped. Either the table or the clone is wrong; David decides,
+  before plan Task 19 Step 5 writes the freeze check.
 
 ## Questions as asked
 
