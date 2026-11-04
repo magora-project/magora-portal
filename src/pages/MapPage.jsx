@@ -173,10 +173,10 @@ export default function MapPage() {
         : new Set(todayData.map(d => d.species_name || d.raw_label).filter(n => n && !isHiddenSpecies(n))).size)
 
       const feedErrors = [detRes, mobileRes, sessionsRes].filter(res => res.error)
-      if (feedErrors.length > 0) {
+      if (feedErrors.length > 0 && feedErrors.length < 3) {
         console.warn('MapPage feed section failed:', feedErrors.map(res => res.error))
       }
-      setPartialFeedError(feedErrors.length > 0)
+      setPartialFeedError(feedErrors.length > 0 && feedErrors.length < 3)
       setError(feedErrors.length === 3)
     } catch (e) {
       console.warn('MapPage fetch failed:', e)
