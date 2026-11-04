@@ -1,8 +1,16 @@
 # label-gate (repo harness spec §5.3): exactly one depth label. The job's pass/fail IS the check;
 # it posts no commit status, because a fork PR's read-only token cannot write one.
 # Labels are read live from the API when the job runs (not from the event payload), so removing a
-# label re-evaluates. Concurrency is keyed on the head SHA: a run for an older head reports on that
-# older SHA and can never touch the current head's result.
+# label re-evaluates. Each run reports on the head SHA its event carried.
+# Same-repo PRs also get auto-labelling (AUTO_LABEL; see scripts/ci/label-gate.mjs): a PR opened with
+# no depth label gets one inferred from its changed paths, and a person's label replaces the bot's.
+# Fork and Dependabot PRs get a read-only token, so for them the gate only judges.
+# Concurrency is keyed on the PR, not the head SHA: labels belong to the PR, so a run for an older
+# head must finish its label writes before a newer head's run reads them. Runs queue
+# (cancel-in-progress: false). GitHub keeps one queued run per group and cancels the older queued
+# one, in order of arrival, not by head. So a manual re-run of an OLD commit's run (or, rarely, a
+# late-delivered event) can cancel the current head's queued run. Its check then shows cancelled:
+# re-run label-gate on the PR's latest commit. A cancelled run on a superseded head is expected.
 name: label-gate
 
 on:
@@ -11,11 +19,11 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write # auto-label: add or remove a depth label on same-repo PRs
   issues: read
 
 concurrency:
-  group: label-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  group: label-gate-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
@@ -34,3 +42,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          AUTO_LABEL: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' }}

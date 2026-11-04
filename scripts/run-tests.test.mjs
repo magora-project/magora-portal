@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findTests, runTests } from './run-tests.mjs'
+import { fileSymlinkOrSkip } from './ci/file-symlink.mjs'
 
 let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
@@ -55,14 +56,15 @@ try {
   ok('CLI exits zero when all pass', cliGood.status === 0)
 
   write('linked/a.test.mjs', 'process.exit(0)\n')
-  symlinkSync(join(tmp, 'bad', 'b.test.mjs'), join(tmp, 'linked', 'b.test.mjs'))
-  let threw = false
-  try { findTests(join(tmp, 'linked')) } catch { threw = true }
-  ok('a symlinked test is refused, not skipped', threw)
-  // The message pins the guard: without it the uncaught throw also exits 1.
-  const cliLinked = spawnSync(process.execPath, [RUNNER, '--root', join(tmp, 'linked')], { encoding: 'utf8' })
-  ok('CLI exits non-zero on a symlinked test',
-    cliLinked.status === 1 && cliLinked.stderr.includes('run-tests: FAIL (could not judge):'))
+  if (fileSymlinkOrSkip(join(tmp, 'bad', 'b.test.mjs'), join(tmp, 'linked', 'b.test.mjs'))) {
+    let threw = false
+    try { findTests(join(tmp, 'linked')) } catch { threw = true }
+    ok('a symlinked test is refused, not skipped', threw)
+    // The message pins the guard: without it the uncaught throw also exits 1.
+    const cliLinked = spawnSync(process.execPath, [RUNNER, '--root', join(tmp, 'linked')], { encoding: 'utf8' })
+    ok('CLI exits non-zero on a symlinked test',
+      cliLinked.status === 1 && cliLinked.stderr.includes('run-tests: FAIL (could not judge):'))
+  }
 
   // Run through a symlinked path: main() must still run (it once compared unresolved paths).
   symlinkSync(join(RUNNER, '..'), join(tmp, 'scripts-link'), 'junction')
