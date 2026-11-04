@@ -545,7 +545,9 @@ well as the model.
   file reads live claude-config, and nothing the freeze removed is back (a personal skill sharing
   a repo skill's name, a dropped hook wiring, a dropped `CLAUDE.md` entry). The promotion script
   checks this after every item; on a failure it resets the branch to the commit before that item
-  and the item is rejected. Plan Task 19 defines the check. (Added 2026-11-04 for PR #56's
+  and the item is rejected. An item that depends on a rejected one is accepted only with it, and
+  after the last item the kept hooks run once from the clone; a failure undoes the whole
+  promotion. Plan Task 19 defines the checks. (Added 2026-11-04 for PR #56's
   CodeRabbit finding and push-gate review.)
 - **Cadence:** set by David.
 - **First promotion:** right after conformance ships (D-4).
