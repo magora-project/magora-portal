@@ -249,7 +249,7 @@ export default function MapPage() {
     }
   }
 
-  const speciesCountToday = (todayDetections || []).reduce((acc, d) => {
+  const speciesCountToday = todaySpeciesCount == null ? null : (todayDetections || []).reduce((acc, d) => {
     const name = d.species_name
     if (name) acc[name] = (acc[name] || 0) + 1
     return acc
@@ -529,9 +529,9 @@ export default function MapPage() {
                 ) : (
                   <DetectionCard
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
-                    count={speciesCountToday[item.d.species_name || item.d.raw_label] || 1}
+                    count={speciesCountToday == null ? null : (speciesCountToday[item.d.species_name || item.d.raw_label] ?? 0)}
                     insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
-                    insightsAvailable={nodesAvailable && Boolean(nodeById[item.d.node_id])}
+                    insightsAvailable={(Boolean(item.d.insight) || nodesAvailable && Boolean(nodeById[item.d.node_id]))}
                   />
                 )
               ))}

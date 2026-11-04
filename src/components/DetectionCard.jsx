@@ -64,7 +64,7 @@ const BADGE_EXPLAIN = {
     : v >= 50
     ? `${v}% detection confidence. Likely correct, but there's some uncertainty in the identification.`
     : `${v}% detection confidence. A possible detection, but treat with caution. Lower confidence can mean background noise or a similar-sounding species.`,
-  count:     v => `Detected ${v} time${v !== 1 ? 's' : ''} today at this node. High repeat count suggests this species is actively using this habitat right now.`,
+  count:     v => v == null ? 'Today\'s species count could not be loaded.' : `Detected ${v} time${v !== 1 ? 's' : ''} today at this node. High repeat count suggests this species is actively using this habitat right now.`,
   dawn:      () => 'Detected during the acoustic dawn chorus, the peak singing window just before and after sunrise. This is when birds are most vocally active, often defending territory or attracting mates.',
   season:    v => ({
     winter:         'Winter. Resident species dominate. Migrants have departed and breeding has ended. Activity is driven by foraging and survival.',
@@ -270,7 +270,7 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
 
         {/* Context chips */}
         <div className="feed-card-badges" style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '12px' }}>
-          <Btn id="count" style={{ background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>×{count} today</Btn>
+          <Btn id="count" style={{ background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>{count == null ? '— today' : `×${count} today`}</Btn>
           {d.is_dawn_chorus && <Btn id="dawn" style={{ background: '#1a3a4a', border: '1px solid #0ea5e9', color: '#7dd3fc' }}>🌅 Dawn chorus</Btn>}
           {d.season && <Btn id="season" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>{SEASON_EMOJI[d.season]} {d.season.replace(/_/g, ' ')}</Btn>}
           {d.minutes_from_sunrise != null && <Btn id="sunrise" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>☀️ {d.minutes_from_sunrise < 0 ? `${Math.abs(d.minutes_from_sunrise)}m pre-dawn` : `+${d.minutes_from_sunrise}m`}</Btn>}
@@ -325,7 +325,7 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
         <div className="feed-card-insight" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {listenBtn}
           {shareBtn}
-          {insightsAvailable && (
+          {(insightsAvailable || insight?.text) && (
           <button onClick={toggleInsight} aria-expanded={insightOpen} disabled={insight?.loading} style={{
             flex: 1, padding: '10px',
             background: insight?.loading ? C.border : C.accent,
