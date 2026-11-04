@@ -1,6 +1,6 @@
 // Self-test for scripts/hooks/pre-push.mjs and scripts/hooks/setup.mjs. Real spawns use a scratch dir.
 // Run: node scripts/hooks/pre-push.test.mjs
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
@@ -87,6 +87,19 @@ try {
   writeFileSync(mod, 'setInterval(() => {}, 1000)\nexport const localCheck = () => new Promise(() => {})\n')
   const alive = spawnSync(process.execPath, [link], { cwd: scratch, env: fast, input: '', encoding: 'utf8', shell: false, timeout: 8000 })
   ok('spawn with a loop-holding check: exits 0 at the watchdog, not hung', alive.status === 0 && /timed out/.test(alive.stderr))
+
+  // A warning larger than the pipe buffer, read by a slow reader: on POSIX (macOS) pipe writes are
+  // asynchronous, so exiting before they drain truncates the warning. Every line must arrive.
+  writeFileSync(mod, 'export const localCheck = () => ({ ok: false, lines: Array.from({ length: 5000 }, (_, i) => `line ${i} ${"x".repeat(40)}`) })\n')
+  const slow = await new Promise((resolve) => {
+    const child = spawn(process.execPath, [link], { cwd: scratch, stdio: ['ignore', 'ignore', 'pipe'] })
+    let err = ''
+    child.stderr.setEncoding('utf8')
+    child.stderr.pause()
+    setTimeout(() => { child.stderr.on('data', (s) => { err += s }); child.stderr.resume() }, 700)
+    child.on('close', (code) => resolve({ code, err }))
+  })
+  ok('spawn with a large warning and a slow reader: exit 0 and every line arrives', slow.code === 0 && /line 4999 x+\n$/.test(slow.err))
 } finally {
   rmSync(scratch, { recursive: true, force: true })
 }
@@ -192,6 +205,11 @@ try {
   spawnSync('git', ['config', 'core.hooksPath', '.husky'], { cwd: repo, shell: false })
   let e4 = ''
   ok('setup: replacing another hooksPath names it', setup({ cwd: repo, out: () => {}, err: (s) => { e4 += s } }) === 0 && /replacing core\.hooksPath \.husky/.test(e4))
+  // A worktree-level value outranks the repository value setup writes: setup must not report success.
+  spawnSync('git', ['config', 'extensions.worktreeConfig', 'true'], { cwd: repo, shell: false })
+  spawnSync('git', ['config', '--worktree', 'core.hooksPath', '.wt-hooks'], { cwd: repo, shell: false })
+  let o5 = '', e5 = ''
+  ok('setup: an overriding worktree value exits 1 and names it', setup({ cwd: repo, out: (s) => { o5 += s }, err: (s) => { e5 += s } }) === 1 && /still \.wt-hooks/.test(e5) && o5 === 'core.hooksPath = .wt-hooks')
   let e2 = ''
   ok('setup: failure exits 1 and says so', setup({ cwd: join(repo, 'does-not-exist'), out: () => {}, err: (s) => { e2 += s } }) === 1 && /could not set/.test(e2))
 } finally {

@@ -74,12 +74,21 @@ if (isMain()) {
   let stdin = ''
   try { stdin = readFileSync(0, 'utf8') } catch { /* fail open */ }
   process.stderr.on('error', () => {})
+  process.exitCode = 0
+  // Exit only after stderr has drained: pipe writes are asynchronous on POSIX (macOS), so exiting at
+  // once would truncate a warning larger than the pipe buffer. Writes complete in order, so the
+  // callback of a final empty write runs after every earlier one. If it never runs (stderr closed),
+  // the watchdog below still exits.
+  const finish = (line = '') => {
+    try { process.stderr.write(line, () => process.exit(0)) } catch { process.exit(0) }
+  }
   // No top-level await: a check that never settles must not exit 13 or hang. The watchdog is not
-  // unref'd on purpose, so it also fires when the loop would otherwise be empty or kept alive.
+  // unref'd on purpose, so it also fires when the loop would otherwise be empty or kept alive. Its
+  // own drain gets a bounded grace period (unref'd: it never keeps an otherwise empty loop alive).
   const ms = Number(process.env.PREPUSH_REVIEW_TIMEOUT_MS) > 0 ? Number(process.env.PREPUSH_REVIEW_TIMEOUT_MS) : 10000
   setTimeout(() => {
-    try { process.stderr.write('review-evidence check timed out\n') } catch { /* fail open */ }
-    process.exit(0)
+    setTimeout(() => process.exit(0), 2000).unref()
+    finish('review-evidence check timed out\n')
   }, ms)
-  main({ stdin }).then(() => process.exit(0), () => process.exit(0))
+  main({ stdin }).then(() => finish(), () => finish())
 }

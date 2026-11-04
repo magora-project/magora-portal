@@ -70,7 +70,7 @@ The lane and depth label decide which pre-push slots need a record (`.claude/rul
 
 `npm run review -- check --local`
 
-It lists any slot that has no record for the current identity. PASS when none is missing. The command is not available yet (it ships with the review tooling); until then, report this check as NOT RUN, say which slots the depth requires, and ask the operator whether a manual review of the current head was done, by the reviewer the dispatch table in `.claude/rules/process.md` names (Codex CLI for a Claude-written change).
+It lists any slot that has no record for the current identity. PASS when none is missing. The command is not available yet (it ships with the review tooling); until then, report this check as NOT RUN, say which slots the lane and depth require, and ask the operator about each required slot separately: was that review of the current head done, and by which reviewer? `correctness` is by the dispatch table's reviewer in `.claude/rules/process.md` (Codex CLI for a Claude-written change); `completeness`, at `subtle-correctness`, is by a vendor that is neither the author nor the `correctness` reviewer. One review never covers both slots; report each missing slot by name.
 
 ## Summary
 

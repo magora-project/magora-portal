@@ -21,7 +21,14 @@ export function setup({ cwd = process.cwd(), out = console.log, err = console.er
     err('could not read core.hooksPath back')
     return 1
   }
-  out(`core.hooksPath = ${got.stdout.trim()}`)
+  // The repository-level value was written, but a higher-precedence one (a worktree's own
+  // config.worktree, GIT_CONFIG_* or `-c`) can still win: then this checkout would not run the hook.
+  const value = got.stdout.trim()
+  out(`core.hooksPath = ${value}`)
+  if (value !== '.githooks') {
+    err(`core.hooksPath is still ${value} here: a worktree or environment setting overrides the repository value, so this checkout will not run .githooks`)
+    return 1
+  }
   return 0
 }
 
