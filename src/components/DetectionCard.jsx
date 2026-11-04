@@ -101,7 +101,7 @@ const BADGE_EXPLAIN = {
 
 // Memoized + keyed by detection id in the feed so a new detection arriving (feed
 // re-render) doesn't remount existing cards and wipe their local state.
-function DetectionCard({ d, node, showNode = false, wikiData, count, insight, onRequestInsight }) {
+function DetectionCard({ d, node, showNode = false, wikiData, count, insight, onRequestInsight, insightsAvailable = true }) {
   const [activeBadge, setActiveBadge] = useState(null)
   const [callState, setCallState] = useState(null) // null | 'loading' | 'ready' | 'error'
   const [sound, setSound] = useState(null) // { url, source, meta }
@@ -325,6 +325,7 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
         <div className="feed-card-insight" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {listenBtn}
           {shareBtn}
+          {insightsAvailable && (
           <button onClick={toggleInsight} aria-expanded={insightOpen} disabled={insight?.loading} style={{
             flex: 1, padding: '10px',
             background: insight?.loading ? C.border : C.accent,
@@ -338,6 +339,7 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
             {insight?.loading ? '🔍 Generating...' : "What's the ecosystem saying?"}
             {!insight?.loading && <span aria-hidden="true" style={{ fontSize: '10px' }}>{insightOpen ? '▲' : '▼'}</span>}
           </button>
+          )}
         </div>
 
         {/* Collapsible insight */}

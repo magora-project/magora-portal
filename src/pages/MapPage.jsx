@@ -42,6 +42,7 @@ export default function MapPage() {
   const [mobileDetections, setMobileDetections] = useState([])
   const [sessions, setSessions] = useState([])
   const [nodes, setNodes] = useState([])
+  const [nodesAvailable, setNodesAvailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [wikiData, setWikiData] = useState({})
@@ -147,30 +148,35 @@ export default function MapPage() {
       if (nodesRes.error) {
         console.warn('MapPage nodes query failed:', nodesRes.error)
         setNodes([])
+        setNodesAvailable(false)
       } else {
         // Drop the embedded `detections` existence-probe so a node object keeps exactly the shape
         // the rest of the page (and NodePage) expects — the join is a filter, not data.
-        setNodes((nodesRes.data || []).map(row => {
+        const loadedNodes = (nodesRes.data || []).map(row => {
           const node = { ...row }
           delete node.detections
           return node
-        }))
+        })
+        setNodes(loadedNodes)
+        setNodesAvailable(true)
       }
 
       setDetections(detRes.error ? [] : (detRes.data || []))
       setMobileDetections(mobileRes.error ? [] : (mobileRes.data || []))
       setSessions(sessionsRes.error ? [] : (sessionsRes.data || []))
       setAciLogs(aciRes.error ? [] : (aciRes.data || []))
-      const todayData = todayRes.error ? [] : (todayRes.data || [])
-      setTodayDetections(todayData)
-      setTodaySpeciesCount(new Set(todayData.map(d => d.species_name).filter(n => n && !isHiddenSpecies(n))).size)
+      const todayData = todayRes.error ? null : (todayRes.data || [])
+      setTodayDetections(todayData || [])
+      setTodaySpeciesCount(todayData == null
+        ? null
+        : new Set(todayData.map(d => d.species_name).filter(n => n && !isHiddenSpecies(n))).size)
 
-      const sectionError = [detRes, aciRes, todayRes, mobileRes, sessionsRes]
+      const feedError = [detRes, mobileRes, sessionsRes]
         .find(res => res.error)?.error
-      if (sectionError) {
-        console.warn('MapPage data section failed:', sectionError)
+      if (feedError) {
+        console.warn('MapPage feed failed:', feedError)
       }
-      setError(Boolean(sectionError))
+      setError(Boolean(feedError))
     } catch (e) {
       console.warn('MapPage fetch failed:', e)
       setError(true)
@@ -212,6 +218,11 @@ export default function MapPage() {
   }, [detections])
 
   async function requestInsight(d) {
+    const node = nodesAvailable ? nodeById[d.node_id] : null
+    if (!node) {
+      setInsights(prev => ({ ...prev, [d.id]: { unavailable: true } }))
+      return
+    }
     setInsights(prev => ({ ...prev, [d.id]: { loading: true } }))
     try {
       const res = await fetch('/api/insight', {
@@ -222,7 +233,7 @@ export default function MapPage() {
           species_name:    d.species_name || d.raw_label,
           scientific_name: d.raw_label?.split('_')[1] || '',
           confidence:      d.confidence,
-          location:        nodes[0]?.habitat_type || 'montane scrub, Wyoming',
+          location:        node.habitat_type || node.name,
           is_dawn_chorus:  d.is_dawn_chorus,
         }),
       })
@@ -520,6 +531,7 @@ export default function MapPage() {
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
                     count={speciesCountToday[item.d.species_name || item.d.raw_label] || 1}
                     insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
+                    insightsAvailable={nodesAvailable && Boolean(nodeById[item.d.node_id])}
                   />
                 )
               ))}
