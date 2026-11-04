@@ -318,8 +318,9 @@ fresh dumps (David, 2026-11-03: accepted rather than taking both dumps from one 
 
 ## 4. Compare row counts
 
-Count the scratch project with the same query, then compare. Each table passes only if
-before <= scratch <= after, using the production counts taken around the dump in step 2:
+Count the scratch project with the same query, then compare. Each table passes only if its scratch
+count lies between the production counts taken before and after the dump in step 2, in either order
+(production stays writable, so a count can fall as well as rise):
 
 ```sh
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
@@ -331,7 +332,8 @@ awk -F'|' '
     if (f != 3 || lines != 3 || bad) { print "FAIL: each counts file must hold one line of five numbers"; exit 1 }
     split("nodes detections aci_logs species node_habitat", t, " ")
     for (i = 1; i <= 5; i++) {
-      ok = (v[1, i] <= v[3, i] && v[3, i] <= v[2, i])
+      lo = (v[1, i] < v[2, i]) ? v[1, i] : v[2, i]; hi = (v[1, i] < v[2, i]) ? v[2, i] : v[1, i]
+      ok = (lo <= v[3, i] && v[3, i] <= hi)
       printf "%-13s before %s  scratch %s  after %s  %s\n", t[i], v[1, i], v[3, i], v[2, i], (ok ? "PASS" : "FAIL")
       if (!ok) failed = 1
     }
@@ -341,7 +343,10 @@ awk -F'|' '
 
 Record the three numbers for every table. Any `FAIL` line (a table outside its before/after range, an
 empty or malformed counts file, or a failed count) is a failed rehearsal: record it and run "Clean up"
-steps 1 and 2.
+steps 1 and 2. The range is a bound from two endpoints, not the dump's snapshot: if rows were both
+added and deleted while the dump ran, a correct dump can fall just outside it. A `FAIL` by a few rows
+on a busy table is then most likely that, so record it and rehearse again with fresh dumps before
+treating it as a restore defect.
 
 ## 5. Restore up to 20 objects from R2
 
