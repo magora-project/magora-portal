@@ -1,7 +1,9 @@
 # Restore rehearsal
 
-This proves production can be restored: production data goes into a scratch project, and objects come
-back from the R2 Storage backup. Run it once to establish the procedure, then again after any change to
+This rehearses the restore procedure and checks a sample of the result: production data goes into a
+scratch project and is compared by row counts for five tables, and up to 20 sampled objects come back
+from the R2 Storage backup. A pass shows the procedure works; it does not prove every row and object
+is recoverable. Run it once to establish the procedure, then again after any change to
 the backup jobs. Storage object details are in `docs/runbooks/storage-backup.md`. This runbook uses its
 restore convention: an rclone remote named `restore_target` whose keys reach rclone only through
 `op run --env-file`, with the endpoint written on each command (never exported) and checked by a guard
