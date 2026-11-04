@@ -110,7 +110,7 @@ Fix issues inline.
 
 ## Plan Review
 
-Saving the plan commits it; then review it. Plan review is three checks, in order (`.claude/rules/process.md` stage 5): the typed reference check, Semgrep, then a reviewer. Dispatch and what counts as a review are in `.claude/rules/process.md` under `## Review slots and dispatch`. Run Semgrep over the plan if it is available, then:
+Saving the plan commits it; then review it. Plan review is three checks (`.claude/rules/process.md` stage 5): the typed reference check, Semgrep, and a reviewer. Dispatch and what counts as a review are in `.claude/rules/process.md` under `## Review slots and dispatch`. Run Semgrep over the plan if it is available, then:
 
 `npm run review -- run --slot plan --path <plan> --author <vendor>`
 

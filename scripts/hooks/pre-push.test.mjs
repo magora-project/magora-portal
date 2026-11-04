@@ -91,6 +91,32 @@ try {
   rmSync(scratch, { recursive: true, force: true })
 }
 
+// Real process in a git fixture: the hook reads git's ref lines from stdin and compares with HEAD.
+// Reverting main({ stdin }) to main() would silence the warning; this catches it.
+const gitScratch = mkdtempSync(join(tmpdir(), 'prepush-git-'))
+try {
+  const git = (...a) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd: gitScratch, encoding: 'utf8', shell: false })
+  if (git('init', '-q').status === 0) {
+    mkdirSync(join(gitScratch, 'scripts', 'ci'), { recursive: true })
+    writeFileSync(join(gitScratch, 'scripts', 'ci', 'review-evidence.mjs'), 'export const localCheck = () => ({ ok: true, lines: [] })\n')
+    git('add', '-A')
+    git('commit', '-q', '-m', 'one')
+    const head = git('rev-parse', 'HEAD').stdout.trim()
+    const other = 'b'.repeat(40), zero = '0'.repeat(40)
+    const send = (input) => spawnSync(process.execPath, [hookPath], { cwd: gitScratch, input, encoding: 'utf8', shell: false })
+    ok('git fixture: HEAD resolved', /^[0-9a-f]{40}$/.test(head))
+    const elsewhere = send(`refs/heads/other ${other} refs/heads/other ${zero}\n`)
+    ok('spawn in git: a ref that is not HEAD warns, exit 0', elsewhere.status === 0 && /covers HEAD only.*refs\/heads\/other \(bbbbbbbbbbbb\)/.test(elsewhere.stderr))
+    const same = send(`refs/heads/main ${head} refs/heads/main ${zero}\n`)
+    ok('spawn in git: only HEAD sent prints nothing', same.status === 0 && same.stderr === '')
+  } else {
+    console.log('  skip: git not available for the stdin fixture')
+    ok('git is available for the stdin fixture in CI', !process.env.CI)
+  }
+} finally {
+  rmSync(gitScratch, { recursive: true, force: true })
+}
+
 // The shim itself: run with sh from a scratch tree root (skipped where sh is absent). The no-node
 // cases replace PATH, so sh is resolved to an absolute native path first (Git for Windows' sh.exe
 // has no /bin/sh that native Node can spawn).
