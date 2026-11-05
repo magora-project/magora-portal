@@ -5,13 +5,16 @@
 //     derived replacement. A mislocated Pi must not be able to claim "dawn chorus" at midday.
 
 import { localTimeContext, tenureDescription, observationWindowLine, behaviorInferenceBullet } from './insight.js'
-import { minutesFromSunriseAt } from './_lib/nodeTime.js'
+import { minutesFromSunriseAt, locationCoordinates } from './_lib/nodeTime.js'
 
 let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
 
 // Terlingua, TX (Villa Magora) — GeoJSON coordinates [lon, lat].
 const node = { location: { coordinates: [-103.2334, 29.2708] } }
+// The same node as PostgREST returns it: an EWKB hex string (Gemini @4c03aca P1). The sunrise
+// validation must parse this form too, or every real (verified) dawn reading is dropped.
+const nodeEwkb = { location: '0101000020E6100000BBB88D06F0CE59C0BEC1172653453D40' }
 
 // Pick an instant and compute the server's own sunrise minutes for it.
 const INSTANT = '2026-06-15T12:30:00Z' // morning in Terlingua (CDT)
@@ -22,6 +25,14 @@ ok('server sunrise minutes resolvable for the test node', typeof serverMinutes =
 const verified = localTimeContext(INSTANT, node, Math.round(serverMinutes))
 ok('verified sunrise reading is trusted', verified.trusted === true)
 ok('verified reading yields a label', typeof verified.label === 'string' && verified.label.length > 0)
+
+// 1b) Gemini @4c03aca regression: the EWKB (PostgREST) node form must validate identically.
+//     Before the fix, `node.location.coordinates` was undefined -> serverMinutes null -> trusted
+//     false -> the dawn flag was silently dropped even for a correct reading.
+ok('EWKB node location parses to the same coords', locationCoordinates(nodeEwkb.location)?.lat === 29.2708)
+const verifiedEwkb = localTimeContext(INSTANT, nodeEwkb, Math.round(serverMinutes))
+ok('EWKB node: verified sunrise reading is trusted (dawn flag kept)', verifiedEwkb.trusted === true)
+ok('EWKB node: label matches the GeoJSON form', verifiedEwkb.label === verified.label)
 
 // 2) Rejected path: device minutes wildly disagree (a mislocated Pi claiming sunrise at midday).
 //    The dawn flag is dropped — trusted=false — and the label falls back to the wall clock only.

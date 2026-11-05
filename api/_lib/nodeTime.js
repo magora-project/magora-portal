@@ -3,7 +3,10 @@ import { pgFetch } from '../_pulse/db.js'
 
 const HOUR_MS = 3600000
 
-function locationCoordinates(location) {
+// Coordinates from a node location in either stored form: GeoJSON (`{ coordinates: [lon, lat] }`)
+// or PostgREST's EWKB hex string. Exported — insight.js's solar validation and eBird context need
+// the same parse, and `node.location.coordinates` is undefined on the EWKB form (Gemini @4c03aca).
+export function locationCoordinates(location) {
   if (Array.isArray(location?.coordinates)) return { lon: Number(location.coordinates[0]), lat: Number(location.coordinates[1]) }
   if (typeof location !== 'string') return null
   try {

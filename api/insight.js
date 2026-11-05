@@ -1,4 +1,4 @@
-import { nodeTimeZone, toNodeLocal, nodeTenure, minutesFromSunriseAt } from './_lib/nodeTime.js'
+import { nodeTimeZone, toNodeLocal, nodeTenure, minutesFromSunriseAt, locationCoordinates } from './_lib/nodeTime.js'
 
 // Model for ecosystem-insight generation. Kept in one place (Task F) so the
 // high-volume insight path and any future low-volume report path can use
@@ -72,8 +72,10 @@ export function localTimeContext(utcString, node, minutesFromSunrise) {
   const clockDesc = labelForHour(local.hour + local.minute / 60)
 
   if (minutesFromSunrise != null) {
-    const coords = node?.location?.coordinates
-    const serverMinutes = coords ? minutesFromSunriseAt(coords[1], coords[0], utcString) : null
+    // node.location is an EWKB hex string from PostgREST (GeoJSON only in other paths), so read
+    // coordinates through the shared parser — `.coordinates` is undefined on the EWKB form.
+    const c = locationCoordinates(node?.location)
+    const serverMinutes = c ? minutesFromSunriseAt(c.lat, c.lon, utcString) : null
     if (serverMinutes != null && Math.abs(minutesFromSunrise - serverMinutes) <= 30) {
       // Verified against the server-side sunrise calc: use the Pi's precise solar buckets. Only a
       // verified solar reading may carry the device's dawn-chorus flag into the prompt.
@@ -368,9 +370,9 @@ export async function buildNodeInsightPrompt(body) {
 
   // eBird (non-blocking, runs in parallel with everything above via the same Promise.all would be ideal
   // but depends on node coords — fetch after node is available)
-  const coords = node?.location?.coordinates
-  const ebird = (ebirdKey && coords)
-    ? await getEbirdContext(coords[1], coords[0], ebirdKey, speciesName)
+  const c2 = locationCoordinates(node?.location)
+  const ebird = (ebirdKey && c2)
+    ? await getEbirdContext(c2.lat, c2.lon, ebirdKey, speciesName)
     : null
 
   // --- Resolve values ---
