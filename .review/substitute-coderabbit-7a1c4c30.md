@@ -4,7 +4,8 @@
 - **Input identity:** `7a1c4c3071bcdf8a6a10ce65e3fc76e0b39eb552` (patch-id of the PR diff vs merge base, `.review` excluded)
 - **Merge base:** `9b8326d7ef9b96c893df9b18d59a141cc2e27597` (provenance only)
 - **Reviewer:** Codex CLI (OpenAI), full review + chained re-reviews of `83eed4f`, `e13e77a`, `212bcd9`, `8dcb29d`, `c44132b`, `1cec893`, `087bbcb`
-- **Author vendor:** Anthropic (Claude)
+- **Author vendor:** PENDING — written in GitHub Copilot; model unconfirmed (originally recorded as "Anthropic (Claude)" without evidence)
+- **Validity:** PENDING — ruling needed from David. § Substitution requires "a vendor not already counted on the PR"; OpenAI is already counted via the Codex GitHub App slot, so this Codex CLI substitute may not qualify regardless of the author vendor.
 - **Outcome:** `completed` (full review + seven chained re-reviews, all completed with non-empty recognized results)
 - **Verdict:** PASS at the current identity — final chained re-review: "no actionable regressions were identified."
 - **Supersedes:** `substitute-coderabbit-daaca7f5.md` (identity `daaca7f5a25dc46f3b6a503aad35557764bb2f7f`)
