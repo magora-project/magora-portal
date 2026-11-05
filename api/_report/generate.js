@@ -33,11 +33,15 @@ export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 
   if (cadenceGate) return { periodKey, report: null, eligibilityError: cadenceGate }
 
   // Cache-first: a fresh cached row (narrated at or after its payload was built) short-circuits.
+  // Cache invalidation (M1): pre-deployment daily rows were built under UTC windows but sit under
+  // the same YYYY-MM-DD key. Payloads built with node-local semantics carry `observed`; a row
+  // without it predates the window fix and is rebuilt rather than served.
   const cached = await fetchCachedReport(pgFetch, nodeId, cadence, periodKey)
   if (
     cached?.narrative &&
     cached.narrated_at &&
-    new Date(cached.narrated_at).getTime() >= new Date(cached.generated_at).getTime()
+    new Date(cached.narrated_at).getTime() >= new Date(cached.generated_at).getTime() &&
+    cached.payload?.observed
   ) {
     return {
       periodKey,

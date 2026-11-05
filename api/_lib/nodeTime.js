@@ -52,8 +52,17 @@ export function toNodeLocal(utc, tz) {
   return { date: `${values.year}-${values.month}-${values.day}`, hour: Number(values.hour), minute: Number(values.minute) }
 }
 
+// Validate a 'YYYY-MM-DD' string as a REAL calendar date (not just digit-shaped): 2026-13-01 and
+// 2026-02-30 must be rejected, not silently normalized by Date.UTC into a different date.
+export function isValidLocalDate(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
+  const [y, m, d] = date.split('-').map(Number)
+  const t = new Date(Date.UTC(y, m - 1, d))
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d
+}
+
 function wallMidnightUtc(date, tz) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`invalid local date: ${date}`)
+  if (!isValidLocalDate(date)) throw new Error(`invalid local date: ${date}`)
   const [year, month, day] = date.split('-').map(Number)
   let guess = Date.UTC(year, month - 1, day)
   for (let i = 0; i < 6; i++) {
@@ -109,8 +118,21 @@ export function nodeDayWindow(date, tz) {
   return [new Date(start).toISOString(), new Date(end).toISOString()]
 }
 
+// Tenure lookup that distinguishes "no history" from "the lookup failed". pgFetch collapses a
+// timeout/5xx to null, which is indistinguishable from a legitimately empty table — and would let
+// a transient failure turn a mature node's tenure into a false 422 (or a wrong first-impression
+// framing). The primary read therefore throws on non-2xx; the fallback tolerates emptiness.
+async function firstRowOrThrow(path) {
+  const base = process.env.VITE_SUPABASE_URL
+  const key = process.env.VITE_SUPABASE_ANON_KEY
+  const res = await fetch(`${base}/rest/v1/${path}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } })
+  if (!res.ok) throw new Error(`tenure lookup failed: HTTP ${res.status}`)
+  const data = await res.json()
+  return Array.isArray(data) ? data[0] || null : data
+}
+
 export async function nodeTenure(nodeId, now = new Date()) {
-  let heartbeat = await pgFetch(`aci_logs?node_id=eq.${encodeURIComponent(nodeId)}&select=recorded_at&order=recorded_at.asc&limit=1`)
+  let heartbeat = await firstRowOrThrow(`aci_logs?node_id=eq.${encodeURIComponent(nodeId)}&select=recorded_at&order=recorded_at.asc&limit=1`)
   if (!heartbeat?.recorded_at) heartbeat = await pgFetch(`detections?node_id=eq.${encodeURIComponent(nodeId)}&select=detected_at&order=detected_at.asc&limit=1`)
   const first = heartbeat?.recorded_at || heartbeat?.detected_at
   if (!first) return { first_heard_at: null, hours_listening: 0, days_listening: 0 }

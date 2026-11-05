@@ -23,7 +23,7 @@ import { nodeCoords, aciMean, hasPriorDetection } from '../_pulse/sources.js'
 import { assignSurfaces } from '../_pulse/select.js'
 import { PULSE_CONFIG } from '../_pulse/payload.js'
 import { classifyLabel, isVoice } from './labels.js'
-import { nodeTimeZone, nodeDayWindow, toNodeLocal, nodeTenure } from '../_lib/nodeTime.js'
+import { nodeTimeZone, nodeDayWindow, toNodeLocal, nodeTenure, isValidLocalDate } from '../_lib/nodeTime.js'
 
 const enc = encodeURIComponent
 
@@ -123,7 +123,7 @@ function blockWindow(block, seasonYear) {
 export function resolveDailyWindow(date, tz) {
   const periodKeyFromLocalNow = () => toNodeLocal(new Date(), tz).date
   const period_key = date || (tz ? periodKeyFromLocalNow() : new Date().toISOString().slice(0, 10))
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(period_key)) throw new Error(`invalid report date: ${date}`)
+  if (!isValidLocalDate(period_key)) throw new Error(`invalid report date: ${date}`)
   if (tz) {
     const [start, end] = nodeDayWindow(period_key, tz)
     return { start, end, cadence: 'daily', period_key }
@@ -204,6 +204,16 @@ export function observedSpan(window, tenure, now = new Date()) {
   // witnessed.
   return { start, end, clipped, partial: capped }
 }
+
+// ISO week-of-year (1..53) of a civil date string 'YYYY-MM-DD'. Takes the node-LOCAL calendar date
+// (period_key), not a UTC instant: for nodes east of UTC the local-midnight instant falls on the
+// preceding UTC date, which would shift the week whenever the local date crosses an ISO boundary.
+function isoWeekOfDate(periodKey) {
+  const d = new Date(`${periodKey}T00:00:00.000Z`)
+  if (Number.isNaN(d.getTime())) return null
+  return isoWeek(d)
+}
+export { isoWeekOfDate }
 
 // ISO week-of-year (1..53).
 function isoWeek(d) {
@@ -510,6 +520,11 @@ export async function buildDailyReport(nodeId, date) {
   // The query window stays the full node-local day: midnight-stored pulses and pre-heartbeat
   // observations are kept. Tenure is reported separately as `observed` — the span the node was
   // actually listening — used only for span/tenure narration, never to filter the window.
+  //
+  // Pre-heartbeat detections are intentionally INCLUDED (M2, confirmed 2026-11-05): the Pi buffers
+  // audio before its first aci_logs heartbeat, so those detections are real observations of the
+  // day. The narration's `observed` span states when listening formally began; the aggregation
+  // keeps everything the node captured that local day.
   const observed = observedSpan(window, tenure)
   const dayStart = new Date(window.start) // local midnight (the day's anchor; DST-safe via tz)
   const baselineStart = new Date(new Date(window.start).getTime() - PULSE_CONFIG.aciBaselineDays * 86400000).toISOString()
@@ -543,7 +558,7 @@ export async function buildDailyReport(nodeId, date) {
     },
     phenology: {
       period_key: window.period_key,
-      week_of_year: isoWeek(dayStart),
+      week_of_year: isoWeekOfDate(window.period_key),
       first_detection_date: firstDates[0] ?? null,
       last_detection_date: lastDates[lastDates.length - 1] ?? null,
       new_species_count: common.new_species.length,

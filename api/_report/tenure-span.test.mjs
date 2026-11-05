@@ -6,7 +6,7 @@
 // S2: peakBand anchors to LOCAL MIDNIGHT (the report day's window.start), not to first_heard_at,
 //     and resolves the band's wall-clock start through the timezone so DST transitions are correct.
 
-import { observedSpan, peakBand, localHourUtc, resolveDailyWindow } from './payload.js'
+import { observedSpan, peakBand, localHourUtc, resolveDailyWindow, isoWeekOfDate } from './payload.js'
 
 let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
@@ -75,6 +75,23 @@ ok('seasonal/annual peak is label-only (no instants)', labelOnly.start === null 
 
 // peakBand returns null on an empty histogram.
 ok('empty histogram -> null', peakBand(new Array(24).fill(0), partialMidnight, CHICAGO) === null)
+
+// ── M5: impossible civil dates are rejected, not normalized ──────────────────
+// 2026-13-01 and 2026-02-30 are digit-shaped but not real dates; Date.UTC would silently roll them.
+for (const bad of ['2026-13-01', '2026-02-30', '2026-00-10', '2026-11-31']) {
+  let threw = false
+  try { resolveDailyWindow(bad, CHICAGO) } catch { threw = true }
+  ok(`M5: invalid civil date ${bad} throws`, threw)
+}
+// A real leap day is accepted.
+ok('M5: 2024-02-29 (real leap day) accepted', resolveDailyWindow('2024-02-29', CHICAGO).period_key === '2024-02-29')
+
+// ── M3: ISO week derives from the node-LOCAL civil date, not the UTC instant ──
+// Auckland (east of UTC): local Monday 2027-01-04 starts on 2027-01-03 UTC. The UTC instant is
+// ISO week 53 of 2026; the local civil date is ISO week 1 of 2027. The report must store the local week.
+ok('M3: local Monday 2027-01-04 is ISO week 1', isoWeekOfDate('2027-01-04') === 1)
+ok('M3: the UTC-instant week (53) is the bug, not the answer', isoWeekOfDate('2027-01-03') === 53)
+ok('M3: ordinary midweek date is unaffected', isoWeekOfDate('2026-11-04') === 45)
 
 console.log(`tenure-span: ${pass} passed, ${fail} failed`)
 if (fail) process.exit(1)
