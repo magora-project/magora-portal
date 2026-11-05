@@ -76,14 +76,16 @@ function prettyDayMonth(iso, tz) {
 function cadenceFraming(payload) {
   const period = payload.period_key
   const firstDay = payload.tenure?.days_listening != null && payload.tenure.days_listening < 1
-  // The builder clips window.start to first_heard_at; a clipped window states its real span
-  // instead of the full cadence span (>= : a clipped start EQUALS first_heard_at). The span ends
-  // at generated_at, not window.end — for an on-demand report the period boundary is in the
-  // future, and counting it would claim hours the node has not listened.
-  const clipped = !!(payload.tenure?.first_heard_at && payload.window?.start && new Date(payload.tenure.first_heard_at) >= new Date(payload.window.start))
-  const spanEnd = payload.generated_at && new Date(payload.generated_at) < new Date(payload.window.end)
-    ? new Date(payload.generated_at) : new Date(payload.window?.end)
-  const spanHours = clipped ? Math.max(0, (spanEnd - new Date(payload.tenure.first_heard_at)) / 3600000) : null
+  // The builder carries the node-observed span in payload.observed (window.start clipped to
+  // first_heard_at, window.end capped at generated_at). A clipped observed states its real span
+  // instead of the full cadence span; the query window itself is never narrowed, so the report
+  // keeps the day's midnight-stored pulses. The span never counts the future (observed.end is
+  // generated_at for an on-demand report whose period boundary has not passed).
+  const observed = payload.observed || null
+  const clipped = !!(observed?.clipped && payload.tenure?.first_heard_at)
+  const spanStart = clipped ? new Date(payload.tenure.first_heard_at) : null
+  const spanEnd = clipped && observed?.end ? new Date(observed.end) : null
+  const spanHours = clipped ? Math.max(0, (spanEnd - spanStart) / 3600000) : null
   const span = !clipped
     ? payload.cadence === 'daily' ? 'across the day' : payload.cadence === 'seasonal' ? 'across this season' : 'over the year'
     : payload.cadence === 'daily'

@@ -38,9 +38,9 @@ export async function generateInsight(prompt, model = INSIGHT_MODEL) {
 // sunrise calc for the node's coordinates; otherwise it is ignored and logged once per call.
 // Never relies on the Pi's stored time_category, which can be wrong when its location config
 // is unverified (the Villa Magora failure mode).
-function localTimeContext(utcString, node, minutesFromSunrise) {
+export function localTimeContext(utcString, node, minutesFromSunrise) {
   const tz = nodeTimeZone(node)
-  if (!tz) return null
+  if (!tz) return { label: null, trusted: false }
   const local = toNodeLocal(utcString, tz)
   const clockDesc = labelForHour(local.hour + local.minute / 60)
 
@@ -48,22 +48,27 @@ function localTimeContext(utcString, node, minutesFromSunrise) {
     const coords = node?.location?.coordinates
     const serverMinutes = coords ? minutesFromSunriseAt(coords[1], coords[0], utcString) : null
     if (serverMinutes != null && Math.abs(minutesFromSunrise - serverMinutes) <= 30) {
-      // Verified against the server-side sunrise calc: use the Pi's precise solar buckets.
-      if (minutesFromSunrise < -60)  return 'well before sunrise'
-      if (minutesFromSunrise < -30)  return 'pre-dawn'
-      if (minutesFromSunrise < 0)    return 'just before sunrise'
-      if (minutesFromSunrise < 30)   return 'at sunrise'
-      if (minutesFromSunrise < 120)  return 'early morning, within the dawn chorus window'
-      if (minutesFromSunrise < 240)  return 'mid-morning'
-      if (minutesFromSunrise < 360)  return 'late morning'
-      if (minutesFromSunrise < 480)  return 'midday'
-      if (minutesFromSunrise < 600)  return 'afternoon'
-      if (minutesFromSunrise < 720)  return 'early evening'
-      return 'dusk or night'
+      // Verified against the server-side sunrise calc: use the Pi's precise solar buckets. Only a
+      // verified solar reading may carry the device's dawn-chorus flag into the prompt.
+      const label =
+        minutesFromSunrise < -60 ? 'well before sunrise'
+        : minutesFromSunrise < -30 ? 'pre-dawn'
+        : minutesFromSunrise < 0 ? 'just before sunrise'
+        : minutesFromSunrise < 30 ? 'at sunrise'
+        : minutesFromSunrise < 120 ? 'early morning, within the dawn chorus window'
+        : minutesFromSunrise < 240 ? 'mid-morning'
+        : minutesFromSunrise < 360 ? 'late morning'
+        : minutesFromSunrise < 480 ? 'midday'
+        : minutesFromSunrise < 600 ? 'afternoon'
+        : minutesFromSunrise < 720 ? 'early evening'
+        : 'dusk or night'
+      return { label, trusted: true }
     }
     console.warn('Ignoring unverified node minutes_from_sunrise:', minutesFromSunrise)
   }
-  return clockDesc
+  // Unverified / absent solar telemetry: the device's dawn flag is dropped along with its
+  // minutes_from_sunrise — no derived replacement, so a mislocated Pi cannot claim dawn at midday.
+  return { label: clockDesc, trusted: false }
 }
 
 async function dbFetch(supabaseUrl, apiKey, path, asArray = false) {
@@ -353,8 +358,10 @@ export async function buildNodeInsightPrompt(body) {
   if (!locationLabel) return { error: 'node location context required', status: 400 }
 
   // --- Build prompt ---
-  const timingDesc = localTimeContext(detection?.detected_at || new Date().toISOString(), node, minutesFromSun)
-    + (isDawn ? ' (dawn chorus active)' : '')
+  const timeCtx = localTimeContext(detection?.detected_at || new Date().toISOString(), node, minutesFromSun)
+  // The dawn-chorus flag rides only on a VERIFIED solar reading: if minutes_from_sunrise was
+  // rejected (untrusted device), the flag is dropped with it — no derived replacement.
+  const timingDesc = (timeCtx.label ?? '') + (timeCtx.trusted && isDawn ? ' (dawn chorus active)' : '') || null
 
   const tenureDesc = tenure?.first_heard_at
     ? (() => {
@@ -405,7 +412,8 @@ export async function buildNodeInsightPrompt(body) {
   const soundscapeDesc = [
     aciScore != null && `ACI ${aciScore} (${aciScore > 0.65 ? 'high' : aciScore > 0.5 ? 'moderate' : 'low'} soundscape complexity)`,
     coOccurring.length > 0 && `Co-detected in same window: ${coOccurring.join(', ')}`,
-    isDawn && `Dawn chorus active`,
+    // Same trust gate as the timing line: an unverified device dawn flag is dropped, not repeated.
+    timeCtx.trusted && isDawn && `Dawn chorus active`,
   ].filter(Boolean).join('; ')
 
   const ebirdDesc = ebird ? [

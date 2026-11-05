@@ -28,10 +28,11 @@ function dailyPayload(overrides = {}) {
 const facts = groundedReportFacts(dailyPayload())
 ok(facts.some((l) => l.includes('my record of November 4, 2026')), 'local period_key renders unshifted (Nov 4, not Nov 3)')
 
-// 2. Clipped daily window (start == first_heard_at) states the real span in hours, capped at
-// generated_at — the period end is in the future for an on-demand report and must not count.
+// 2. Clipped daily observed span (window stays the full local day; observed.start == first_heard_at)
+// states the real span in hours, capped at generated_at — the period end is in the future for an
+// on-demand report and must not count.
 const clipped = groundedReportFacts(dailyPayload({
-  window: { start: '2026-11-04T19:22:00.000Z', end: '2026-11-05T06:00:00.000Z', cadence: 'daily', period_key: '2026-11-04' },
+  observed: { start: '2026-11-04T19:22:00.000Z', end: '2026-11-05T02:00:00.000Z', clipped: true },
   tenure: { first_heard_at: '2026-11-04T19:22:00.000Z', hours_listening: 10.6, days_listening: 0.44 },
   generated_at: '2026-11-05T02:00:00.000Z', // 6.6h after first heartbeat; period ends 06:00
 }))
@@ -52,10 +53,11 @@ const secondDay = groundedReportFacts(dailyPayload({
 }))
 ok(secondDay.some((l) => /new to my records/i.test(l)), 'second day restores new-to-my-records')
 
-// 5. Clipped seasonal window states the span in days up to generated_at, not the whole season.
+// 5. Clipped seasonal observed span states the span in days up to generated_at, not the whole season.
 const seasonal = groundedReportFacts(dailyPayload({
   cadence: 'seasonal', period_key: '2026-autumn',
-  window: { start: '2026-10-20T00:00:00Z', end: '2026-12-01T00:00:00.000Z', cadence: 'seasonal', period_key: '2026-autumn' },
+  window: { start: '2026-09-01T05:00:00.000Z', end: '2026-12-01T06:00:00.000Z', cadence: 'seasonal', period_key: '2026-autumn' },
+  observed: { start: '2026-10-20T00:00:00Z', end: '2026-11-05T02:00:00.000Z', clipped: true },
   tenure: { first_heard_at: '2026-10-20T00:00:00Z', hours_listening: 1000, days_listening: 42 },
   phenology: { period_key: '2026-autumn', season: 'autumn', season_year: 2026 },
 }))
