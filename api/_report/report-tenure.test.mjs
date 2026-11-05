@@ -66,4 +66,23 @@ const seasonal = groundedReportFacts(dailyPayload({
 ok(seasonal.some((l) => l.includes('16 days since I began listening')), 'clipped season states days since first heartbeat, capped at generated_at')
 ok(!seasonal.some((l) => l.includes('across this season I')), 'clipped season does not claim the full season span')
 
+// 6. Partial period (established node, period still running): observed.end capped at generation
+// time, clipped=false. Narration must state the elapsed part — never claim the full span.
+const partialDaily = groundedReportFacts(dailyPayload({
+  observed: { start: '2026-11-04T06:00:00.000Z', end: '2026-11-04T15:30:00.000Z', clipped: false, partial: true },
+  tenure: { first_heard_at: '2026-10-01T00:00:00Z', hours_listening: 800, days_listening: 34 },
+  generated_at: '2026-11-04T15:30:00.000Z',
+}))
+ok(partialDaily.some((l) => l.includes('across the first 9.5 hours of the day')), 'partial daily states elapsed hours of the day')
+ok(!partialDaily.some((l) => l.includes('across the day I')), 'partial daily does not claim the full day')
+const partialSeason = groundedReportFacts(dailyPayload({
+  cadence: 'seasonal', period_key: '2026-autumn',
+  window: { start: '2026-09-01T05:00:00.000Z', end: '2026-12-01T06:00:00.000Z', cadence: 'seasonal', period_key: '2026-autumn' },
+  observed: { start: '2026-09-01T05:00:00.000Z', end: '2026-11-05T02:00:00.000Z', clipped: false, partial: true },
+  tenure: { first_heard_at: '2026-06-01T00:00:00Z', hours_listening: 3000, days_listening: 130 },
+  phenology: { period_key: '2026-autumn', season: 'autumn', season_year: 2026 },
+}))
+ok(partialSeason.some((l) => l.includes('across the first 65 days of the season')), 'partial season states elapsed days of the season')
+ok(!partialSeason.some((l) => l.includes('across this season I')), 'partial season does not claim the full season')
+
 console.log('report-tenure narration tests passed')

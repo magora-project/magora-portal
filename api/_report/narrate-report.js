@@ -77,20 +77,27 @@ function cadenceFraming(payload) {
   const period = payload.period_key
   const firstDay = payload.tenure?.days_listening != null && payload.tenure.days_listening < 1
   // The builder carries the node-observed span in payload.observed (window.start clipped to
-  // first_heard_at, window.end capped at generated_at). A clipped observed states its real span
-  // instead of the full cadence span; the query window itself is never narrowed, so the report
-  // keeps the day's midnight-stored pulses. The span never counts the future (observed.end is
-  // generated_at for an on-demand report whose period boundary has not passed).
+  // first_heard_at, window.end capped at generation time). clipped states the span since the first
+  // heartbeat; partial (a period still running) states the elapsed part of the day/season/year —
+  // never a full span the node has not witnessed. The query window itself is never narrowed, so
+  // the report keeps the day's midnight-stored pulses.
   const observed = payload.observed || null
   const clipped = !!(observed?.clipped && payload.tenure?.first_heard_at)
-  const spanStart = clipped ? new Date(payload.tenure.first_heard_at) : null
-  const spanEnd = clipped && observed?.end ? new Date(observed.end) : null
-  const spanHours = clipped ? Math.max(0, (spanEnd - spanStart) / 3600000) : null
-  const span = !clipped
-    ? payload.cadence === 'daily' ? 'across the day' : payload.cadence === 'seasonal' ? 'across this season' : 'over the year'
-    : payload.cadence === 'daily'
+  const partial = !clipped && !!observed?.partial
+  const spanStart = clipped ? new Date(payload.tenure.first_heard_at) : new Date(payload.window?.start)
+  const spanEnd = observed?.end ? new Date(observed.end) : new Date(payload.window?.end)
+  const spanHours = (clipped || partial) ? Math.max(0, (spanEnd - spanStart) / 3600000) : null
+  const span = clipped
+    ? payload.cadence === 'daily'
       ? `across ${fig(spanHours, 1)} hours of listening`
       : `across the ${Math.max(1, Math.round(spanHours / 24))} days since I began listening`
+    : partial
+      ? payload.cadence === 'daily'
+        ? `across the first ${fig(spanHours, 1)} hours of the day`
+        : payload.cadence === 'seasonal'
+          ? `across the first ${Math.max(1, Math.round(spanHours / 24))} days of the season`
+          : `across the first ${Math.max(1, Math.round(spanHours / 24))} days of the year`
+      : payload.cadence === 'daily' ? 'across the day' : payload.cadence === 'seasonal' ? 'across this season' : 'over the year'
   switch (payload.cadence) {
     case 'seasonal': {
       const season = payload.phenology?.season || ''

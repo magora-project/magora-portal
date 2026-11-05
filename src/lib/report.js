@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 
 // Node Phenology Report client — fetches the node's report on demand, in the node's own first-person
 // voice, at a chosen cadence (daily / seasonal / annual — v1.1). Mirrors usePulseNarrative's
@@ -51,10 +51,14 @@ export function reportCadencesForTenure(firstHeardAt, now = new Date()) {
 export function useNodeReport(nodeId, tenure = null) {
   const [state, setState] = useState({ status: 'idle' }) // idle | loading | ready | empty | error
   const [cadence, setCadence] = useState('daily')
-  const cadences = reportCadencesForTenure(tenure?.first_heard_at || null)
+  const cadences = useMemo(() => reportCadencesForTenure(tenure?.first_heard_at || null), [tenure?.first_heard_at])
+  // The cadence state can outlive its eligibility: navigating between nodes reuses this hook, and a
+  // cadence valid on a mature node (seasonal/annual) is ineligible on a young one. Fall back to
+  // daily rather than POSTing a hidden stale cadence into the server's 422.
+  const activeCadence = cadences.some((item) => item.id === cadence) ? cadence : 'daily'
 
   // `c` lets selectCadence pass the new id immediately (setCadence is async — avoids a stale read).
-  const load = useCallback(async (c = cadence) => {
+  const load = useCallback(async (c = activeCadence) => {
     if (!nodeId) return
     setState({ status: 'loading' })
     try {
@@ -70,9 +74,10 @@ export function useNodeReport(nodeId, tenure = null) {
     } catch {
       setState({ status: 'error' })
     }
-  }, [nodeId, cadence])
+  }, [nodeId, activeCadence])
 
   const selectCadence = useCallback((c) => { setCadence(c); load(c) }, [load])
 
-  return { ...state, cadence, cadences, load, selectCadence }
+  // Expose the effective cadence (not raw state) so the selector highlight matches what load posts.
+  return { ...state, cadence: activeCadence, cadences, load, selectCadence }
 }

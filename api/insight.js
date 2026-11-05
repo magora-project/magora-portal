@@ -32,6 +32,33 @@ export async function generateInsight(prompt, model = INSIGHT_MODEL) {
   return { text: text.replace(/\s*—\s*/g, ', ') }
 }
 
+// Tenure framing for the prompt. The began-listening date is rendered NODE-LOCAL (a UTC render
+// can name the wrong calendar day), and the age is relative to `now`. Pure; exported for tests.
+export function tenureDescription(tenure, tz, now = Date.now()) {
+  if (!tenure?.first_heard_at) return null
+  const first = new Date(tenure.first_heard_at)
+  const hours = Math.max(0, Math.round((new Date(now) - first.getTime()) / 3600000))
+  const age = hours < 24
+    ? `${hours} hour${hours === 1 ? '' : 's'} ago`
+    : `${Math.floor(hours / 24)} day${Math.floor(hours / 24) === 1 ? '' : 's'} ago`
+  return `This node began listening on ${first.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz || 'UTC' })}, about ${age}.`
+}
+
+// The observation-window line. A node under 3 days old has no pattern history, so the prompt must
+// not label its first hours as a window for "node patterns" (that would invite the season/pattern
+// narration the earlyNode rule forbids). Pure; exported for tests.
+export function observationWindowLine(earlyNode, recentDays) {
+  if (earlyNode) return 'Observation window: this node has only just begun listening — there is no pattern history at this place yet.'
+  const days = Number.isInteger(recentDays) ? recentDays.toFixed(0) : recentDays.toFixed(1)
+  return `Observation window used for node patterns: approximately the most recent ${days} days.`
+}
+
+// The behavior-inference bullet. For an early node the seasonal inference is dropped alongside the
+// earlyNode rule (no patterns/trends/seasons at this node). Pure; exported for tests.
+export function behaviorInferenceBullet(earlyNode) {
+  return `- Infer what this animal is most likely doing RIGHT NOW based on its guild, the time of day${earlyNode ? '' : ', and the season'} — be specific and behavioral, not general`
+}
+
 // Vercel serverless function (Node runtime).
 // Time-of-day from the node's coordinates (IANA zone via api/_lib/nodeTime.js). The Pi's
 // minutes_from_sunrise is trusted only when it agrees (~30 min) with the server-side NOAA
@@ -363,16 +390,8 @@ export async function buildNodeInsightPrompt(body) {
   // rejected (untrusted device), the flag is dropped with it — no derived replacement.
   const timingDesc = (timeCtx.label ?? '') + (timeCtx.trusted && isDawn ? ' (dawn chorus active)' : '') || null
 
-  const tenureDesc = tenure?.first_heard_at
-    ? (() => {
-      const first = new Date(tenure.first_heard_at)
-      const hours = Math.max(0, Math.round((Date.now() - first.getTime()) / 3600000))
-      const age = hours < 24
-        ? `${hours} hour${hours === 1 ? '' : 's'} ago`
-        : `${Math.floor(hours / 24)} day${Math.floor(hours / 24) === 1 ? '' : 's'} ago`
-      return `This node began listening on ${first.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}, about ${age}.`
-    })()
-    : null
+  const nodeTz = nodeTimeZone(node)
+  const tenureDesc = tenureDescription(tenure, nodeTz)
   const recentDays = tenure?.days_listening != null
     ? Math.min(14, tenure.days_listening)
     : 14
@@ -427,7 +446,7 @@ export async function buildNodeInsightPrompt(body) {
   const prompt = `You are a field ecologist working with the Magora network at a listening post in ${locationLabel}. You write for people who are genuinely curious about the natural world but aren't biologists. Your job is to interpret a specific ecological moment, not describe a species in general terms. Think out loud. Be specific. Be curious. Never be generic. Write in plain prose using commas and periods; never use em-dashes.
 
 NODE CONTEXT
-${tenureDesc ? `${tenureDesc}\n` : ''}${timingDesc ? `Time of day: ${timingDesc}\n` : ''}Observation window used for node patterns: approximately the most recent ${Number.isInteger(recentDays) ? recentDays.toFixed(0) : recentDays.toFixed(1)} days.
+${tenureDesc ? `${tenureDesc}\n` : ''}${timingDesc ? `Time of day: ${timingDesc}\n` : ''}${observationWindowLine(earlyNode, recentDays)}
 
 DETECTION
 Species: ${speciesName}${sciName ? ` (${sciName})` : ''}
@@ -444,7 +463,7 @@ ${ebirdDesc ? `REGIONAL PICTURE (eBird · 25km · last 7 days)\n${ebirdDesc}` : 
 ${longitudinalDesc ? `PATTERN AT THIS NODE\n${longitudinalDesc}` : ''}
 
 Write 3–4 sentences that synthesize these layers into a genuine ecological story about this specific moment. Your response must:
-- Infer what this animal is most likely doing RIGHT NOW based on its guild, the time, and the season — be specific and behavioral, not general
+${behaviorInferenceBullet(earlyNode)}
 - Connect it to at least one concrete plant, insect, soil, or structural habitat relationship relevant to this location
 - Assess whether this detection is expected, surprising, or ecologically significant — and briefly say why
 ${earlyNode

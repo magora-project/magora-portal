@@ -4,7 +4,7 @@
 //     sunrise calc for the node's coordinates), the device dawn flag must be dropped with it — no
 //     derived replacement. A mislocated Pi must not be able to claim "dawn chorus" at midday.
 
-import { localTimeContext } from './insight.js'
+import { localTimeContext, tenureDescription, observationWindowLine, behaviorInferenceBullet } from './insight.js'
 import { minutesFromSunriseAt } from './_lib/nodeTime.js'
 
 let pass = 0, fail = 0
@@ -38,6 +38,24 @@ ok('no telemetry -> untrusted wall clock', absent.trusted === false && typeof ab
 // 4) Node with no resolvable timezone: null label, untrusted.
 const noTz = localTimeContext(INSTANT, { location: null }, 5)
 ok('no tz -> null label, untrusted', noTz.label === null && noTz.trusted === false)
+
+// ── Codex N3: tenure date is node-local, not UTC ─────────────────────────────
+// A heartbeat at 2026-11-05T02:00Z in Chicago (UTC-6) happened locally on Nov 4. Rendering the
+// began-listening date in UTC would name Nov 5 — the wrong day.
+const tenureDesc = tenureDescription(
+  { first_heard_at: '2026-11-05T02:00:00Z', hours_listening: 10, days_listening: 0.4 },
+  'America/Chicago',
+  new Date('2026-11-05T12:00:00Z'),
+)
+ok('tenure date renders node-local (Nov 4, not Nov 5)', tenureDesc.includes('Nov 4, 2025') || tenureDesc.includes('Nov 4, 2026'))
+ok('tenure date is not the UTC calendar date', !tenureDesc.includes('Nov 5'))
+ok('no tenure -> null', tenureDescription(null, 'America/Chicago') === null)
+
+// ── Codex N4: early-node prompts carry no seasonal/pattern framing ───────────
+ok('early node: window line disclaims pattern history', observationWindowLine(true, 1).includes('no pattern history'))
+ok('mature node: window line keeps the patterns framing', observationWindowLine(false, 14).includes('node patterns'))
+ok('early node: inference bullet drops the season', !behaviorInferenceBullet(true).includes('season'))
+ok('mature node: inference bullet keeps the season', behaviorInferenceBullet(false).includes('the season'))
 
 console.log(`insight-dawn: ${pass} passed, ${fail} failed`)
 if (fail) process.exit(1)

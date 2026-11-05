@@ -196,9 +196,13 @@ export function observedSpan(window, tenure, now = new Date()) {
   const start = tenure?.first_heard_at && new Date(tenure.first_heard_at) > new Date(window.start)
     ? tenure.first_heard_at
     : window.start
-  const end = new Date(window.end) > now ? now.toISOString() : window.end
+  const capped = new Date(window.end) > now
+  const end = capped ? now.toISOString() : window.end
   const clipped = new Date(start) > new Date(window.start)
-  return { start, end, clipped }
+  // clipped: the start was tenure-clipped (young node). partial: the period is still running, so
+  // the span ends at generation time — narration must not claim a full day/season/year it has not
+  // witnessed.
+  return { start, end, clipped, partial: capped }
 }
 
 // ISO week-of-year (1..53).
@@ -459,7 +463,7 @@ function assemble({ nodeId, window, observed, node, lat, lon, tz, species, total
     cadence: window.cadence,
     period_key: window.period_key,
     window,
-    observed: observed || { start: window.start, end: window.end, clipped: false },
+    observed: observed || { start: window.start, end: window.end, clipped: false, partial: false },
     tenure: tenure || null,
     generated_at: new Date().toISOString(),
     node: {

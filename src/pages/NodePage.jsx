@@ -141,7 +141,9 @@ export default function NodePage() {
       supabase.from('detections')
         .select('detected_at')
         .eq('node_id', id)
-        .or('range_status.is.null,range_status.neq.quarantined')
+        // No range filter here: this is the tenure fallback, and the server (nodeTenure) defines
+        // first_heard_at from the earliest detection regardless of range_status. The selector
+        // thresholds must match the server's gate or it offers a cadence the server then 422s.
         .order('detected_at', { ascending: true })
         .limit(1),
     ])
