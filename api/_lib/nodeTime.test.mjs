@@ -34,6 +34,21 @@ ok(nodeTimeZone({ location: { coordinates: [-105, 91] } }) === 'Etc/GMT+7', 'wes
 ok(nodeTimeZone({ location: { coordinates: [105, 91] } }) === 'Etc/GMT-7', 'eastern longitude falls back to Etc/GMT-7 (UTC+7)')
 ok(toNodeLocal('2026-07-04T19:00:00Z', 'Etc/GMT+7').hour === 12, 'Etc/GMT+7 is UTC-7')
 
+// Gemini @f764465 P1 (reclassified: false positive). Claim: near the prime meridian the solar
+// fallback returns `Etc/GMT+0` / `Etc/GMT-0`, which are "invalid" and crash Intl. Both names are
+// valid IANA links to Etc/GMT, and every longitude band near 0 yields a usable zone. lat 91 forces
+// the fallback (tz-lookup throws); lon ±3.75 rounds to ±15 min, producing the +0 / -0 names.
+ok(toNodeLocal('2026-07-04T12:00:00Z', 'Etc/GMT+0').hour === 12, 'Etc/GMT+0 is a valid zone (UTC)')
+ok(toNodeLocal('2026-07-04T12:00:00Z', 'Etc/GMT-0').hour === 12, 'Etc/GMT-0 is a valid zone (UTC)')
+ok(nodeTimeZone({ location: { coordinates: [-3.75, 91] } }) === 'Etc/GMT+0', 'fallback at lon -3.75 yields Etc/GMT+0')
+ok(nodeTimeZone({ location: { coordinates: [3.75, 91] } }) === 'Etc/GMT-0', 'fallback at lon +3.75 yields Etc/GMT-0')
+for (let lon = -5.5; lon <= 5.5; lon += 0.25) { // every lon whose solar offset rounds to 0 h
+  const zone = nodeTimeZone({ location: { coordinates: [lon, 91] } })
+  ok(toNodeLocal('2026-07-04T12:00:00Z', zone).hour === 12, `fallback zone at lon ${lon} (${zone}) formats as UTC`)
+}
+// Open ocean near the meridian: tz-lookup returns an Etc zone rather than throwing.
+ok(/^Etc\/GMT/.test(nodeTimeZone({ location: { coordinates: [-3, 0] } })), 'ocean at lon -3 resolves to an Etc zone without throwing')
+
 // Server-side sunrise check (NOAA approximation). Terlingua sunrise on 2026-07-04 is ~05:00 MDT
 // (11:00 UTC); Gardiner sunrise on 2026-01-15 is ~07:45 MST (14:45 UTC). Assertions use
 // near-sunrise instants — the only range the value is used to validate Pi telemetry.
