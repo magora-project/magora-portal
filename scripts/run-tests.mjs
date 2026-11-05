@@ -7,8 +7,11 @@ import { readdirSync, realpathSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// `.claude` holds agent worktrees, which are whole extra checkouts of this repo.
-export const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.vercel', '.claude'])
+export const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.vercel'])
+// `.claude/worktrees` holds agent worktrees, which are whole extra checkouts of this repo. The rest of
+// `.claude` (hooks and their tests) is committed and searched. Matched against the `/`-joined path
+// relative to the root, so a directory merely named `worktrees` elsewhere is still searched.
+export const SKIP_PATHS = new Set(['.claude/worktrees'])
 
 export function findTests(root) {
   const found = []
@@ -17,7 +20,8 @@ export function findTests(root) {
       // A symlink could hide a test (or a whole directory of them) from discovery: refuse it.
       if (entry.isSymbolicLink()) throw new Error(`symlinks are not supported: ${relative(root, join(dir, entry.name))}`)
       if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) walk(join(dir, entry.name))
+        const rel = relative(root, join(dir, entry.name)).split(sep).join('/')
+        if (!SKIP_DIRS.has(entry.name) && !SKIP_PATHS.has(rel)) walk(join(dir, entry.name))
       } else if (entry.isFile() && entry.name.endsWith('.test.mjs')) {
         found.push(relative(root, join(dir, entry.name)).split(sep).join('/'))
       }

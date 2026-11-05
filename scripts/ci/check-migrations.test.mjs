@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkMigrations, parseGrandfathered } from './check-migrations.mjs'
+import { fileSymlinkOrSkip } from './file-symlink.mjs'
+
+const SKIPPED = Symbol('skipped: this machine cannot create a file symlink')
 
 let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
@@ -31,7 +34,9 @@ const tree = (name, files, { cli = CLI, links = {}, nodeArgs = [] } = {}) => {
     mkdirSync(join(root, rel, '..'), { recursive: true })
     writeFileSync(join(root, rel), body)
   }
-  for (const [rel, target] of Object.entries(links)) symlinkSync(join(root, target), join(root, rel))
+  for (const [rel, target] of Object.entries(links)) {
+    if (!fileSymlinkOrSkip(join(root, target), join(root, rel))) return SKIPPED
+  }
   const r = spawnSync(process.execPath, [...nodeArgs, cli, '--root', root], { encoding: 'utf8' })
   lastStderr = r.stderr
   return r.status
@@ -55,11 +60,12 @@ try {
   ok('CLI FAIL (fail closed) without a migrations dir', tree('nodir', {
     'scripts/ci/migrations-grandfathered.txt': '',
   }) === 1 && lastStderr.includes('check-migrations: FAIL (could not judge):'))
-  ok('CLI FAIL on a symlinked migration (refused, not skipped)', tree('linked', {
+  const linked = tree('linked', {
     'supabase/migrations/1_old.sql': '',
     'scripts/ci/migrations-grandfathered.txt': '1_old.sql\n',
     'elsewhere/2_new.sql': '',
-  }, { links: { 'supabase/migrations/2_new.sql': 'elsewhere/2_new.sql' } }) === 1)
+  }, { links: { 'supabase/migrations/2_new.sql': 'elsewhere/2_new.sql' } })
+  if (linked !== SKIPPED) ok('CLI FAIL on a symlinked migration (refused, not skipped)', linked === 1)
   symlinkSync(join(CLI, '..'), join(tmp, 'ci-link'), 'junction')
   ok('CLI run through a symlinked path still judges', tree('unpaired-via-link', {
     'supabase/migrations/1_old.sql': '',

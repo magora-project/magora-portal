@@ -7,9 +7,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findTests, runTests } from './run-tests.mjs'
+import { fileSymlinkOrSkip } from './ci/file-symlink.mjs'
 
 let pass = 0, fail = 0
-const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
+const ok = (n, c) => {
+  if (c && typeof c.then === 'function') { fail++; console.log('  FAIL', n, '(unawaited Promise)'); return }
+  if (c) { pass++ } else { fail++; console.log('  FAIL', n) }
+}
 
 const RUNNER = fileURLToPath(new URL('./run-tests.mjs', import.meta.url))
 const tmp = mkdtempSync(join(tmpdir(), 'run-tests-selftest-'))
@@ -24,14 +28,20 @@ try {
   write('good/nested/b.test.mjs', 'process.exit(0)\n')
   write('good/node_modules/pkg/c.test.mjs', 'process.exit(1)\n')
   write('good/.claude/worktrees/x/d.test.mjs', 'process.exit(1)\n')
+  write('good/.claude/hooks/x.test.mjs', 'process.exit(0)\n')
+  write('good/src/worktrees/y.test.mjs', 'process.exit(0)\n')
   write('good/not-a-test.mjs', 'process.exit(1)\n')
   write('bad/a.test.mjs', 'process.exit(0)\n')
   write('bad/b.test.mjs', 'process.exit(3)\n')
   mkdirSync(join(tmp, 'empty'))
 
   const good = join(tmp, 'good')
-  ok('finds nested tests, skips node_modules and .claude, sorted',
-    JSON.stringify(findTests(good)) === JSON.stringify(['a.test.mjs', 'nested/b.test.mjs']))
+  ok('finds nested tests, skips node_modules, sorted',
+    JSON.stringify(findTests(good).filter((f) => !f.startsWith('.claude/') && !f.startsWith('src/'))) ===
+      JSON.stringify(['a.test.mjs', 'nested/b.test.mjs']))
+  ok('finds a test under .claude/hooks', findTests(good).includes('.claude/hooks/x.test.mjs'))
+  ok('skips .claude/worktrees entirely', !findTests(good).some((f) => f.startsWith('.claude/worktrees/')))
+  ok('a directory merely named worktrees elsewhere is not skipped', findTests(good).includes('src/worktrees/y.test.mjs'))
 
   const allPass = runTests(findTests(good), { root: good, stdio: 'ignore' })
   ok('all passing -> ok', allPass.ok === true)
@@ -55,14 +65,15 @@ try {
   ok('CLI exits zero when all pass', cliGood.status === 0)
 
   write('linked/a.test.mjs', 'process.exit(0)\n')
-  symlinkSync(join(tmp, 'bad', 'b.test.mjs'), join(tmp, 'linked', 'b.test.mjs'))
-  let threw = false
-  try { findTests(join(tmp, 'linked')) } catch { threw = true }
-  ok('a symlinked test is refused, not skipped', threw)
-  // The message pins the guard: without it the uncaught throw also exits 1.
-  const cliLinked = spawnSync(process.execPath, [RUNNER, '--root', join(tmp, 'linked')], { encoding: 'utf8' })
-  ok('CLI exits non-zero on a symlinked test',
-    cliLinked.status === 1 && cliLinked.stderr.includes('run-tests: FAIL (could not judge):'))
+  if (fileSymlinkOrSkip(join(tmp, 'bad', 'b.test.mjs'), join(tmp, 'linked', 'b.test.mjs'))) {
+    let threw = false
+    try { findTests(join(tmp, 'linked')) } catch { threw = true }
+    ok('a symlinked test is refused, not skipped', threw)
+    // The message pins the guard: without it the uncaught throw also exits 1.
+    const cliLinked = spawnSync(process.execPath, [RUNNER, '--root', join(tmp, 'linked')], { encoding: 'utf8' })
+    ok('CLI exits non-zero on a symlinked test',
+      cliLinked.status === 1 && cliLinked.stderr.includes('run-tests: FAIL (could not judge):'))
+  }
 
   // Run through a symlinked path: main() must still run (it once compared unresolved paths).
   symlinkSync(join(RUNNER, '..'), join(tmp, 'scripts-link'), 'junction')

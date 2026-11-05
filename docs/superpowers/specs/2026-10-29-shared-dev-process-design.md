@@ -2,8 +2,9 @@
 
 - **Date:** 2026-10-29
 - **Status:** approved rev 5 (David, 2026-10-29). Rev 5 applies Codex round 4. On approval David
-  also settled the open items on accounts and the trial period (D-15, D-16; §8). Review history:
-  §10.
+  also settled the open items on accounts and the trial period (D-15, D-16; §8). Rev 6 (2026-11-03)
+  amends §5.7 with David's Task 8 rulings on how claude-b is unlinked; a 2026-11-04 addition to
+  §5.7 requires the reverse promotion not to undo the freeze. Review history: §10.
 - **Builds on:** Spec 1 (`2026-10-15-repo-harness-design.md`): CI, depth labels, Layer 1 / Layer 2
   review.
 - **Reverses one Spec 1 decision:** pre-push review was "discipline, not a control". Here a skipped
@@ -512,16 +513,23 @@ well as the model.
 
 **Unlink claude-b (D-12).** This is rollout step 1.
 
-- **Replace the symlinks.** Each `~/.claude-b` symlink becomes a frozen copy, trimmed to the layer
-  that isn't process:
+- **Freeze through a clone, not copies (rev 6).** Copying each link cannot freeze claude-b: the
+  kept hooks, scripts and rules call `~/code/claude-config` by absolute path, so a copy would keep
+  running live claude-config. Instead, `~/.claude-b-config` is a clone of claude-config on the local
+  branch `claude-b-frozen`, with every runtime path rewritten to point into the clone. The
+  `~/.claude-b` symlinks stay symlinks, now pointing into the clone.
+- **Trim to the layer that isn't process:**
   - secrets handling;
   - machine safety and local guards;
   - push approval;
-  - shell and platform rules.
+  - shell and platform rules;
+  - personal working discipline: model routing and verify-against-source (rev 6).
+- **One exception: `plans` stays linked** to `~/code/claude-memory/plans/claude-b` (rev 6). It is
+  storage, not process: it is how approved plans survive a crashed session.
 - **Remove overlaps.** Personal skills that share a name with a repo skill are removed from
   claude-b.
 - **Record the inventory.** The rollout PR records what was kept, and where each moved process rule
-  now lives in the repo.
+  now lives in the repo (`docs/process/claude-b-inventory.md`).
 
 **Promotion: magora → claude-config.**
 
@@ -531,7 +539,24 @@ well as the model.
 - **Landing:** accepted items land as a claude-config commit that names the magora commit they came
   from.
 - **The other direction:** the same reviewed step carries claude-config changes into claude-b's
-  frozen layer.
+  frozen layer, as a reviewed merge into the clone's `claude-b-frozen` branch (rev 6). It is
+  all or nothing: David reviews every claude-config commit since the last promotion and accepts
+  or rejects the range as a whole, so no accepted change depends on a rejected commit. A merge
+  conflict, which edits to a file the freeze trimmed will cause, is resolved by David keeping the
+  trim, and in no other way. There is no one-off exclusion: to keep a change out of claude-b,
+  David makes it a freeze trim (a reviewed change to `docs/process/claude-b-inventory.md`), or
+  rejects the range; live claude-config is never edited for claude-b. The result must not undo
+  the freeze: no runtime file reads live
+  claude-config, nothing the freeze removed is back (a personal skill sharing a repo skill's
+  name, a dropped hook wiring, a dropped `CLAUDE.md` entry), and every wired hook still runs.
+  The promotion script checks this on the final result; on a failure it resets the branch to
+  its pre-merge commit and the range is rejected. Plan Task 19
+  defines the checks. (Added 2026-11-04 for PR #56's CodeRabbit finding and push-gate review.)
+- **Accepted limitation (David, 2026-11-04):** trimming, at the freeze or by keeping a trim in a
+  conflict, can leave a kept file calling trimmed content. The checks catch a kept file that
+  names a trimmed skill or path, other than the known dangling pointers the inventory lists;
+  they cannot catch a call no harmless hook run reaches. David's review of the range is the
+  mitigation.
 - **Cadence:** set by David.
 - **First promotion:** right after conformance ships (D-4).
 
@@ -619,3 +644,4 @@ Settled on approval: accounts (D-15) and no trial period (D-16).
 | 2 | Codex CLI, read-only, rev 2: closure of round 1, and what the fixes broke | REWORK: 5 P1, 4 P2 | This was the second self-inflicted round, so the gate was restructured as D-13 (David). The rest were applied in rev 3. |
 | 3 | Fable subagent, read-only, rev 3. Changed model and question: completeness, executability, what rev 3 broke, proportion | REWORK: 3 P1, 6 P2, 3 P3, plus one proportion cut | All applied in rev 4. P1-1: bots exclude the evidence directory. P1-2: coverage by the latest review's identity, and full review by the author's request. P1-3: a record is required whenever a blocking finding exists. P2-1: bot-resolved threads pass. P2-2: immediate substitution when a bot isn't configured, and a split when the diff is oversize. P2-3: conformance runs before pre-push review. P2-4: `-U0` identity, and re-review chaining. P2-5: slot IDs with prompt files. P2-6: failure is read from statuses only. The P3s are §5.3, §5.4 and the triggers. Proportion became D-14 (David). |
 | 4 | Codex CLI, read-only, rev 4, scoped: did rev 4 close round 3, and what did it break | REWORK: 1 new P1, 2 new P2. Of round 3's items, 4 partial; the rest addressed. | All applied in rev 5. New P1: a failed review never establishes coverage. P2: the identity uses `git patch-id --stable`, which ignores line numbers. P2: coverage after a rewrite needs a usable review answering the full-review request. Partial items: Codex App skips the evidence directory via `AGENTS.md`, findings there are outside the gate, and the Gemini failure signal is its job conclusion or verdict marker. **Rev 5's changes have not been re-reviewed.** |
+| — | Rev 6 amendment (David's Task 8 rulings, 2026-11-03; `docs/process/claude-b-inventory.md`) | §5.7 only: frozen clone instead of frozen copies; `plans` stays linked; model routing and verify-against-source join the kept layer; the reverse promotion is a reviewed merge into `claude-b-frozen`; 2026-11-04 addition (PR #56, CodeRabbit and push-gate review): the reverse promotion is all or nothing per range of claude-config commits, and the merge must not undo the freeze, checked after it (plan Task 19 Step 5), with reset and rejection on failure | **Not yet reviewed.** |

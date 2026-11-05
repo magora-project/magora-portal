@@ -43,6 +43,10 @@
 #    checkouts keeps the job token out of `.git/config`. RESIDUAL, NOT MITIGATED
 #    BY REVIEW: this YAML runs from the PR ref on open, before any review, so a
 #    PR editing these steps can read the key. Bounded by push access; method-project#2834.
+#    label-gate's `workflow_dispatch` runs (issue #58) use main's YAML, because label-gate
+#    dispatches with `ref: main`. The job's `refs/heads/main` guard only stops main-guarded copies
+#    from running on other refs: a pusher who dispatches on their own branch runs that branch's
+#    YAML, which can drop the guard. That is the same push-access residual as above.
 #
 # COST: method-project's 2026-08-16 Actions audit cut two sweeps because GitHub bills
 # every job rounded UP to a whole minute. This adds one job per PR head, and the
@@ -53,6 +57,16 @@ on:
   pull_request:
     types: [opened, reopened, ready_for_review, synchronize, labeled]
     branches: [main]
+  # label-gate.yml dispatches this (on `main`) after its bot applies `subtle-correctness`: a label
+  # written with the workflow token starts no `labeled` run, and the `pull_request` runs judge the
+  # event payload's labels, so that head would otherwise get no review (issue #58). A dispatched run
+  # reads the PR from the API and reviews its CURRENT head. A maintainer can also run it by hand.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to review (digits only)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -62,10 +76,13 @@ concurrency:
   # Per PR, not per repo: two PRs must review in parallel. Cancel-in-progress
   # drops a run whose head has already been superseded -- its verdict would
   # describe a SHA nobody will merge.
-  # A `labeled` event for any label other than `subtle-correctness` gets a unique
-  # group (suffix `-noop-<run_id>`), so its skipped run cannot cancel a review
-  # already in flight for the same PR.
-  group: gemini-review-${{ github.event.pull_request.number }}${{ (github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') && format('-noop-{0}', github.run_id) || '' }}
+  # A run that will skip gets a unique group (suffix `-noop-<run_id>`), so it cannot cancel a
+  # review already in flight for the same PR (such as one label-gate just dispatched): a
+  # `pull_request` run for a `labeled` event of any other label or whose payload lacks
+  # `subtle-correctness`, and a dispatch on any ref but main.
+  # Accepted cost: a push to a PR whose label was just changed away from `subtle-correctness` no
+  # longer cancels a review in flight for the previous head; that review still posts, naming its SHA.
+  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ ((github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')) && format('-noop-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -75,16 +92,83 @@ jobs:
     # A draft PR is parked by intent; `ready_for_review` above is what fires when it
     # is unparked. The fork predicate is decision 1: a fork PR has no secret, so
     # it is skipped explicitly rather than failing on an empty key.
+    # A dispatched run must come from `main`, so its YAML is the protected branch's, never a
+    # branch's; the "Resolve the PR" step applies the same predicates to the PR read from the API.
     if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor != 'dependabot[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       contains(github.event.pull_request.labels.*.name, 'subtle-correctness') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'subtle-correctness')
+      (github.event.action != 'labeled' || github.event.label.name == 'subtle-correctness'))
     steps:
+      - name: Resolve the PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PR: ${{ inputs.pr_number }}
+          EV_NUMBER: ${{ github.event.pull_request.number }}
+          EV_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EV_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EV_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -uo pipefail
+          # One source of PR facts for every later step: the payload on `pull_request` (the job's
+          # `if:` already judged it), the API on `workflow_dispatch`. Inputs and API values reach
+          # this script through env only, never as an expression in the script text. The title goes to a
+          # file, not $GITHUB_OUTPUT, where a newline in it could forge an output. Nothing is
+          # checked out yet; `-I` keeps the cwd and PYTHON* env off sys.path anyway.
+          python3 -I - <<'PY'
+          import json, os, re, sys, urllib.request
+          env = os.environ
+          repo = env["GITHUB_REPOSITORY"]
+          def out(**kv):
+              with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+                  for k, v in kv.items():
+                      fh.write(f"{k}={v}\n")
+          if env["EVENT_NAME"] == "pull_request":
+              number, base, head, title = env["EV_NUMBER"], env["EV_BASE_SHA"], env["EV_HEAD_SHA"], env["EV_TITLE"]
+          else:
+              number = env["INPUT_PR"].strip()
+              if not re.fullmatch(r"[1-9][0-9]{0,9}", number):
+                  sys.exit(f"pr_number must be a positive integer, got {number!r}")
+              req = urllib.request.Request(
+                  f"{env.get('GITHUB_API_URL', 'https://api.github.com')}/repos/{repo}/pulls/{number}",
+                  headers={"Authorization": f"Bearer {env['GH_TOKEN']}", "Accept": "application/vnd.github+json"})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  pr = json.load(r)
+              labels = [l["name"] for l in pr.get("labels", [])]
+              # The same predicates as the job's `if:` for `pull_request`, judged on the live PR.
+              skip = [why for why, bad in [
+                  ("it is not open", pr["state"] != "open"),
+                  ("it is a draft", pr.get("draft")),
+                  ("its base is not main", pr["base"]["ref"] != "main"),
+                  ("it is from a fork", (pr["head"].get("repo") or {}).get("full_name") != repo),
+                  ("it is a Dependabot PR", pr["user"]["login"] == "dependabot[bot]"),
+                  ("it is not labelled subtle-correctness", "subtle-correctness" not in labels),
+              ] if bad]
+              if skip:
+                  print(f"not reviewing PR #{number}: " + "; ".join(skip))
+                  out(run="false")
+                  sys.exit(0)
+              base, head, title = pr["base"]["sha"], pr["head"]["sha"], pr["title"]
+          for sha in (base, head):
+              if not re.fullmatch(r"[0-9a-f]{40}", sha):
+                  sys.exit(f"unexpected sha {sha!r}")
+          with open(os.path.join(env["RUNNER_TEMP"], "pr-title"), "w", encoding="utf-8") as fh:
+              fh.write(title)
+          out(run="true", number=number, base_sha=base, head_sha=head)
+          PY
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: steps.pr.outputs.run == 'true'
         with:
+          # `pull_request`: the default merge ref. `workflow_dispatch`: the PR's head commit
+          # (only ever diffed, decision 5).
+          ref: ${{ github.event_name == 'workflow_dispatch' && steps.pr.outputs.head_sha || '' }}
           # The base ref must be present to diff against, and checkout fetches
           # only the merge ref by default.
           fetch-depth: 0
@@ -93,21 +177,23 @@ jobs:
           persist-credentials: false
 
       - name: Checkout the trusted reviewer (base, not PR)
+        if: steps.pr.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # Decision 5. `base.sha` is on the protected base branch; a PR cannot
           # write there, so the script it holds cannot be the PR's rewrite.
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ steps.pr.outputs.base_sha }}
           path: trusted
           persist-credentials: false
           # Cone mode always includes root files, so `AGENTS.md` comes with it.
           sparse-checkout: scripts/review
 
       - name: Build the review diff
+        if: steps.pr.outputs.run == 'true'
         id: diff
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
           set -euo pipefail
           # Three dots: the changes THIS PR introduces, not everything the base
@@ -119,12 +205,14 @@ jobs:
           echo "bytes=$(wc -c < /tmp/review.diff)" >> "$GITHUB_OUTPUT"
 
       - name: Run the Gemini pass
+        if: steps.pr.outputs.run == 'true'
         id: review
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
         run: |
           set -uo pipefail
+          PR_TITLE="$(cat "$RUNNER_TEMP/pr-title")"
           # 🔴 `|| rc=$?` IS LOAD-BEARING, AND `set -uo pipefail` DOES NOT MAKE IT
           # REDUNDANT. GitHub's default shell for a `run:` step is `bash -e {0}`,
           # so `-e` is ALREADY ON before this script's first line, and `set -uo
@@ -147,10 +235,12 @@ jobs:
           # `AGENTS.md` must not also rewrite the rules it is reviewed against.
           # Fail CLOSED if the base lacks the script: never fall back to the PR's own copy, which is the vector.
           if [ ! -f trusted/scripts/review/gemini_review.py ] || [ ! -f trusted/AGENTS.md ]; then
-            echo "trusted base ${{ github.event.pull_request.base.sha }} lacks scripts/review/gemini_review.py or AGENTS.md; refusing to run the PR's own copy" > /tmp/review.err
+            echo "trusted base $BASE_SHA lacks scripts/review/gemini_review.py or AGENTS.md; refusing to run the PR's own copy" > /tmp/review.err
             rc=1
           else
-            python3 trusted/scripts/review/gemini_review.py "$PR_TITLE" --rules trusted/AGENTS.md \
+            # `--` before the title: a PR titled `--help` otherwise prints usage and exits 0, and
+            # that usage text would be posted as the review (Gemini's own finding on this PR).
+            python3 trusted/scripts/review/gemini_review.py --rules trusted/AGENTS.md -- "$PR_TITLE" \
               < /tmp/review.diff > /tmp/review.out 2> /tmp/review.err || rc=$?
           fi
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
@@ -161,13 +251,17 @@ jobs:
         # -- but `always()` would ALSO fire on a cancellation, and the
         # concurrency guard above cancels superseded runs deliberately. A
         # comment about a head nobody will merge is noise on the PR.
-        if: success() || failure()
+        #
+        # `steps.pr.outputs.run`: a dispatched run that decided not to review posts nothing. If
+        # the resolve step itself failed, that output is unset, so nothing posts and the job is
+        # red -- visible on the Actions tab, not on the PR.
+        if: (success() || failure()) && steps.pr.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REVIEW_RC: ${{ steps.review.outputs.rc }}
           DIFF_BYTES: ${{ steps.diff.outputs.bytes }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
           set -uo pipefail
           # python3 + curl rather than actions/github-script. method-project never
