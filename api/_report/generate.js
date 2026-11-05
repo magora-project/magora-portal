@@ -83,8 +83,11 @@ export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 
 }
 
 export function cadenceTenureGate(cadence, periodKey, tenure, lat = 0, now = new Date()) {
-  if (cadence === 'daily' || !tenure.first_heard_at) return null
-  const first = new Date(tenure.first_heard_at).getTime()
+  if (cadence === 'daily') return null
+  // A missing first_heard_at counts as ZERO tenure, not a bypass: a node with no heartbeat or
+  // detection history has listened zero days in every period, so seasonal/annual are gated
+  // (422 on-demand; the cron names the skip in its [report ops] digest).
+  const first = tenure?.first_heard_at ? new Date(tenure.first_heard_at).getTime() : null
   let start, end
   if (cadence === 'annual' && /^\d{4}$/.test(periodKey)) {
     const year = Number(periodKey)
@@ -104,7 +107,7 @@ export function cadenceTenureGate(cadence, periodKey, tenure, lat = 0, now = new
     end = Date.UTC(offsets[1] === 11 ? offsets[0] + 1 : offsets[0], offsets[1] === 11 ? 2 : offsets[1] + 3, 1)
   } else return null
   const endOfTenureWindow = Math.min(now.getTime(), end)
-  const listenedDays = Math.max(0, (endOfTenureWindow - Math.max(first, start)) / 86400000)
+  const listenedDays = first == null ? 0 : Math.max(0, (endOfTenureWindow - Math.max(first, start)) / 86400000)
   const threshold = cadence === 'seasonal' ? 14 : 60
   return listenedDays >= threshold ? null : `${cadence} report requires ${threshold} days of listening in this ${cadence === 'seasonal' ? 'season' : 'year'}`
 }

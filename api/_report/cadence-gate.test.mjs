@@ -10,6 +10,12 @@ const NOW = new Date('2026-11-05T12:00:00Z')
 // Daily is never gated, even with no heartbeat history.
 ok(cadenceTenureGate('daily', '2026-11-04', { first_heard_at: null }, 0, NOW) === null, 'daily ungated with no tenure')
 
+// Missing first_heard_at counts as ZERO tenure — never a bypass. A node with no heartbeat or
+// detection history is gated on seasonal/annual (422 on-demand; cron names it in cadenceSkipped).
+ok(/seasonal report requires 14 days/.test(cadenceTenureGate('seasonal', '2026-autumn', { first_heard_at: null }, 29, NOW) || ''), 'seasonal gated when first_heard_at is null')
+ok(/annual report requires 60 days/.test(cadenceTenureGate('annual', '2026', { first_heard_at: null }, 29, NOW) || ''), 'annual gated when first_heard_at is null')
+ok(/seasonal report requires 14 days/.test(cadenceTenureGate('seasonal', '2026-autumn', { first_heard_at: null }, -33, NOW) || ''), 'seasonal gated on null tenure in the southern hemisphere too')
+
 // A node ~1 day old (Villa Magora) cannot author the season or the year.
 const villa = { first_heard_at: '2026-11-04T19:22:00Z' }
 ok(/seasonal report requires 14 days/.test(cadenceTenureGate('seasonal', '2026-autumn', villa, 29, NOW) || ''), 'seasonal gated at <1 day')

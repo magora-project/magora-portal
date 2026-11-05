@@ -8,6 +8,24 @@ ok(toNodeLocal('2026-07-04T18:30:00Z', 'America/Chicago').date === '2026-07-04',
 ok(toNodeLocal('2026-07-04T18:30:00Z', 'America/Chicago').hour === 13, 'Terlingua local hour')
 ok(JSON.stringify(nodeDayWindow('2026-03-08', 'America/Chicago')) === JSON.stringify(['2026-03-08T06:00:00.000Z', '2026-03-09T05:00:00.000Z']), 'spring DST day is 23 hours')
 ok(JSON.stringify(nodeDayWindow('2026-11-01', 'America/Chicago')) === JSON.stringify(['2026-11-01T05:00:00.000Z', '2026-11-02T06:00:00.000Z']), 'fall DST day is 25 hours')
+
+// Nonexistent local midnight: zones that spring forward AT 00:00 skip local midnight entirely.
+// The window must start at the first valid instant of the requested local date (01:00), not
+// oscillate or land on the prior day.
+// America/Havana 2026-03-08: clocks jump 00:00→01:00 (CST→CDT). First valid instant = 05:00 UTC.
+const havana = nodeDayWindow('2026-03-08', 'America/Havana')
+ok(havana[0] === '2026-03-08T05:00:00.000Z', 'Havana skipped-midnight day starts at first valid instant (01:00 local = 05:00 UTC)')
+ok(toNodeLocal(havana[0], 'America/Havana').date === '2026-03-08', 'Havana start is on the requested local date')
+ok(toNodeLocal(havana[0], 'America/Havana').hour === 1, 'Havana start is 01:00 local (midnight does not exist)')
+ok(havana[1] === '2026-03-09T04:00:00.000Z', 'Havana day ends at the next local midnight (00:00 CDT = 04:00 UTC)')
+// America/Santiago 2026-09-06: clocks jump 00:00→01:00 (CLT→CLST). First valid instant = 04:00 UTC.
+const santiago = nodeDayWindow('2026-09-06', 'America/Santiago')
+ok(santiago[0] === '2026-09-06T04:00:00.000Z', 'Santiago skipped-midnight day starts at first valid instant (01:00 local = 04:00 UTC)')
+ok(toNodeLocal(santiago[0], 'America/Santiago').date === '2026-09-06', 'Santiago start is on the requested local date')
+ok(toNodeLocal(santiago[0], 'America/Santiago').hour === 1, 'Santiago start is 01:00 local')
+ok(santiago[1] === '2026-09-07T03:00:00.000Z', 'Santiago day ends at the next local midnight (00:00 CLST = 03:00 UTC)')
+// The day after a skipped midnight is normal again (exact convergence, no drift).
+ok(nodeDayWindow('2026-03-09', 'America/Havana')[0] === '2026-03-09T04:00:00.000Z', 'day after Havana transition is a normal midnight')
 ok(nodeTimeZone({ location: { coordinates: [0, 0] } }) === 'Etc/GMT', 'solar fallback has valid fallback shape')
 
 // Solar fallback sign: Etc/GMT is POSIX-inverted, so a western longitude yields Etc/GMT+N (UTC-N).

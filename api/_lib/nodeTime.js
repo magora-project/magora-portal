@@ -56,7 +56,7 @@ function wallMidnightUtc(date, tz) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`invalid local date: ${date}`)
   const [year, month, day] = date.split('-').map(Number)
   let guess = Date.UTC(year, month - 1, day)
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     const local = toNodeLocal(new Date(guess), tz)
     const localWall = Date.UTC(...local.date.split('-').map(Number).map((v, index) => index === 1 ? v - 1 : v), local.hour, local.minute)
     const wantedWall = Date.UTC(year, month - 1, day)
@@ -64,7 +64,41 @@ function wallMidnightUtc(date, tz) {
     guess += adjustment
     if (adjustment === 0) break
   }
-  return guess
+  const converged = toNodeLocal(new Date(guess), tz)
+  if (converged.date === date && converged.hour === 0 && converged.minute === 0) return guess
+  // Nonexistent local midnight: some zones spring forward AT 00:00 (America/Havana 2026-03-08,
+  // America/Santiago 2026-09-06), so the fixed-point search above oscillates between 23:00 on the
+  // prior date and 01:00 on the requested one. The local day then starts at its first valid
+  // instant (e.g. 01:00), which the boundary search finds exactly.
+  return firstInstantOfLocalDate(date, tz)
+}
+
+// First instant whose local wall-clock date is `date` — local midnight when it exists, or the
+// first valid instant of the date (e.g. 01:00) when a 00:00 DST transition skips midnight.
+// The local date is monotonic non-decreasing in the UTC instant, so a binary search converges
+// regardless of transition shape. Second resolution: IANA transitions fall on whole seconds, so
+// the result is the exact first valid instant.
+function firstInstantOfLocalDate(date, tz) {
+  const [year, month, day] = date.split('-').map(Number)
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+  const localAt = (ms) => {
+    const p = Object.fromEntries(fmt.formatToParts(new Date(ms)).filter((x) => x.type !== 'literal').map((x) => [x.type, x.value]))
+    return `${p.year}-${p.month}-${p.day}`
+  }
+  // ±26h brackets every IANA offset (UTC-12 … UTC+14) with margin, so `lo` is certainly on the
+  // prior local date and `hi` certainly on or after the requested one.
+  let lo = Date.UTC(year, month - 1, day) - 26 * HOUR_MS
+  let hi = Date.UTC(year, month - 1, day) + 26 * HOUR_MS
+  while (hi - lo > 1000) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (localAt(mid) < date) lo = mid
+    else hi = mid
+  }
+  // Snap to the exact second: IANA transitions fall on whole seconds, and the loop leaves `hi`
+  // up to 1s past the boundary. Rounding down to the second and nudging if that second still
+  // reads as the prior date lands exactly on the first valid instant.
+  const snapped = Math.floor(hi / 1000) * 1000
+  return localAt(snapped) < date ? snapped + 1000 : snapped
 }
 
 export function nodeDayWindow(date, tz) {
