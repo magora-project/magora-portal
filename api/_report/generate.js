@@ -10,6 +10,7 @@ import { nodeCoords } from '../_pulse/sources.js'
 import { buildReport, resolvePeriodKey } from './payload.js'
 import { narrateReport } from './narrate-report.js'
 import { fetchCachedReport, sbRpcService } from './db.js'
+import { nodeTenure } from '../_lib/nodeTime.js'
 
 /**
  * Resolve the period, check the cache, and generate+cache on miss.
@@ -24,6 +25,9 @@ export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 
   // Latitude is needed only to NAME the season by hemisphere; daily/annual don't need it.
   const lat = cadence === 'seasonal' ? (await nodeCoords(nodeId)).lat : null
   const periodKey = resolvePeriodKey(cadence, dateOrKey, lat)
+  const tenure = await nodeTenure(nodeId)
+  const cadenceGate = cadenceTenureGate(cadence, periodKey, tenure, lat)
+  if (cadenceGate) return { periodKey, report: null, eligibilityError: cadenceGate }
 
   // Cache-first: a fresh cached row (narrated at or after its payload was built) short-circuits.
   const cached = await fetchCachedReport(pgFetch, nodeId, cadence, periodKey)
@@ -74,4 +78,31 @@ export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 
   }).catch((e) => console.warn('set_node_report failed:', e.message))
 
   return { periodKey, cached: false, report: { payload, narrative: out.text, voice: out.voice, model: out.model, cached: false } }
+}
+
+export function cadenceTenureGate(cadence, periodKey, tenure, lat = 0, now = new Date()) {
+  if (cadence === 'daily' || !tenure.first_heard_at) return null
+  const first = new Date(tenure.first_heard_at).getTime()
+  let start, end
+  if (cadence === 'annual' && /^\d{4}$/.test(periodKey)) {
+    const year = Number(periodKey)
+    start = Date.UTC(year, 0, 1)
+    end = Date.UTC(year + 1, 0, 1)
+  } else if (cadence === 'seasonal') {
+    const match = /^(\d{4})-(winter|spring|summer|autumn)$/.exec(periodKey)
+    if (!match) return null
+    const y = Number(match[1])
+    const south = lat < 0
+    const blocks = south
+      ? { summer: [y - 1, 11], autumn: [y, 2], winter: [y, 5], spring: [y, 8] }
+      : { winter: [y - 1, 11], spring: [y, 2], summer: [y, 5], autumn: [y, 8] }
+    const offsets = blocks[match[2]]
+    if (!offsets) return null
+    start = Date.UTC(offsets[0], offsets[1], 1)
+    end = Date.UTC(offsets[1] === 11 ? offsets[0] + 1 : offsets[0], offsets[1] === 11 ? 2 : offsets[1] + 3, 1)
+  } else return null
+  const endOfTenureWindow = Math.min(now.getTime(), end)
+  const listenedDays = Math.max(0, (endOfTenureWindow - Math.max(first, start)) / 86400000)
+  const threshold = cadence === 'seasonal' ? 14 : 60
+  return listenedDays >= threshold ? null : `${cadence} report requires ${threshold} days of listening in this ${cadence === 'seasonal' ? 'season' : 'year'}`
 }

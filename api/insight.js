@@ -1,3 +1,5 @@
+import { nodeTimeZone, toNodeLocal, nodeTenure } from './_lib/nodeTime.js'
+
 // Model for ecosystem-insight generation. Kept in one place (Task F) so the
 // high-volume insight path and any future low-volume report path can use
 // different tiers with a single edit. Haiku 4.5 for insights: the July 2026
@@ -34,32 +36,19 @@ export async function generateInsight(prompt, model = INSIGHT_MODEL) {
 // Derive time-of-day description from UTC timestamp + Mountain Time offset.
 // Never relies on the Pi's stored time_category which can be wrong due to
 // UTC/local mismatch in the astral calculation.
-function localTimeContext(utcString, minutesFromSunrise) {
-  // If we have precise solar timing from the Pi, use it
-  if (minutesFromSunrise != null) {
-    if (minutesFromSunrise < -60)  return 'well before sunrise'
-    if (minutesFromSunrise < -30)  return 'pre-dawn'
-    if (minutesFromSunrise < 0)    return 'just before sunrise'
-    if (minutesFromSunrise < 30)   return 'at sunrise'
-    if (minutesFromSunrise < 120)  return 'early morning, within the dawn chorus window'
-    if (minutesFromSunrise < 240)  return 'mid-morning'
-    if (minutesFromSunrise < 360)  return 'late morning'
-    if (minutesFromSunrise < 480)  return 'midday'
-    if (minutesFromSunrise < 600)  return 'afternoon'
-    if (minutesFromSunrise < 720)  return 'early evening'
-    return 'dusk or night'
+function localTimeContext(utcString, node, minutesFromSunrise) {
+  const tz = nodeTimeZone(node)
+  if (!tz) return null
+  const local = toNodeLocal(utcString, tz)
+  const clockDesc = labelForHour(local.hour + local.minute / 60)
+
+  if (minutesFromSunrise != null && Math.abs(minutesFromSunrise) <= 30) {
+    return 'at sunrise'
   }
-  // Fallback: use Mountain Time (UTC-6) hour
-  const localHour = new Date(new Date(utcString).getTime() - 6 * 60 * 60 * 1000).getUTCHours()
-  if (localHour >= 21 || localHour < 4) return 'night'
-  if (localHour < 6)  return 'pre-dawn'
-  if (localHour < 8)  return 'early morning'
-  if (localHour < 10) return 'mid-morning'
-  if (localHour < 12) return 'late morning'
-  if (localHour < 14) return 'midday'
-  if (localHour < 17) return 'afternoon'
-  if (localHour < 19) return 'early evening'
-  return 'dusk'
+  if (minutesFromSunrise != null && (minutesFromSunrise < -30 || minutesFromSunrise > 30)) {
+    console.warn('Ignoring stale node minutes_from_sunrise:', minutesFromSunrise)
+  }
+  return clockDesc
 }
 
 async function dbFetch(supabaseUrl, apiKey, path, asArray = false) {
@@ -277,6 +266,13 @@ export async function buildNodeInsightPrompt(body) {
       : null,
   ])
 
+  // Node tenure is derived from heartbeat history (min aci_logs.recorded_at, fallback first
+  // detection), never from nodes.created_at. It bounds the longitudinal window below.
+  const tenure = nodeId ? await nodeTenure(nodeId) : null
+  const windowStart = tenure?.first_heard_at && new Date(tenure.first_heard_at) > new Date(Date.now() - 14 * 86400000)
+    ? tenure.first_heard_at
+    : new Date(Date.now() - 14 * 86400000).toISOString()
+
   const [habitat, coOccurring, longitudinal, recentWindow] = await Promise.all([
     // Habitat context
     nodeId
@@ -294,17 +290,16 @@ export async function buildNodeInsightPrompt(body) {
       return [...new Set(rows.map(r => r.species_name).filter(Boolean))]
     })() : Promise.resolve([]),
 
-    // Longitudinal: this species at this node in last 14 days + first ever detection
+    // Longitudinal: this species at this node in the window min(14 days, tenure) + first ever
     speciesName && nodeId ? (async () => {
-      const twoWeeks = new Date(Date.now() - 14 * 86400000).toISOString()
       const [recent, first, allRecent] = await Promise.all([
         dbFetch(supabaseUrl, apiKey,
-          `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&detected_at=gte.${twoWeeks}&${RANGE_OK}&select=detected_at&limit=200`,
+          `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&detected_at=gte.${windowStart}&${RANGE_OK}&select=detected_at&limit=200`,
           true),
         dbFetch(supabaseUrl, apiKey,
           `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&${RANGE_OK}&select=detected_at&order=detected_at.asc&limit=1`),
         dbFetch(supabaseUrl, apiKey,
-          `detections?node_id=eq.${nodeId}&detected_at=gte.${twoWeeks}&${RANGE_OK}&select=species_name&limit=500`,
+          `detections?node_id=eq.${nodeId}&detected_at=gte.${windowStart}&${RANGE_OK}&select=species_name&limit=500`,
           true),
       ])
       const uniqueSpecies = new Set(allRecent.map(d => d.species_name).filter(Boolean)).size
@@ -343,19 +338,35 @@ export async function buildNodeInsightPrompt(body) {
   if (!locationLabel) return { error: 'node location context required', status: 400 }
 
   // --- Build prompt ---
-  const timingDesc = localTimeContext(detection?.detected_at || new Date().toISOString(), minutesFromSun)
+  const timingDesc = localTimeContext(detection?.detected_at || new Date().toISOString(), node, minutesFromSun)
     + (isDawn ? ' (dawn chorus active)' : '')
 
-  const seasonDesc = season && phenoWeek
-    ? `${season.replace(/_/g, ' ')} (phenological week ${phenoWeek})`
+  const tenureDesc = tenure?.first_heard_at
+    ? (() => {
+      const first = new Date(tenure.first_heard_at)
+      const hours = Math.max(0, Math.round((Date.now() - first.getTime()) / 3600000))
+      const age = hours < 24
+        ? `${hours} hour${hours === 1 ? '' : 's'} ago`
+        : `${Math.floor(hours / 24)} day${Math.floor(hours / 24) === 1 ? '' : 's'} ago`
+      return `This node began listening on ${first.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}, about ${age}.`
+    })()
     : null
+  const recentDays = tenure?.days_listening != null
+    ? Math.min(14, tenure.days_listening)
+    : 14
+  const earlyNode = (tenure?.days_listening ?? 14) < 3
 
-  const longitudinalDesc = longitudinal ? [
+  const seasonDesc = earlyNode ? null : (season && phenoWeek
+    ? `${season.replace(/_/g, ' ')} (phenological week ${phenoWeek})`
+    : null)
+
+  // Tenure < 3 days → first impression: no patterns/trends/seasons at this node (TaskDef T2).
+  const longitudinalDesc = longitudinal && !earlyNode ? [
     longitudinal.recentCount > 0
-      ? `This species has been detected ${longitudinal.recentCount} time${longitudinal.recentCount !== 1 ? 's' : ''} at this node in the past 14 days.`
+      ? `This species has been detected ${longitudinal.recentCount} time${longitudinal.recentCount !== 1 ? 's' : ''} at this node within the observation window fact supplied above.`
       : `This appears to be a rare or first detection of this species at this node recently.`,
     longitudinal.firstDate ? `First recorded here on ${longitudinal.firstDate}.` : null,
-    `${longitudinal.uniqueSpecies} unique species detected at this node in the past 14 days.`,
+    `${longitudinal.uniqueSpecies} unique species detected at this node in the observation window fact supplied above.`,
   ].filter(Boolean).join(' ') : null
 
   const habitatDesc = [
@@ -390,7 +401,10 @@ export async function buildNodeInsightPrompt(body) {
     ebird.nearby.length > 0 && `Also recently reported nearby: ${ebird.nearby.join(', ')}`,
   ].filter(Boolean).join('. ') : null
 
-  const prompt = `You are a field ecologist working with the Magora network — a long-term acoustic biodiversity monitoring initiative based at a node in ${locationLabel}. You've been watching what lives here across seasons. You write for people who are genuinely curious about the natural world but aren't biologists. Your job is to interpret a specific ecological moment, not describe a species in general terms. Think out loud. Be specific. Be curious. Never be generic. Write in plain prose using commas and periods; never use em-dashes.
+  const prompt = `You are a field ecologist working with the Magora network at a listening post in ${locationLabel}. You write for people who are genuinely curious about the natural world but aren't biologists. Your job is to interpret a specific ecological moment, not describe a species in general terms. Think out loud. Be specific. Be curious. Never be generic. Write in plain prose using commas and periods; never use em-dashes.
+
+NODE CONTEXT
+${tenureDesc ? `${tenureDesc}\n` : ''}${timingDesc ? `Time of day: ${timingDesc}\n` : ''}Observation window used for node patterns: approximately the most recent ${Number.isInteger(recentDays) ? recentDays.toFixed(0) : recentDays.toFixed(1)} days.
 
 DETECTION
 Species: ${speciesName}${sciName ? ` (${sciName})` : ''}
@@ -410,7 +424,9 @@ Write 3–4 sentences that synthesize these layers into a genuine ecological sto
 - Infer what this animal is most likely doing RIGHT NOW based on its guild, the time, and the season — be specific and behavioral, not general
 - Connect it to at least one concrete plant, insect, soil, or structural habitat relationship relevant to this location
 - Assess whether this detection is expected, surprising, or ecologically significant — and briefly say why
-- Weave in one thread from the pattern being built at this node over time
+${earlyNode
+  ? '- Treat this as a first impression of a place that has only just begun listening; do not describe patterns, trends, or seasons at this node'
+  : '- Weave in one thread from the pattern being built at this node over time'}
 - Stay grounded in the data given, do not editorialize or make claims you cannot support from it
 - Sound like genuine curiosity and field observation, never a field guide entry
 - Never open with the species name or "This detection"`

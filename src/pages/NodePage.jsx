@@ -79,6 +79,7 @@ export default function NodePage() {
   const [node, setNode] = useState(null)
   const [detections, setDetections] = useState([])
   const [aciLogs, setAciLogs] = useState([])
+  const [firstHeartbeatAt, setFirstHeartbeatAt] = useState(null)
   const [loading, setLoading] = useState(true)
   const [wikiData, setWikiData] = useState({})
   const [insights, setInsights] = useState({})
@@ -95,7 +96,10 @@ export default function NodePage() {
   const pulseNarr = usePulseNarrative(id)
   const [reportOpen, setReportOpen] = useState(false) // "Today at this place" report card (Report v1)
   const [reportLinkCopied, setReportLinkCopied] = useState(false)
-  const nodeReport = useNodeReport(id)
+  const nodeListeningDays = firstHeartbeatAt
+    ? Math.max(0, (Date.parse(new Date().toISOString()) - Date.parse(firstHeartbeatAt)) / 86400000)
+    : 0
+  const nodeReport = useNodeReport(id, { days_listening: nodeListeningDays })
   const [technicalOpen, setTechnicalOpen] = useState(false) // operator drawer, collapsed by default
   const [bannerBusy, setBannerBusy] = useState(false)
   const [bannerError, setBannerError] = useState(null)
@@ -108,7 +112,13 @@ export default function NodePage() {
   const { user, openSignIn, listener, promptHandleClaim } = useAuth()
 
   async function fetchData() {
-    const [{ data: nodeData }, { data: dData }, { data: aciData }] = await Promise.all([
+    const [
+      { data: nodeData },
+      { data: dData },
+      { data: aciData },
+      { data: firstHeartbeatRows },
+      { data: firstDetectionRows },
+    ] = await Promise.all([
       supabase.from('nodes').select('*').eq('id', id).single(),
       supabase.from('detections')
         .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
@@ -124,10 +134,22 @@ export default function NodePage() {
         .eq('node_id', id)
         .order('recorded_at', { ascending: false })
         .limit(24),
+      supabase.from('aci_logs')
+        .select('recorded_at')
+        .eq('node_id', id)
+        .order('recorded_at', { ascending: true })
+        .limit(1),
+      supabase.from('detections')
+        .select('detected_at')
+        .eq('node_id', id)
+        .or('range_status.is.null,range_status.neq.quarantined')
+        .order('detected_at', { ascending: true })
+        .limit(1),
     ])
     setNode(nodeData)
     setDetections(dData || [])
     setAciLogs(aciData || [])
+    setFirstHeartbeatAt(firstHeartbeatRows?.[0]?.recorded_at || firstDetectionRows?.[0]?.detected_at || null)
     setLoading(false)
   }
 

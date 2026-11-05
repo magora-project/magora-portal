@@ -21,9 +21,18 @@ export function cadenceForPeriodKey(key) {
   return null
 }
 
-export function useNodeReport(nodeId) {
+export function reportCadencesForTenure(daysListening) {
+  const days = Number.isFinite(daysListening) ? daysListening : 0
+  return REPORT_CADENCES.filter((item) => item.id === 'daily'
+    || (item.id === 'seasonal' && days >= 14)
+    || (item.id === 'annual' && days >= 60))
+}
+
+export function useNodeReport(nodeId, tenure = null) {
   const [state, setState] = useState({ status: 'idle' }) // idle | loading | ready | empty | error
   const [cadence, setCadence] = useState('daily')
+  const days = Number.isFinite(tenure?.days_listening) ? tenure.days_listening : 0
+  const cadences = reportCadencesForTenure(days)
 
   // `c` lets selectCadence pass the new id immediately (setCadence is async — avoids a stale read).
   const load = useCallback(async (c = cadence) => {
@@ -46,5 +55,5 @@ export function useNodeReport(nodeId) {
 
   const selectCadence = useCallback((c) => { setCadence(c); load(c) }, [load])
 
-  return { ...state, cadence, cadences: REPORT_CADENCES, load, selectCadence }
+  return { ...state, cadence, cadences, load, selectCadence }
 }
