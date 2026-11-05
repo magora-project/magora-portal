@@ -17,11 +17,13 @@ function locationCoordinates(location) {
   } catch { return null }
 }
 
+// Etc/GMT signs are POSIX-inverted: west of Greenwich (negative offset) is Etc/GMT+N.
 function solarOffset(lon) {
   if (!Number.isFinite(lon)) return null
   const minutes = Math.round(lon / 15 * 60 / 15) * 15
   const bounded = Math.max(-12 * 60, Math.min(14 * 60, minutes))
-  const sign = bounded < 0 ? '-' : '+'
+  if (bounded === 0) return 'Etc/GMT'
+  const sign = bounded < 0 ? '+' : '-'
   const absolute = Math.abs(bounded)
   return `Etc/GMT${sign}${Math.round(absolute / 60)}`
 }
@@ -80,4 +82,27 @@ export async function nodeTenure(nodeId, now = new Date()) {
   if (!first) return { first_heard_at: null, hours_listening: 0, days_listening: 0 }
   const hours = Math.max(0, (new Date(now).getTime() - new Date(first).getTime()) / HOUR_MS)
   return { first_heard_at: first, hours_listening: hours, days_listening: hours / 24 }
+}
+
+// NOAA solar approximation (~±2 min at mid-latitudes). Returns signed minutes between the instant
+// and that UTC day's sunrise at (lat, lon) — the same convention as the Pi's minutes_from_sunrise
+// (positive = after sunrise) — so node telemetry can be validated server-side before it is trusted.
+// null for invalid input or polar day/night (no sunrise that day).
+export function minutesFromSunriseAt(lat, lon, instant) {
+  const d = new Date(instant)
+  if (Number.isNaN(d.getTime()) || !Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  const dayOfYear = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - Date.UTC(d.getUTCFullYear(), 0, 0)) / 86400000)
+  const gamma = 2 * Math.PI / 365 * (dayOfYear - 1 + 12 / 24)
+  const eqTime = 229.18 * (0.000075 + 0.001868 * Math.cos(gamma) - 0.032077 * Math.sin(gamma) - 0.014615 * Math.cos(2 * gamma) - 0.040849 * Math.sin(2 * gamma))
+  const decl = 0.006918 - 0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma) - 0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma) - 0.002697 * Math.cos(3 * gamma) + 0.00148 * Math.sin(3 * gamma)
+  const latRad = lat * Math.PI / 180
+  const cosH = (Math.cos(90.833 * Math.PI / 180) / (Math.cos(latRad) * Math.cos(decl))) - Math.tan(latRad) * Math.tan(decl)
+  if (cosH > 1 || cosH < -1) return null
+  const hourAngle = Math.acos(cosH) * 180 / Math.PI
+  const sunriseUtcMinutes = 720 - 4 * (lon + hourAngle) - eqTime
+  const instantUtcMinutes = d.getUTCHours() * 60 + d.getUTCMinutes() + d.getUTCSeconds() / 60
+  let diff = instantUtcMinutes - sunriseUtcMinutes
+  if (diff < -720) diff += 1440
+  if (diff > 720) diff -= 1440
+  return diff
 }

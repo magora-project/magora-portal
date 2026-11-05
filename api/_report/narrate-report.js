@@ -54,12 +54,13 @@ function fig(x, dp = 1) {
   return Number(x).toFixed(dp)
 }
 
-// A readable date from a daily period_key ('YYYY-MM-DD') without pulling a tz library. Framing
-// text only; introduces no ecological fact.
-function prettyDate(periodKey, tz) {
+// A readable date from a daily period_key ('YYYY-MM-DD'). The key is ALREADY the node's local
+// calendar date, so it renders as-is — converting it into the node's timezone would shift it back
+// a day in western zones (2026-11-04 → "November 3" in America/Chicago).
+function prettyDate(periodKey) {
   const d = new Date(`${periodKey}T00:00:00.000Z`)
   if (Number.isNaN(d.getTime())) return periodKey
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', ...(tz ? { timeZone: tz } : {}) })
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
 function prettyDayMonth(iso, tz) {
@@ -74,14 +75,16 @@ function prettyDayMonth(iso, tz) {
 // the payload-first grounding is unchanged.
 function cadenceFraming(payload) {
   const period = payload.period_key
-  const tz = payload.time_zone || null
   const firstDay = payload.tenure?.days_listening != null && payload.tenure.days_listening < 1
-  const clippedHours = payload.tenure?.first_heard_at && payload.window?.start
-    ? Math.max(0, (new Date(payload.window.end) - new Date(payload.window.start)) / 3600000)
-    : null
-  const span = payload.cadence === 'daily' && payload.tenure?.first_heard_at && new Date(payload.tenure.first_heard_at) > new Date(payload.window.start)
-    ? `across ${fig(clippedHours, 1)} hours of listening`
-    : payload.cadence === 'daily' ? 'across the day' : payload.cadence === 'seasonal' ? 'across this season' : 'over the year'
+  // The builder clips window.start to first_heard_at; a clipped window states its real span
+  // instead of the full cadence span (>= : a clipped start EQUALS first_heard_at).
+  const clipped = !!(payload.tenure?.first_heard_at && payload.window?.start && new Date(payload.tenure.first_heard_at) >= new Date(payload.window.start))
+  const spanHours = clipped ? Math.max(0, (new Date(payload.window.end) - new Date(payload.tenure.first_heard_at)) / 3600000) : null
+  const span = !clipped
+    ? payload.cadence === 'daily' ? 'across the day' : payload.cadence === 'seasonal' ? 'across this season' : 'over the year'
+    : payload.cadence === 'daily'
+      ? `across ${fig(spanHours, 1)} hours of listening`
+      : `across the ${Math.max(1, Math.round(spanHours / 24))} days since I began listening`
   switch (payload.cadence) {
     case 'seasonal': {
       const season = payload.phenology?.season || ''
@@ -91,7 +94,7 @@ function cadenceFraming(payload) {
     case 'annual':
       return { record: `my record of the year ${payload.phenology?.year || period}`.trim(), span, noticed: 'THIS YEAR', spanNoun: 'a year', newPhrase: firstDay ? null : 'new to my records, never detected here before this year' }
     default:
-      return { record: `my record of ${prettyDate(period, tz)}`, span, noticed: 'TODAY', spanNoun: 'a single day', newPhrase: firstDay ? null : 'new to my records, never detected here before today' }
+      return { record: `my record of ${prettyDate(period)}`, span, noticed: 'TODAY', spanNoun: 'a single day', newPhrase: firstDay ? null : 'new to my records, never detected here before today' }
   }
 }
 

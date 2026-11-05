@@ -10,7 +10,7 @@ import { nodeCoords } from '../_pulse/sources.js'
 import { buildReport, resolvePeriodKey } from './payload.js'
 import { narrateReport } from './narrate-report.js'
 import { fetchCachedReport, sbRpcService } from './db.js'
-import { nodeTenure } from '../_lib/nodeTime.js'
+import { nodeTenure, nodeTimeZone, toNodeLocal } from '../_lib/nodeTime.js'
 
 /**
  * Resolve the period, check the cache, and generate+cache on miss.
@@ -22,9 +22,12 @@ import { nodeTenure } from '../_lib/nodeTime.js'
  *   report=null => quiet period, nothing to author (not cached). error set => generation failed.
  */
 export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 'node') {
-  // Latitude is needed only to NAME the season by hemisphere; daily/annual don't need it.
-  const lat = cadence === 'seasonal' ? (await nodeCoords(nodeId)).lat : null
-  const periodKey = resolvePeriodKey(cadence, dateOrKey, lat)
+  const { node, lat } = await nodeCoords(nodeId)
+  const tz = nodeTimeZone(node)
+  // Daily keys are the node's LOCAL date: without an explicit key, "today" is today where the
+  // node is, not today in UTC (they diverge between local and UTC midnight).
+  const effectiveDate = dateOrKey ?? (cadence === 'daily' && tz ? toNodeLocal(new Date(), tz).date : undefined)
+  const periodKey = resolvePeriodKey(cadence, effectiveDate, lat)
   const tenure = await nodeTenure(nodeId)
   const cadenceGate = cadenceTenureGate(cadence, periodKey, tenure, lat)
   if (cadenceGate) return { periodKey, report: null, eligibilityError: cadenceGate }
@@ -55,7 +58,6 @@ export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 
   //
   // Returns the same quiet `report: null` a genuinely uneventful period returns, so every caller
   // already handles it — the cron counts it as `quiet`, the UI shows its calm empty state.
-  const { node } = await nodeCoords(nodeId)
   if (node && node.is_active === false) {
     return { periodKey, report: null }
   }

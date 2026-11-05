@@ -21,18 +21,37 @@ export function cadenceForPeriodKey(key) {
   return null
 }
 
-export function reportCadencesForTenure(daysListening) {
-  const days = Number.isFinite(daysListening) ? daysListening : 0
+// Start of the current meteorological season block (UTC ms). Blocks are hemisphere-independent
+// (only the NAME flips across the equator), matching api/_report/payload.js's season resolution.
+function currentSeasonStart(now) {
+  const m = now.getUTCMonth()
+  const y = now.getUTCFullYear()
+  if (m >= 11) return Date.UTC(y, 11, 1)      // DJF
+  if (m >= 8) return Date.UTC(y, 8, 1)        // SON
+  if (m >= 5) return Date.UTC(y, 5, 1)        // JJA
+  if (m >= 2) return Date.UTC(y, 2, 1)        // MAM
+  return Date.UTC(y - 1, 11, 1)               // Jan/Feb belong to DJF of season year y
+}
+
+// Selector gating mirrors the server (api/_report/generate.js cadenceTenureGate): seasonal needs
+// ≥14 days of tenure within the CURRENT season, annual ≥60 days within the CURRENT year — a mature
+// node still waits 14 days after a season boundary before "This season" has enough of a record.
+export function reportCadencesForTenure(firstHeardAt, now = new Date()) {
+  if (!firstHeardAt) return REPORT_CADENCES.filter((item) => item.id === 'daily')
+  const first = new Date(firstHeardAt).getTime()
+  if (!Number.isFinite(first)) return REPORT_CADENCES.filter((item) => item.id === 'daily')
+  const nowMs = now.getTime()
+  const daysInSeason = Math.max(0, (nowMs - Math.max(currentSeasonStart(now), first)) / 86400000)
+  const daysInYear = Math.max(0, (nowMs - Math.max(Date.UTC(now.getUTCFullYear(), 0, 1), first)) / 86400000)
   return REPORT_CADENCES.filter((item) => item.id === 'daily'
-    || (item.id === 'seasonal' && days >= 14)
-    || (item.id === 'annual' && days >= 60))
+    || (item.id === 'seasonal' && daysInSeason >= 14)
+    || (item.id === 'annual' && daysInYear >= 60))
 }
 
 export function useNodeReport(nodeId, tenure = null) {
   const [state, setState] = useState({ status: 'idle' }) // idle | loading | ready | empty | error
   const [cadence, setCadence] = useState('daily')
-  const days = Number.isFinite(tenure?.days_listening) ? tenure.days_listening : 0
-  const cadences = reportCadencesForTenure(days)
+  const cadences = reportCadencesForTenure(tenure?.first_heard_at || null)
 
   // `c` lets selectCadence pass the new id immediately (setCadence is async — avoids a stale read).
   const load = useCallback(async (c = cadence) => {

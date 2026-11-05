@@ -485,7 +485,7 @@ export async function buildDailyReport(nodeId, date) {
   const lastDates = common.species.map((s) => s.last_seen).filter(Boolean).sort()
 
   return assemble({
-    nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
+    nodeId, window, node: common.node, lat: common.lat, lon: common.lon, tz: common.tz,
     species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
     aciSampleCount: windowAci.sampleCount,
     human_activity: common.human_activity,
@@ -519,8 +519,12 @@ export async function buildDailyReport(nodeId, date) {
 export async function buildSeasonalReport(nodeId, dateOrKey) {
   const { lat: latPeek } = await nodeCoords(nodeId)
   const window = resolveSeasonalWindow(dateOrKey, latPeek)
-  const common = await gatherCommon(nodeId, window)
   const tenure = await nodeTenure(nodeId)
+  // A node that began mid-season reports the span it actually witnessed.
+  if (tenure.first_heard_at && new Date(tenure.first_heard_at) > new Date(window.start)) {
+    window.start = tenure.first_heard_at
+  }
+  const common = await gatherCommon(nodeId, window)
   const soundscape = await edgeTrend(nodeId, window, 14)
 
   // Arrivals: earliest first-of-season detections. Departures: earliest to fall silent (last-seen
@@ -552,7 +556,7 @@ export async function buildSeasonalReport(nodeId, dateOrKey) {
   const [year, name] = window.period_key.split('-')
 
   return assemble({
-    nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
+    nodeId, window, node: common.node, lat: common.lat, lon: common.lon, tz: common.tz,
     species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
     aciSampleCount: soundscape.sample_count,
     human_activity: common.human_activity,
@@ -586,8 +590,12 @@ export async function buildSeasonalReport(nodeId, dateOrKey) {
  */
 export async function buildAnnualReport(nodeId, dateOrKey) {
   const window = resolveAnnualWindow(dateOrKey)
-  const common = await gatherCommon(nodeId, window)
   const tenure = await nodeTenure(nodeId)
+  // A node that began mid-year reports the span it actually witnessed.
+  if (tenure.first_heard_at && new Date(tenure.first_heard_at) > new Date(window.start)) {
+    window.start = tenure.first_heard_at
+  }
+  const common = await gatherCommon(nodeId, window)
   const [soundscape, priorSpecies] = await Promise.all([
     edgeTrend(nodeId, window, 30),
     distinctSpeciesBefore(nodeId, window.start),
@@ -619,7 +627,7 @@ export async function buildAnnualReport(nodeId, dateOrKey) {
   const lastDates = common.species.map((s) => s.last_seen).filter(Boolean).sort()
 
   return assemble({
-    nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
+    nodeId, window, node: common.node, lat: common.lat, lon: common.lon, tz: common.tz,
     species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
     aciSampleCount: soundscape.sample_count,
     human_activity: common.human_activity,

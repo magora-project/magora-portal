@@ -1,4 +1,4 @@
-import { nodeTimeZone, toNodeLocal, nodeTenure } from './_lib/nodeTime.js'
+import { nodeTimeZone, toNodeLocal, nodeTenure, minutesFromSunriseAt } from './_lib/nodeTime.js'
 
 // Model for ecosystem-insight generation. Kept in one place (Task F) so the
 // high-volume insight path and any future low-volume report path can use
@@ -33,20 +33,35 @@ export async function generateInsight(prompt, model = INSIGHT_MODEL) {
 }
 
 // Vercel serverless function (Node runtime).
-// Derive time-of-day description from UTC timestamp + Mountain Time offset.
-// Never relies on the Pi's stored time_category which can be wrong due to
-// UTC/local mismatch in the astral calculation.
+// Time-of-day from the node's coordinates (IANA zone via api/_lib/nodeTime.js). The Pi's
+// minutes_from_sunrise is trusted only when it agrees (~30 min) with the server-side NOAA
+// sunrise calc for the node's coordinates; otherwise it is ignored and logged once per call.
+// Never relies on the Pi's stored time_category, which can be wrong when its location config
+// is unverified (the Villa Magora failure mode).
 function localTimeContext(utcString, node, minutesFromSunrise) {
   const tz = nodeTimeZone(node)
   if (!tz) return null
   const local = toNodeLocal(utcString, tz)
   const clockDesc = labelForHour(local.hour + local.minute / 60)
 
-  if (minutesFromSunrise != null && Math.abs(minutesFromSunrise) <= 30) {
-    return 'at sunrise'
-  }
-  if (minutesFromSunrise != null && (minutesFromSunrise < -30 || minutesFromSunrise > 30)) {
-    console.warn('Ignoring stale node minutes_from_sunrise:', minutesFromSunrise)
+  if (minutesFromSunrise != null) {
+    const coords = node?.location?.coordinates
+    const serverMinutes = coords ? minutesFromSunriseAt(coords[1], coords[0], utcString) : null
+    if (serverMinutes != null && Math.abs(minutesFromSunrise - serverMinutes) <= 30) {
+      // Verified against the server-side sunrise calc: use the Pi's precise solar buckets.
+      if (minutesFromSunrise < -60)  return 'well before sunrise'
+      if (minutesFromSunrise < -30)  return 'pre-dawn'
+      if (minutesFromSunrise < 0)    return 'just before sunrise'
+      if (minutesFromSunrise < 30)   return 'at sunrise'
+      if (minutesFromSunrise < 120)  return 'early morning, within the dawn chorus window'
+      if (minutesFromSunrise < 240)  return 'mid-morning'
+      if (minutesFromSunrise < 360)  return 'late morning'
+      if (minutesFromSunrise < 480)  return 'midday'
+      if (minutesFromSunrise < 600)  return 'afternoon'
+      if (minutesFromSunrise < 720)  return 'early evening'
+      return 'dusk or night'
+    }
+    console.warn('Ignoring unverified node minutes_from_sunrise:', minutesFromSunrise)
   }
   return clockDesc
 }

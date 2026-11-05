@@ -96,10 +96,9 @@ export default function NodePage() {
   const pulseNarr = usePulseNarrative(id)
   const [reportOpen, setReportOpen] = useState(false) // "Today at this place" report card (Report v1)
   const [reportLinkCopied, setReportLinkCopied] = useState(false)
-  const nodeListeningDays = firstHeartbeatAt
-    ? Math.max(0, (Date.parse(new Date().toISOString()) - Date.parse(firstHeartbeatAt)) / 86400000)
-    : 0
-  const nodeReport = useNodeReport(id, { days_listening: nodeListeningDays })
+  // Report cadence gating uses the same first-heartbeat tenure the server derives
+  // (api/_lib/nodeTime.js nodeTenure), never the 24-row recent-ACI window.
+  const nodeReport = useNodeReport(id, { first_heard_at: firstHeartbeatAt })
   const [technicalOpen, setTechnicalOpen] = useState(false) // operator drawer, collapsed by default
   const [bannerBusy, setBannerBusy] = useState(false)
   const [bannerError, setBannerError] = useState(null)
