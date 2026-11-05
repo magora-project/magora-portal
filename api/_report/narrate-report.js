@@ -77,9 +77,13 @@ function cadenceFraming(payload) {
   const period = payload.period_key
   const firstDay = payload.tenure?.days_listening != null && payload.tenure.days_listening < 1
   // The builder clips window.start to first_heard_at; a clipped window states its real span
-  // instead of the full cadence span (>= : a clipped start EQUALS first_heard_at).
+  // instead of the full cadence span (>= : a clipped start EQUALS first_heard_at). The span ends
+  // at generated_at, not window.end — for an on-demand report the period boundary is in the
+  // future, and counting it would claim hours the node has not listened.
   const clipped = !!(payload.tenure?.first_heard_at && payload.window?.start && new Date(payload.tenure.first_heard_at) >= new Date(payload.window.start))
-  const spanHours = clipped ? Math.max(0, (new Date(payload.window.end) - new Date(payload.tenure.first_heard_at)) / 3600000) : null
+  const spanEnd = payload.generated_at && new Date(payload.generated_at) < new Date(payload.window.end)
+    ? new Date(payload.generated_at) : new Date(payload.window?.end)
+  const spanHours = clipped ? Math.max(0, (spanEnd - new Date(payload.tenure.first_heard_at)) / 3600000) : null
   const span = !clipped
     ? payload.cadence === 'daily' ? 'across the day' : payload.cadence === 'seasonal' ? 'across this season' : 'over the year'
     : payload.cadence === 'daily'

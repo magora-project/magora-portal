@@ -28,12 +28,14 @@ function dailyPayload(overrides = {}) {
 const facts = groundedReportFacts(dailyPayload())
 ok(facts.some((l) => l.includes('my record of November 4, 2026')), 'local period_key renders unshifted (Nov 4, not Nov 3)')
 
-// 2. Clipped daily window (start == first_heard_at) states the real span in hours.
+// 2. Clipped daily window (start == first_heard_at) states the real span in hours, capped at
+// generated_at — the period end is in the future for an on-demand report and must not count.
 const clipped = groundedReportFacts(dailyPayload({
   window: { start: '2026-11-04T19:22:00.000Z', end: '2026-11-05T06:00:00.000Z', cadence: 'daily', period_key: '2026-11-04' },
   tenure: { first_heard_at: '2026-11-04T19:22:00.000Z', hours_listening: 10.6, days_listening: 0.44 },
+  generated_at: '2026-11-05T02:00:00.000Z', // 6.6h after first heartbeat; period ends 06:00
 }))
-ok(clipped.some((l) => l.includes('hours of listening')), 'clipped window states real span in hours')
+ok(clipped.some((l) => l.includes('6.6 hours of listening')), 'clipped span caps at generated_at, not the future period end')
 ok(!clipped.some((l) => l.includes('across the day')), 'clipped window does not claim a full day')
 
 // 3. First-day node: "new to my records" framing is suppressed even with new species.
@@ -50,14 +52,16 @@ const secondDay = groundedReportFacts(dailyPayload({
 }))
 ok(secondDay.some((l) => /new to my records/i.test(l)), 'second day restores new-to-my-records')
 
-// 5. Clipped seasonal window states the span in days, not the whole season.
+// 5. Clipped seasonal window states the span in days up to generated_at, not the whole season.
 const seasonal = groundedReportFacts(dailyPayload({
   cadence: 'seasonal', period_key: '2026-autumn',
   window: { start: '2026-10-20T00:00:00Z', end: '2026-12-01T00:00:00.000Z', cadence: 'seasonal', period_key: '2026-autumn' },
   tenure: { first_heard_at: '2026-10-20T00:00:00Z', hours_listening: 1000, days_listening: 42 },
   phenology: { period_key: '2026-autumn', season: 'autumn', season_year: 2026 },
 }))
-ok(seasonal.some((l) => l.includes('42 days since I began listening')), 'clipped season states days since first heartbeat')
+// generated_at is 2026-11-05: Oct 20 → Nov 5 = 16 days; the unelapsed remainder of the season
+// (through Dec 1) must not be claimed as listening.
+ok(seasonal.some((l) => l.includes('16 days since I began listening')), 'clipped season states days since first heartbeat, capped at generated_at')
 ok(!seasonal.some((l) => l.includes('across this season I')), 'clipped season does not claim the full season span')
 
 console.log('report-tenure narration tests passed')
