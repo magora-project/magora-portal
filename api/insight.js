@@ -47,7 +47,8 @@ export function tenureDescription(tenure, tz, now = Date.now()) {
 // The observation-window line. A node under 3 days old has no pattern history, so the prompt must
 // not label its first hours as a window for "node patterns" (that would invite the season/pattern
 // narration the earlyNode rule forbids). Pure; exported for tests.
-export function observationWindowLine(earlyNode, recentDays) {
+export function observationWindowLine(earlyNode, recentDays, unknownTenure = false) {
+  if (unknownTenure) return 'Observation window: no listening history is available for this request, so there is no pattern history to draw on.'
   if (earlyNode) return 'Observation window: this node has only just begun listening — there is no pattern history at this place yet.'
   const days = Number.isInteger(recentDays) ? recentDays.toFixed(0) : recentDays.toFixed(1)
   return `Observation window used for node patterns: approximately the most recent ${days} days.`
@@ -55,6 +56,25 @@ export function observationWindowLine(earlyNode, recentDays) {
 
 // The behavior-inference bullet. For an early node the seasonal inference is dropped alongside the
 // earlyNode rule (no patterns/trends/seasons at this node). Pure; exported for tests.
+// Tenure framing state (Codex @f764465). `null` tenure means it is UNKNOWN: a node-less fallback
+// request (species_name + location, no detection) or a failed tenure lookup. Unknown tenure must
+// not default to a mature 14-day node, so it takes the first-impression path (no patterns, trends
+// or seasons), worded without claiming the node "just began listening". Pure; exported for tests.
+export function tenureFraming(tenure) {
+  if (!tenure) return { unknownTenure: true, earlyNode: true, recentDays: null }
+  const days = Number.isFinite(tenure.days_listening) ? tenure.days_listening : 0
+  return { unknownTenure: false, earlyNode: days < 3, recentDays: Math.min(14, days) }
+}
+
+// The closing framing bullet: one thread of node history for a mature node; a first impression
+// otherwise. Pure; exported for tests.
+export function framingBullet(earlyNode, unknownTenure = false) {
+  if (unknownTenure) return '- Treat this as a single moment: no listening history is available here, so do not describe patterns, trends, or seasons at this place'
+  return earlyNode
+    ? '- Treat this as a first impression of a place that has only just begun listening; do not describe patterns, trends, or seasons at this node'
+    : '- Weave in one thread from the pattern being built at this node over time'
+}
+
 export function behaviorInferenceBullet(earlyNode) {
   return `- Infer what this animal is most likely doing RIGHT NOW based on its guild, the time of day${earlyNode ? '' : ', and the season'} — be specific and behavioral, not general`
 }
@@ -317,7 +337,14 @@ export async function buildNodeInsightPrompt(body) {
 
   // Node tenure is derived from heartbeat history (min aci_logs.recorded_at, fallback first
   // detection), never from nodes.created_at. It bounds the longitudinal window below.
-  const tenure = nodeId ? await nodeTenure(nodeId) : null
+  // A failed lookup (nodeTenure throws rather than reporting zero tenure) degrades to UNKNOWN
+  // tenure, which takes the first-impression framing, instead of failing the whole insight.
+  let tenure = null
+  if (nodeId) {
+    try { tenure = await nodeTenure(nodeId) } catch (error) {
+      console.warn('insight: tenure lookup failed; framing as unknown tenure:', error?.message || error)
+    }
+  }
   const windowStart = tenure?.first_heard_at && new Date(tenure.first_heard_at) > new Date(Date.now() - 14 * 86400000)
     ? tenure.first_heard_at
     : new Date(Date.now() - 14 * 86400000).toISOString()
@@ -394,10 +421,7 @@ export async function buildNodeInsightPrompt(body) {
 
   const nodeTz = nodeTimeZone(node)
   const tenureDesc = tenureDescription(tenure, nodeTz)
-  const recentDays = tenure?.days_listening != null
-    ? Math.min(14, tenure.days_listening)
-    : 14
-  const earlyNode = (tenure?.days_listening ?? 14) < 3
+  const { unknownTenure, earlyNode, recentDays } = tenureFraming(tenure)
 
   const seasonDesc = earlyNode ? null : (season && phenoWeek
     ? `${season.replace(/_/g, ' ')} (phenological week ${phenoWeek})`
@@ -448,7 +472,7 @@ export async function buildNodeInsightPrompt(body) {
   const prompt = `You are a field ecologist working with the Magora network at a listening post in ${locationLabel}. You write for people who are genuinely curious about the natural world but aren't biologists. Your job is to interpret a specific ecological moment, not describe a species in general terms. Think out loud. Be specific. Be curious. Never be generic. Write in plain prose using commas and periods; never use em-dashes.
 
 NODE CONTEXT
-${tenureDesc ? `${tenureDesc}\n` : ''}${timingDesc ? `Time of day: ${timingDesc}\n` : ''}${observationWindowLine(earlyNode, recentDays)}
+${tenureDesc ? `${tenureDesc}\n` : ''}${timingDesc ? `Time of day: ${timingDesc}\n` : ''}${observationWindowLine(earlyNode, recentDays, unknownTenure)}
 
 DETECTION
 Species: ${speciesName}${sciName ? ` (${sciName})` : ''}
@@ -468,9 +492,7 @@ Write 3–4 sentences that synthesize these layers into a genuine ecological sto
 ${behaviorInferenceBullet(earlyNode)}
 - Connect it to at least one concrete plant, insect, soil, or structural habitat relationship relevant to this location
 - Assess whether this detection is expected, surprising, or ecologically significant — and briefly say why
-${earlyNode
-  ? '- Treat this as a first impression of a place that has only just begun listening; do not describe patterns, trends, or seasons at this node'
-  : '- Weave in one thread from the pattern being built at this node over time'}
+${framingBullet(earlyNode, unknownTenure)}
 - Stay grounded in the data given, do not editorialize or make claims you cannot support from it
 - Sound like genuine curiosity and field observation, never a field guide entry
 - Never open with the species name or "This detection"`

@@ -1,5 +1,4 @@
 import tzLookup from 'tz-lookup'
-import { pgFetch } from '../_pulse/db.js'
 
 const HOUR_MS = 3600000
 
@@ -124,7 +123,8 @@ export function nodeDayWindow(date, tz) {
 // Tenure lookup that distinguishes "no history" from "the lookup failed". pgFetch collapses a
 // timeout/5xx to null, which is indistinguishable from a legitimately empty table — and would let
 // a transient failure turn a mature node's tenure into a false 422 (or a wrong first-impression
-// framing). The primary read therefore throws on non-2xx; the fallback tolerates emptiness.
+// framing). Both reads (heartbeat, then the first-detection fallback) therefore throw on non-2xx
+// or a network error; only a successful empty response means "no history" (Codex @f764465).
 async function firstRowOrThrow(path) {
   const base = process.env.VITE_SUPABASE_URL
   const key = process.env.VITE_SUPABASE_ANON_KEY
@@ -136,7 +136,7 @@ async function firstRowOrThrow(path) {
 
 export async function nodeTenure(nodeId, now = new Date()) {
   let heartbeat = await firstRowOrThrow(`aci_logs?node_id=eq.${encodeURIComponent(nodeId)}&select=recorded_at&order=recorded_at.asc&limit=1`)
-  if (!heartbeat?.recorded_at) heartbeat = await pgFetch(`detections?node_id=eq.${encodeURIComponent(nodeId)}&select=detected_at&order=detected_at.asc&limit=1`)
+  if (!heartbeat?.recorded_at) heartbeat = await firstRowOrThrow(`detections?node_id=eq.${encodeURIComponent(nodeId)}&select=detected_at&order=detected_at.asc&limit=1`)
   const first = heartbeat?.recorded_at || heartbeat?.detected_at
   if (!first) return { first_heard_at: null, hours_listening: 0, days_listening: 0 }
   const hours = Math.max(0, (new Date(now).getTime() - new Date(first).getTime()) / HOUR_MS)
