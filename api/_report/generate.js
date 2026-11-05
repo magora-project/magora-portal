@@ -35,14 +35,15 @@ export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 
   // Cache-first: a fresh cached row (narrated at or after its payload was built) short-circuits.
   // Cache invalidation (M1): pre-deployment daily rows were built under UTC windows but sit under
   // the same YYYY-MM-DD key. Payloads built with node-local semantics carry `observed`; a row
-  // without it predates the window fix and is rebuilt rather than served.
+  // without it predates the window fix. For an ACTIVE node such a row is rebuilt rather than
+  // served. For an INACTIVE node the stale row is still served — the node cannot rebuild (the
+  // is_active gate below stops it authoring anything new), and a retained historical record is
+  // better than hiding it.
   const cached = await fetchCachedReport(pgFetch, nodeId, cadence, periodKey)
-  if (
-    cached?.narrative &&
-    cached.narrated_at &&
-    new Date(cached.narrated_at).getTime() >= new Date(cached.generated_at).getTime() &&
-    cached.payload?.observed
-  ) {
+  const cachedFresh = cached?.narrative && cached.narrated_at &&
+    new Date(cached.narrated_at).getTime() >= new Date(cached.generated_at).getTime()
+  const cachedLocalSemantics = !!cached?.payload?.observed
+  if (cachedFresh && (cachedLocalSemantics || node?.is_active === false)) {
     return {
       periodKey,
       cached: true,
