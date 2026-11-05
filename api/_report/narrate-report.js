@@ -75,7 +75,14 @@ function prettyDayMonth(iso, tz) {
 // the payload-first grounding is unchanged.
 function cadenceFraming(payload) {
   const period = payload.period_key
-  const firstDay = payload.tenure?.days_listening != null && payload.tenure.days_listening < 1
+  // "First day" is a property of the REPORT PERIOD, not of the node's age when the report is built
+  // (Codex App @93e22a7): a daily report is the first-day report when its local-day window contains
+  // first_heard_at, however much later it is generated (the 10:00 UTC cron, or a regeneration).
+  // Seasonal/annual keep the age rule; their 14/60-day tenure gates make it unreachable anyway.
+  const firstHeard = payload.tenure?.first_heard_at ? new Date(payload.tenure.first_heard_at) : null
+  const firstDay = payload.cadence === 'daily' && firstHeard && payload.window?.start && payload.window?.end
+    ? firstHeard >= new Date(payload.window.start) && firstHeard < new Date(payload.window.end)
+    : payload.tenure?.days_listening != null && payload.tenure.days_listening < 1
   // The builder carries the node-observed span in payload.observed (window.start clipped to
   // first_heard_at, window.end capped at generation time). clipped states the span since the first
   // heartbeat; partial (a period still running) states the elapsed part of the day/season/year —

@@ -53,6 +53,23 @@ const secondDay = groundedReportFacts(dailyPayload({
 }))
 ok(secondDay.some((l) => /new to my records/i.test(l)), 'second day restores new-to-my-records')
 
+// 4b. First-day status follows the report PERIOD, not the node's age at generation (Codex App
+// @93e22a7). Node first heard 2026-11-04T07:00Z (01:00 local); the 10:00 UTC cron builds Nov 4's
+// report on Nov 5, when the node is already 27h old. It is still the first-day report.
+const cronFirstDay = groundedReportFacts(dailyPayload({
+  tenure: { first_heard_at: '2026-11-04T07:00:00.000Z', hours_listening: 27, days_listening: 1.125 },
+  generated_at: '2026-11-05T10:00:00.000Z',
+  new_species: [{ species_name: 'Virginia Rail', first_seen: '2026-11-04T20:21:00Z' }],
+}))
+ok(!cronFirstDay.some((l) => /new to my records/i.test(l)), 'first-day report built >24h later still suppresses new-to-my-records')
+// A regeneration of the first day weeks later is still the first-day report.
+const regenFirstDay = groundedReportFacts(dailyPayload({
+  tenure: { first_heard_at: '2026-11-04T19:22:00.000Z', hours_listening: 500, days_listening: 20.8 },
+  generated_at: '2026-11-25T10:00:00.000Z',
+  new_species: [{ species_name: 'Virginia Rail', first_seen: '2026-11-04T20:21:00Z' }],
+}))
+ok(!regenFirstDay.some((l) => /new to my records/i.test(l)), 'regenerated first-day report suppresses new-to-my-records')
+
 // 5. Clipped seasonal observed span states the span in days up to generated_at, not the whole season.
 const seasonal = groundedReportFacts(dailyPayload({
   cadence: 'seasonal', period_key: '2026-autumn',
