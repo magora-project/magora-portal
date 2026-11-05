@@ -16,3 +16,8 @@ export function parseNodeLocation(loc) {
   }
   return null
 }
+
+export function formatLatLon(lat, lon, precision = 1) {
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return null
+  return `${Math.abs(Number(lat)).toFixed(precision)}°${Number(lat) >= 0 ? 'N' : 'S'}, ${Math.abs(Number(lon)).toFixed(precision)}°${Number(lon) >= 0 ? 'E' : 'W'}`
+}
