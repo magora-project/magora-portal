@@ -54,8 +54,15 @@ links other than `plans` point into `~/.claude-b-config` instead.
 | Maintaining this file | drop | claude-config only |
 | Model routing, Defaults, Escalate to Opus, Subagent routing, Context quality | keep (Q1) | — |
 | Verify-against-source (18 surfaces) | keep (Q1) | — |
-| Playbook and Moment entries: Secrets, GitHub-auth, Local-guards, Before-push | keep, inlined (Q2) | — |
-| Every other Playbook, Moment and Index pointer | drop (Q2) | — |
+| Playbook entries: GitHub-auth, Local-guards | keep (Q2) | — |
+| Moment entries: Session-start, Before-push, Subagent-dispatch | keep (Q2) | — |
+| Index entries into `rules/verification.md`, `shell.md`, `git-push.md`, `local-tooling.md` (16) | keep (Q1, Q2) | — |
+| Every other Playbook entry (CodeRabbit, SDK-contracts, Data-layer, Supabase, Build-tooling, Vercel, External-API, Notifications, Frontend, Verification, Long-running jobs, macOS-forensics, Remote-machine operation, Session-recovery) | drop (Q2) | — |
+| Moment entries: Incoming-ask, Reviewer-response, Skill-editing, Canonical-propagation | drop (Q2) | `.claude/hooks/lane-threshold.mjs`; `process.md` |
+| Index entries into `rules/review.md` (11) | drop (Q2) | `process.md` § Review slots and dispatch, § What blocks |
+
+Kept entries stay pointers into the clone's frozen `rules/` and `CLAUDE-PROCEDURES.md`; the frozen
+clone replaced Q2's "inline" (see "How the freeze is built").
 
 ## Rulings (David, 2026-11-03)
 
@@ -107,10 +114,11 @@ clone instead:
   freeze (spec §5.7; the check is plan Task 19 Step 5).
 - **Trim commits** (the freeze check in plan Task 19 Step 5 reads this list; a later trim is
   added here with the reviewed change that makes it): `1e280679`.
-- **Known mismatch (found 2026-11-04, not yet reconciled):** the clone's `CLAUDE.md` still has two
-  Moment entries beyond the kept four (Session-start, Subagent-dispatch) and its `## Index`,
-  which the table above lists as dropped. Either the table or the clone is wrong; David decides,
-  before plan Task 19 Step 5 writes the freeze check.
+- **Reconciled mismatch (found and ruled 2026-11-04, David):** the "CLAUDE.md trim" table
+  listed the Session-start and Subagent-dispatch Moment entries and the `## Index` as dropped,
+  but `1e280679` kept them, as its message says ("the machine-safety index entries"). The table
+  was wrong and now lists what `1e280679` keeps; the clone is unchanged. Plan Task 19 Step 5's
+  freeze check takes the table as written.
 
 ## Questions as asked
 
