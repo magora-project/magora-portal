@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "5cd08a5c0cc3b8369c0ef9f34086eea2445510c3",
+    "mergeBase": "ac5294329ed3c879b94c7d328016ab6f87ff075a",
+    "head": "22d2ebaa65a3bb05a89edb60bca6c7b86ee4a9fb"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P3",
+      "summary": "The `mixed` test would still pass if the code wrongly picked the lowest label (`mechanical`), because it only checks for exit code 0 and does not assert the output.",
+      "file": "scripts/ci/review-evidence.test.mjs",
+      "line": 307
+    },
+    {
+      "id": "F2",
+      "severity": "P3",
+      "summary": "The `mech` test would still pass if the new code were deleted, as it tests the unchanged baseline behavior of a single `mechanical` label.",
+      "file": "scripts/ci/review-evidence.test.mjs",
+      "line": 311
+    }
+  ],
+  "supersedes": "completeness--5c2b14a03e5f--1",
+  "createdAt": "2026-11-06T18:28:44.739Z"
+}
