@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "02c2bbcf5aef23c8a31c93b91a43e81e624cf15b",
+    "mergeBase": "df03fb7a568f881c083b7e81a3ed246560c65db6",
+    "head": "97aa87c83b73ac5aeb607092c769069b3f1d7c55"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "correctness--a5ffd6dc6f06--1#F1",
+      "severity": "P1",
+      "summary": "A failed re-review supersedes a completed blocking review but is excluded from the open-finding guard, allowing a fresh passing fallback to make CI pass while the inherited blocking finding remains unresolved.",
+      "file": "scripts/ci/review-evidence.mjs",
+      "line": 164,
+      "disposition": {
+        "kind": "fixed",
+        "by": "correctness--02c2bbcf5aef--1"
+      }
+    }
+  ],
+  "supersedes": "correctness--a5ffd6dc6f06--1",
+  "createdAt": "2026-11-06T17:34:48.546Z"
+}

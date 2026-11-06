@@ -110,19 +110,11 @@ Fix issues inline.
 
 ## Plan Review
 
-Saving the plan commits it; then review it. Plan review is three checks (`.claude/rules/process.md` stage 5): the typed reference check, Semgrep, and a reviewer. Dispatch and what counts as a review are in `.claude/rules/process.md` under `## Review slots and dispatch`. Run Semgrep over the plan, then:
+Saving the plan commits it; then review it. Plan review is three checks (`.claude/rules/process.md` stage 5): the typed reference check, Semgrep, and a reviewer. Dispatch and what counts as a review are in `.claude/rules/process.md` under `## Review slots and dispatch`. Follow `.claude/skills/codex-review/SKILL.md`. Run Semgrep over the plan (`node scripts/review/semgrep-artifact.mjs <plan>`); if it cannot run (not installed, or no code blocks) record that check as UNRUN, never as a pass. Then run the reviewer through `scripts/review/review.mjs`:
 
 `npm run review -- run --slot plan --path <plan> --author <vendor>`
 
-`<vendor>` is the vendor of the model that wrote the plan: `anthropic` for Claude Code, `openai` for Codex, `none` when a person wrote it by hand. If the plan is already on `main` (an amendment), add `--tasks <the tasks not yet landed>`, or `--tasks none` when none remain. The command runs the typed reference check first, then the reviewer.
-
-The command is not available yet (it ships with the review tooling). Until it lands, do all three by hand:
-
-1. **Typed reference check:** at the merge base (`git merge-base origin/main HEAD`, after `git fetch origin main`), walking the in-scope tasks in order, each `existing` and `modify` target is a file there or is created by an earlier task, and is not deleted by one; no `create` target is already a file there or created by an earlier task; no Files line is untyped. Each problem is a P1 finding.
-2. **Semgrep** over the plan. If it cannot run (not installed, or no code blocks), record that check as UNRUN, never as a pass.
-3. **Reviewer:** the one the dispatch table names (Codex CLI for a Claude-written document), by hand on the plan, with an adversarial prompt covering missing tasks, wrong ordering, tests that cannot fail, and rollback.
-
-Note in the PR that the review was manual, and which of the three ran.
+`<vendor>` is the vendor of the model that wrote the plan: `anthropic` for Claude Code, `openai` for Codex, `none` when a person wrote it by hand. If the plan is already on `main` (an amendment), it also takes `--tasks <the tasks not yet landed>`, or `--tasks none` when none remain; that flag arrives with the typed reference check (plan Task 17), and until then the command does not accept it. The typed reference check, once shipped, runs inside this command before the reviewer; until then do it by hand at the merge base (`git merge-base origin/main HEAD`, after `git fetch origin main`): each `existing` and `modify` target is a file there or is created by an earlier task, and is not deleted by one; no `create` target is already a file there or created by an earlier task; no Files line is untyped. Each problem is a P1 finding. Say in the PR which of the three checks ran by hand.
 
 An empty reviewer reply is an unrun review, not a pass. Editing the plan changes its blob and voids the record, so review again after any fix. After two rounds where the new findings all sit in the previous round's fixes, apply `## Stop rule`. What blocks is in `## What blocks`.
 
