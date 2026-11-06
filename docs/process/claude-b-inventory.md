@@ -100,8 +100,13 @@ clone instead:
     a claude-b session rooted in this worktree saw `push_review_gate.sh` deny live: it blocked
     Bash calls whose text mentioned a push alongside a variable assignment (class c).
     `destructive_bash_check.sh`'s deny path is still unverified.
-- **Known dangling pointers** (plan Task 19 Step 5 check (e) allows exactly these):
-  `skills/plan-reviewer/SKILL.md` names the dropped `skills/writing-plans/SKILL.md`.
+- **Dangling pointers:** kept files still name trimmed skills and unwired hooks. Measured
+  2026-11-05 with `git grep -F` over the scope of the rewrite check: 122 lines in 38 files, most in
+  logs, tests and notes, and the unwired hook files themselves. Runtime examples:
+  `skills/plan-reviewer/SKILL.md` and `hooks/lib/review_reminder_common.py` name the dropped
+  `skills/writing-plans/SKILL.md`; `rules/review.md` names the dropped `skills/codex-review/SKILL.md`.
+  Plan Task 19 Step 5 check (e) allows every pointer the last trim commit's tree already has and
+  rejects only new ones (David, 2026-11-05), so this is not a list to keep current.
 - **Step 3:** David runs `bash ~/Desktop/claude-b-freeze.sh`. It writes
   `~/Desktop/claude-b-unfreeze.sh` (the rollback) first, repoints the 11 links into the clone,
   leaves `plans` alone, and reads back:
