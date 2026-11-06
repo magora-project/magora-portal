@@ -266,6 +266,9 @@ ok('gemini: parseSse folds text and the last finish reason', (() => { const p = 
   ok(`a timed-out child whose grandchild holds the pipes resolves without waiting for the grandchild (${a.ms} ms)`, a.r.timedOut === true && a.ms < codex.DRAIN_MS && a.r.stdout.includes('PARTIAL') && classifyOutcome(a.r).outcome === 'timeout')
   const b = await timed(['-e', `${grand}; process.stdout.write('DONE'); process.exit(0)`], 60_000)
   ok(`a child that exits while its grandchild holds the pipes resolves after the drain (${b.ms} ms)`, b.r.timedOut === false && b.r.exitCode === 0 && b.ms < GRAND_MS - 2000 && b.r.stdout.includes('DONE'))
+  // A successful exit before the deadline stays successful when the pipes close after it (Codex, mark-reviewed).
+  const c = await timed(['-e', `${grand}; process.stdout.write('DONE'); process.exit(0)`], 500)
+  ok(`a child that exits before its deadline is not timed out by the drain (${c.ms} ms)`, c.r.timedOut === false && c.r.exitCode === 0 && c.r.stdout.includes('DONE') && classifyOutcome(c.r).outcome !== 'timeout')
   // The caller's process must be free to exit too: the drained pipes are closed, not left referenced until the
   // grandchild lets go. The runner script below never calls process.exit.
   const codexUrl = new URL('./codex.mjs', import.meta.url).href

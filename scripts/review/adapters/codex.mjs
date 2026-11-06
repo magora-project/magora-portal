@@ -89,6 +89,7 @@ export const spawnCollect = ({ cmd, args, input, timeoutMs, spawnImpl = nodeSpaw
   child.stdin.on('error', () => {}) // the child may exit before reading all of its input
   child.on('exit', (code) => {
     exitCode = code
+    clearTimeout(timer) // the run ended in time; only the drain bounds what is left
     drainTimer = setTimeout(finishExited, timedOut ? 0 : DRAIN_MS)
   })
   child.on('close', (code) => finish(collected(code)))
