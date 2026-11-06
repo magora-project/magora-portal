@@ -3,7 +3,7 @@
 // Run: node scripts/review/runner.test.mjs
 import { spawnSync } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -16,7 +16,7 @@ process.env.GIT_CONFIG_NOSYSTEM = '1'
 
 const { DIFF_ARGS, geminiDiff, git, inputIdentity, mergeBase } = await import('./identity.mjs')
 const { readRecords, writeRecord } = await import('./records.mjs')
-const { classifyOutcome, pickReviewer, runCli } = await import('./runner.mjs')
+const { classifyOutcome, defaultPromptFor, pickReviewer, runCli } = await import('./runner.mjs')
 
 const mkOk = (counter, log = console.log) => (n, c) => {
   if (c && typeof c.then === 'function') { counter.fail++; log('  FAIL', n, '(unawaited Promise)'); c.catch(() => {}); return }
@@ -354,6 +354,19 @@ try {
     ok('dispose of a superseded record is refused', /already superseded/.test(await errOfCli(['dispose', '--record', target.stem, '--finding', 'F9', '--kind', 'reclassified-nit', '--reason', 'r'])))
   }
   ok('an unknown subcommand is a usage error', (await cli(['frobnicate'])).code === 1)
+
+  // default slot prompt: substitute:<bot> shares substitute.md with {{bot}} filled in
+  {
+    const slots = join(root, 'promptroot', '.claude', 'review', 'slots')
+    mkdirSync(slots, { recursive: true })
+    writeFileSync(join(slots, 'substitute.md'), 'Standing in for {{bot}}; again {{bot}}.\n')
+    writeFileSync(join(slots, 'correctness.md'), 'CORRECTNESS {{bot}}\n')
+    const pr = join(root, 'promptroot')
+    ok('substitute:codex reads substitute.md with {{bot}} -> codex', defaultPromptFor('substitute:codex', { root: pr }) === 'Standing in for codex; again codex.\n')
+    ok('substitute:coderabbit and substitute:gemini fill their own bot', /for coderabbit; again coderabbit/.test(defaultPromptFor('substitute:coderabbit', { root: pr })) && /for gemini; again gemini/.test(defaultPromptFor('substitute:gemini', { root: pr })))
+    ok('a non-substitute slot reads its own file and is not substituted', defaultPromptFor('correctness', { root: pr }) === 'CORRECTNESS {{bot}}\n')
+    ok('a missing slot file is an error naming the path', (() => { try { defaultPromptFor('spec', { root: pr }); return false } catch (e) { return /spec\.md/.test(e.message) } })())
+  }
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

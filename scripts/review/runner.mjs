@@ -184,10 +184,12 @@ const must = (r, what) => {
 }
 const refExists = async (cwd, ref) => (await git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { cwd })).code === 0
 
-const defaultPromptFor = (slot, { root }) => {
-  const p = join(root, '.claude', 'review', 'slots', `${slotFile(slot)}.md`)
+// The three substitute:<bot> slots share one file, substitute.md, with {{bot}} filled in.
+export const defaultPromptFor = (slot, { root }) => {
+  const p = join(root, '.claude', 'review', 'slots', `${isSubstitute(slot) ? 'substitute' : slotFile(slot)}.md`)
   if (!existsSync(p)) throw new Error(`no slot prompt at ${p}`)
-  return readFileSync(p, 'utf8')
+  const text = readFileSync(p, 'utf8')
+  return isSubstitute(slot) ? text.replaceAll('{{bot}}', slot.slice('substitute:'.length)) : text
 }
 
 const findRecord = (records, stem) => {
