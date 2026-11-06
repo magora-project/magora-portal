@@ -70,14 +70,14 @@ The lane and depth label decide which pre-push slots need a record (`.claude/rul
 
 `npm run review -- check --local`
 
-It lists any slot that has no record for the current identity. PASS when none is missing. The command is not available yet (it ships with the review tooling); until then, report this check as NOT RUN, say which slots the lane and depth require, and ask the operator about each required slot separately: was that review of the current head done, and by which reviewer? `correctness` is by the dispatch table's reviewer in `.claude/rules/process.md` (Codex CLI for a Claude-written change); `completeness`, at `subtle-correctness`, is by a vendor that is neither the author nor the `correctness` reviewer. One review never covers both slots; report each missing slot by name.
+It applies the same rules as CI's `review-evidence` check (`scripts/ci/review-evidence.mjs`) to the records in `.review/records/`, with the lane, depth, Spec, Plan and Deviations taken from the machine-local `.review/local.json`, and prints one `ok` or `FAIL` line per required slot. PASS when it exits 0. If it reports that `local.json` is missing or invalid, report FAIL and give the operator the command it names (`npm run review -- init-local --lane <lane> --depth <label> ...`); do not write the file yourself. Otherwise report each `FAIL` line by slot name: `correctness` is by the dispatch table's reviewer in `.claude/rules/process.md` (Codex CLI for a Claude-written change); `completeness`, at `subtle-correctness`, is by a vendor that is neither the author nor the `correctness` reviewer. One review never covers both slots.
 
 ## Summary
 
 Emit one block at the end:
 
 ```
-PUSH READINESS - <branch>: PASS / FAIL / NOT RUN (check 5)
+PUSH READINESS - <branch>: PASS / FAIL
 
   Branch:          <name>
   Latest commit:   <hash> <subject>
@@ -85,7 +85,7 @@ PUSH READINESS - <branch>: PASS / FAIL / NOT RUN (check 5)
   Behind / ahead:  <N> / <M> of <base>
   File set:        matches / <differences>
   Depth label:     <label>
-  Review records:  complete / missing <slots> / not run
+  Review records:  complete / FAIL <slots>
   No push occurred.
 ```
 
