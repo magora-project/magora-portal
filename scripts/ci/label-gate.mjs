@@ -48,8 +48,10 @@ const matches = (path, pattern) =>
 
 // `controlFiles` comes from the PR's own checkout of AGENTS.md, so a PR could narrow the list it is
 // judged by. AGENTS.md itself is therefore subtle whatever the parsed list says (issue #61): any PR
-// that edits the list changes AGENTS.md, and a PR that leaves it alone checks out the base's copy
-// (the workflow checks out the merge ref).
+// that edits the list changes AGENTS.md, and a PR that leaves it alone checks out its base's copy
+// (the workflow checks out the merge ref). Residual: this script and its workflow also run from the
+// merge ref, so a PR that edits them can still infer `standard`. Labels are discipline, not the
+// control (AGENTS.md § Depth labels); a person can apply `standard` by hand anyway.
 export function inferLabel(paths, controlFiles) {
   const subtle = paths.some((p) =>
     p === 'AGENTS.md' || p.startsWith('supabase/migrations/') || p.startsWith('api/') || controlFiles.some((c) => matches(p, c)))
