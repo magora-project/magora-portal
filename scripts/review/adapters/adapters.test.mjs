@@ -84,6 +84,29 @@ ok('codex: no -o file -> empty stdout (refused downstream)', noOut.stdout === ''
 const schema = JSON.parse(readFileSync(schemaArg, 'utf8'))
 ok('verdict.schema.json requires verdict, findings and inherited', ['verdict', 'findings', 'inherited'].every((k) => schema.required.includes(k)) && schema.properties.verdict.enum.join() === 'pass,fail' && schema.properties.inherited.items.properties.status.enum.join() === 'resolved,open')
 
+// --- child env: GEMINI_API_KEY never reaches codex or claude; claude runs with the lane-threshold hook off ---
+{
+  const given = { GEMINI_API_KEY: 'KEY-XYZ', PATH: '/some/bin', OTHER: '1' }
+  const envOf = async (adapter, env) => {
+    let seenEnv
+    await adapter.run({ prompt: 'p', timeoutMs: 10_000, env, spawnImpl: (cmd, argv, opts) => { seenEnv = opts.env; return fakeChild({ respond: () => { const i = argv.indexOf('-o'); if (i >= 0) writeFileSync(argv[i + 1], innerJson); return { stdout: envelopeOk } } }) } })
+    return seenEnv
+  }
+  const ce = await envOf(claude, given)
+  ok('claude child env: no GEMINI_API_KEY, the rest kept', ce !== undefined && !('GEMINI_API_KEY' in ce) && ce.PATH === '/some/bin' && ce.OTHER === '1')
+  ok('claude child env: LANE_THRESHOLD_DISABLE=1 (the variable .claude/hooks/lane-threshold.mjs reads)', ce !== undefined && ce.LANE_THRESHOLD_DISABLE === '1')
+  const xe = await envOf(codex, given)
+  ok('codex child env: no GEMINI_API_KEY, the rest kept', xe !== undefined && !('GEMINI_API_KEY' in xe) && xe.PATH === '/some/bin')
+  ok('the caller\'s env object is not mutated', given.GEMINI_API_KEY === 'KEY-XYZ' && !('LANE_THRESHOLD_DISABLE' in given))
+  const prev = process.env.GEMINI_API_KEY
+  process.env.GEMINI_API_KEY = 'PROC-KEY'
+  let ce2, xe2
+  try { ce2 = await envOf(claude, undefined); xe2 = await envOf(codex, undefined) } finally { if (prev === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = prev }
+  ok('with no env given, the children get process.env minus GEMINI_API_KEY', ce2 !== undefined && xe2 !== undefined && !('GEMINI_API_KEY' in ce2) && !('GEMINI_API_KEY' in xe2) && ce2.PATH === process.env.PATH)
+  const hookSrc = readFileSync(new URL('../../../.claude/hooks/lane-threshold.mjs', import.meta.url), 'utf8')
+  ok('the hook really honours LANE_THRESHOLD_DISABLE === \'1\'', hookSrc.includes("env.LANE_THRESHOLD_DISABLE === '1'"))
+}
+
 // --- timeout kills the child ---
 {
   let child

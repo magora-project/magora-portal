@@ -7,10 +7,10 @@
 //
 // Exit 0 only for a completed review (or a written disposition); 1 for any other outcome or a usage error.
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
-import { basename, join, posix } from 'node:path'
+import { basename, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { DIFF_ARGS, EVIDENCE_DIR, blobIdentity, geminiDiff, git, inputIdentity, mergeBase } from './identity.mjs'
-import { SLOTS, chainHeads, inherit, readRecords, slotFile, writeRecord } from './records.mjs'
+import { SLOTS, addedRecordStems, chainHeads, inherit, isBlockingByDefault, isGateId, readRecords, repoPath, slotFile, typeForSlot, undisposedBlocking, writeRecord } from './records.mjs'
 import * as codex from './adapters/codex.mjs'
 import * as claude from './adapters/claude.mjs'
 import * as gemini from './adapters/gemini.mjs'
@@ -29,16 +29,16 @@ const nonEmpty = (s) => typeof s === 'string' && s.trim() !== ''
 const isSubstitute = (slot) => slot.startsWith('substitute:')
 
 export const recordType = (slot) => {
-  if (['spec', 'plan', 'conformance'].includes(slot)) return slot
-  if (slot === 'correctness' || slot === 'completeness') return 'prepush'
-  if (isSubstitute(slot)) return 'substitute'
-  throw new Error(`unknown slot ${slot}`)
+  const t = typeForSlot(slot)
+  if (!t) throw new Error(`unknown slot ${slot}`)
+  return t
 }
 
 // ---------- verdict parsing ----------
 
 // The verdict.schema.json shape, checked in code. `file`/`line` may be absent or null. With inherited IDs, `inherited`
-// must name each exactly once: no extras, no duplicates. New finding IDs are unique and never reuse an inherited ID.
+// must name each exactly once: no extras, no duplicates. New finding IDs are unique, never reuse an inherited ID,
+// and never take a gate prefix (thread:, cr:, gemini:), which only the gate's own findings carry.
 export const validVerdict = (v, inheritedIds = []) => {
   if (!isObj(v) || (v.verdict !== 'pass' && v.verdict !== 'fail')) return false
   if (!Array.isArray(v.findings) || !Array.isArray(v.inherited)) return false
@@ -48,7 +48,7 @@ export const validVerdict = (v, inheritedIds = []) => {
     if (!isObj(f) || !nonEmpty(f.id) || !nonEmpty(f.severity) || !nonEmpty(f.summary)) return false
     if (!(f.file === undefined || f.file === null || typeof f.file === 'string')) return false
     if (!(f.line === undefined || f.line === null || Number.isInteger(f.line))) return false
-    if (ids.has(f.id) || want.has(f.id)) return false
+    if (ids.has(f.id) || want.has(f.id) || isGateId(f.id)) return false
     ids.add(f.id)
   }
   const seen = new Set()
@@ -106,6 +106,8 @@ export const classifyOutcome = ({ exitCode, stdout, truncated, timedOut, inherit
   if (exitCode !== 0) return unrun('failed')
   const v = extractVerdict(String(stdout ?? ''), inheritedIds)
   if (!v) return unrun('refused')
+  // A `fail` that names nothing (no new finding, no inherited one left open) is malformed, not a result.
+  if (v.verdict === 'fail' && v.findings.length === 0 && !v.inherited.some((e) => e.status === 'open')) return unrun('refused')
   return { outcome: 'completed', verdict: v.verdict, findings: v.findings.map(cleanFinding), inherited: v.inherited.map((e) => ({ id: e.id, status: e.status, note: e.note })) }
 }
 
@@ -183,6 +185,29 @@ const must = (r, what) => {
   return r.stdout.toString()
 }
 const refExists = async (cwd, ref) => (await git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { cwd })).code === 0
+// Default base: origin/main as last fetched when it exists, else local main.
+const defaultBase = async (root, base) => base ?? ((await refExists(root, 'origin/main')) ? 'origin/main' : 'main')
+const isObjectId = (s) => typeof s === 'string' && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(s)
+
+// The record stems this branch adds (as the review-evidence check counts them), or null when there is no base
+// to compare with, in which case every record counts as this branch's.
+const addedStemsFor = async (root, base, head) => {
+  try {
+    return await addedRecordStems({ cwd: root, mergeBase: await mergeBase({ cwd: root, base, head }), head, untracked: true })
+  } catch { return null }
+}
+
+// The review-evidence predicate's view of a correctness head (§5.3 1, 3, 4) for one identity: completed with a
+// recognized verdict, an independent reviewer, every finding acceptably disposed, every `fixed.by` in its own chain.
+const passingHead = (records, rec, { identity }) => {
+  if (rec.outcome !== 'completed' || (rec.verdict !== 'pass' && rec.verdict !== 'fail')) return false
+  if (rec.input.identity !== identity || rec.reviewer.vendor === rec.authorVendor) return false
+  if (undisposedBlocking(rec).length) return false
+  const byStem = new Map(records.map((r) => [r.stem, r]))
+  const chain = new Set()
+  for (let r = rec; r && !chain.has(r.stem); r = byStem.get(r.supersedes)) chain.add(r.stem)
+  return rec.findings.every((f) => !(isBlockingByDefault(f) && f.disposition?.kind === 'fixed' && !chain.has(f.disposition.by)))
+}
 
 // The three substitute:<bot> slots share one file, substitute.md, with {{bot}} filled in.
 export const defaultPromptFor = (slot, { root }) => {
@@ -221,6 +246,9 @@ const cmdRun = async (argv, ctx) => {
   const { values: o } = parseArgs({ args: argv, options: RUN_OPTIONS, strict: true, allowPositionals: false })
   const { cwd, io } = ctx
   if (!SLOTS.includes(o.slot)) usage(`--slot must be one of ${SLOTS.join('|')}`)
+  // A conformance record needs its conformance block (tasks, deviations, commands), which only the conformance
+  // writer fills; a record written here could never pass review-evidence.
+  if (o.slot === 'conformance') usage('conformance records come from `review.mjs conformance` (plan Task 18, PR C), which is not available yet; `run --slot conformance` would write a record without the conformance block that review-evidence requires')
   if (!AUTHOR_VENDORS.includes(o.author)) usage(`--author must be one of ${AUTHOR_VENDORS.join('|')}`)
   if (o.reviewer !== undefined && !ORDER.includes(o.reviewer)) usage(`--reviewer must be one of ${ORDER.join('|')}`)
   if (isSubstitute(o.slot) && o.reviewer === undefined) usage(`slot ${o.slot} needs --reviewer codex|claude|gemini (substitute slots are not picked by author vendor)`)
@@ -237,15 +265,14 @@ const cmdRun = async (argv, ctx) => {
   // input and the full current content
   let input, full, fullLabel
   if (blob) {
-    const path = posix.normalize(o.path.replaceAll('\\', '/')).replace(/^\.\//, '')
+    const path = repoPath(o.path)
     if (path.startsWith('/') || /^[A-Za-z]:/.test(path) || path.startsWith('../')) usage('--path must be relative to the repository root')
     const identity = await blobIdentity({ cwd: root, rev: 'HEAD', path })
     input = { kind: 'blob', identity, path }
     full = must(await git(['cat-file', 'blob', identity], { cwd: root }), 'git cat-file')
     fullLabel = `Current ${path} (blob ${identity})`
   } else {
-    // Default base: origin/main as last fetched when it exists, else local main.
-    const base = o.base ?? ((await refExists(root, 'origin/main')) ? 'origin/main' : 'main')
+    const base = await defaultBase(root, o.base)
     const mb = await mergeBase({ cwd: root, base, head })
     const identity = await inputIdentity({ cwd: root, base, head })
     input = { kind: 'pr', identity, mergeBase: mb, head }
@@ -253,13 +280,25 @@ const cmdRun = async (argv, ctx) => {
     fullLabel = `Full current diff (merge base ${mb} .. ${head})`
   }
 
+  // A fresh chain while a completed head of this slot (and path) that this branch added still has an open
+  // blocking finding would let that finding go unassessed (§5.3: a re-review inherits every undisposed finding).
+  // A head that never completed does not block: nobody reviewed, and the reviewer fallback starts a new chain.
+  if (o.supersedes === undefined) {
+    const added = await addedStemsFor(root, await defaultBase(root, o.base), head)
+    const open = chainHeads(records).filter((r) => !r.invalid && r.slot === o.slot && r.outcome === 'completed'
+      && (!blob || r.input.path === input.path) && (added === null || added.has(r.stem)) && undisposedBlocking(r).length > 0)
+    if (open.length) {
+      usage(`${open.map((r) => `record ${r.stem} left ${undisposedBlocking(r).map((f) => f.id).join(', ')} open`).join('; ')}: re-review with --supersedes ${open.length === 1 ? open[0].stem : '<stem>'} so the open finding is inherited, or dispose it`)
+    }
+  }
+
   // reviewer
   let otherVendor
   if (o.slot === 'completeness') {
-    const heads = chainHeads(records).filter((r) => !r.invalid && r.slot === 'correctness' && r.outcome === 'completed' && r.input.identity === input.identity)
+    const heads = chainHeads(records).filter((r) => !r.invalid && r.slot === 'correctness' && passingHead(records, r, { identity: input.identity }))
     heads.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
     otherVendor = heads.length ? heads.at(-1).reviewer.vendor : undefined
-    if (!otherVendor) usage(`completeness needs a completed correctness record for identity ${input.identity}: run correctness first`)
+    if (!otherVendor) usage(`completeness needs a passing correctness record for identity ${input.identity}: run correctness first`)
   }
   const reviewer = o.reviewer ?? pickReviewer({ authorVendor: o.author, slot: o.slot, otherVendor })
   const problem = independenceProblem({ authorVendor: o.author, slot: o.slot, reviewer, otherVendor })
@@ -272,8 +311,21 @@ const cmdRun = async (argv, ctx) => {
     old = findRecord(records, o.supersedes)
     if (old.slot !== o.slot) usage(`record ${old.stem} is slot ${old.slot}, not ${o.slot}`)
     if (old.input.kind !== input.kind || (blob && old.input.path !== input.path)) usage(`record ${old.stem} covers ${old.input.kind} ${old.input.path ?? ''}, not this input`)
+    if (old.authorVendor !== o.author) usage(`record ${old.stem} has authorVendor ${old.authorVendor}, not ${o.author}: a re-review keeps the author`)
     for (const f of inherit(old)) (f.disposition !== undefined ? carried : toAssess).push(f)
-    if (!blob && old.outcome === 'completed' && typeof old.input.head === 'string') {
+    // §5.3 scope: the delta between the two identities, or the two blobs for a spec or plan, and only after a
+    // completed review; the full input too while an inherited blocking finding is open.
+    if (blob && old.outcome === 'completed') {
+      const exists = isObjectId(old.input.identity) && (await git(['cat-file', '-e', `${old.input.identity}^{blob}`], { cwd: root })).code === 0
+      const d = exists ? await git([...DIFF_ARGS, old.input.identity, input.identity], { cwd: root }) : null
+      if (d && d.code === 0) {
+        delta = d.stdout.toString('utf8')
+        deltaLabel = `Delta since superseded record ${old.stem} (blob ${old.input.identity} .. ${input.identity}, ${input.path})`
+        mode = toAssess.length ? 'full+delta' : 'delta'
+      } else {
+        io.err(`cannot diff from blob ${old.input.identity} (${d ? d.stderr.trim() : 'not in this repository'}); sending the full document\n`)
+      }
+    } else if (!blob && old.outcome === 'completed' && typeof old.input.head === 'string') {
       const d = await git([...DIFF_ARGS, old.input.head, head, '--', '.', `:(exclude)${EVIDENCE_DIR}`], { cwd: root })
       if (d.code === 0) {
         delta = d.stdout.toString('utf8')

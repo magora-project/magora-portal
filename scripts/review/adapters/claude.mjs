@@ -1,6 +1,6 @@
 // Claude Code reviewer adapter: claude -p --model <opus|fable> --output-format json, prompt on stdin.
 // The JSON envelope's `.result` string is what the runner classifies; `is_error: true` is exit code 1.
-import { commandFor, spawnCollect, tail } from './codex.mjs'
+import { childEnv, commandFor, spawnCollect, tail } from './codex.mjs'
 
 export const vendor = 'anthropic'
 export const MODELS = ['opus', 'fable']
@@ -25,7 +25,9 @@ export const run = async ({ prompt, timeoutMs, spawnImpl, resolveImpl, cwd, env,
   }
   const r = await spawnCollect({
     cmd: c.cmd, args: [...c.args, '-p', '--model', model, '--output-format', 'json'],
-    input: prompt, timeoutMs, spawnImpl, cwd, env, install: INSTALL,
+    // LANE_THRESHOLD_DISABLE=1 is .claude/hooks/lane-threshold.mjs's kill-switch: the reviewer session reads the
+    // repo, and the author's lane threshold is not its concern.
+    input: prompt, timeoutMs, spawnImpl, cwd, env: childEnv(env, { LANE_THRESHOLD_DISABLE: '1' }), install: INSTALL,
   })
   const base = { truncated: false, timedOut: r.timedOut, stderr: tail(r.stderr) }
   if (r.exitCode !== 0) return { ...base, exitCode: r.exitCode, stdout: '' }

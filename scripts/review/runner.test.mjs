@@ -140,7 +140,13 @@ try {
   ok('inherited naming an extra ID -> refused', c(inh([{ id: 'a#F1', status: 'resolved', note: '' }, { id: 'zz', status: 'open', note: '' }]), ['a#F1']).outcome === 'refused')
   ok('inherited entries when none were sent -> refused', c(inh([{ id: 'a#F1', status: 'resolved', note: '' }])).outcome === 'refused')
   ok('inherited status outside resolved|open -> refused', c(inh([{ id: 'a#F1', status: 'fixed', note: '' }]), ['a#F1']).outcome === 'refused')
-  ok('a new finding reusing an inherited ID -> refused', c(JSON.stringify({ verdict: 'fail', findings: [{ id: 'a#F1', severity: 'P1', summary: 's' }], inherited: [{ id: 'a#F1', status: 'open', note: '' }] }), ['a#F1']).outcome === 'refused')
+  ok('verdict fail with zero findings and nothing inherited -> refused (malformed)', c('{"verdict":"fail","findings":[],"inherited":[]}').outcome === 'refused')
+  ok('verdict fail with zero findings and every inherited one resolved -> refused', c(inh([{ id: 'a#F1', status: 'resolved', note: '' }]).replace('"pass"', '"fail"'), ['a#F1']).outcome === 'refused')
+  ok('verdict fail with zero new findings but an inherited one still open -> completed', c(inh([{ id: 'a#F1', status: 'open', note: '' }]).replace('"pass"', '"fail"'), ['a#F1']).outcome === 'completed')
+  ok('verdict pass with zero findings stays completed', c(passJson).outcome === 'completed')
+  ok('a new finding ID starting thread: / cr: / gemini: -> refused', ['thread:x', 'cr:1', 'gemini:abc:0'].every((id) => c(JSON.stringify({ verdict: 'fail', findings: [{ id, severity: 'P1', summary: 's' }], inherited: [] })).outcome === 'refused'))
+  ok('a new finding ID that merely contains a colon later stays completed', c(JSON.stringify({ verdict: 'fail', findings: [{ id: 'F1:a', severity: 'P1', summary: 's' }], inherited: [] })).outcome === 'completed')
+  ok('a new finding reusing an inherited ID -> refused',c(JSON.stringify({ verdict: 'fail', findings: [{ id: 'a#F1', severity: 'P1', summary: 's' }], inherited: [{ id: 'a#F1', status: 'open', note: '' }] }), ['a#F1']).outcome === 'refused')
 
   // --- pickReviewer ---
   ok('Claude-authored correctness -> codex', pickReviewer({ authorVendor: 'anthropic', slot: 'correctness' }) === 'codex')
@@ -195,9 +201,9 @@ try {
 
   // a failed run still writes a record and exits 1
   {
-    const r = await cli(['run', '--slot', 'conformance', '--author', 'openai'], { spawnImpl: recordSpawn([], envelope('{}'), 3) })
-    const rec = recordsBy((x) => x.slot === 'conformance')[0]
-    ok('a failed run writes a record with verdict null and exits 1', r.code === 1 && rec && rec.outcome === 'failed' && rec.verdict === null && rec.type === 'conformance' && /failed/.test(r.out + r.err))
+    const r = await cli(['run', '--slot', 'substitute:codex', '--author', 'openai', '--reviewer', 'claude'], { spawnImpl: recordSpawn([], envelope('{}'), 3) })
+    const rec = recordsBy((x) => x.slot === 'substitute:codex' && x.outcome === 'failed')[0]
+    ok('a failed run writes a record with verdict null and exits 1', r.code === 1 && rec && rec.outcome === 'failed' && rec.verdict === null && rec.type === 'substitute' && /failed/.test(r.out + r.err))
   }
   // a timeout: the child is killed
   {
@@ -366,6 +372,111 @@ try {
     ok('substitute:coderabbit and substitute:gemini fill their own bot', /for coderabbit; again coderabbit/.test(defaultPromptFor('substitute:coderabbit', { root: pr })) && /for gemini; again gemini/.test(defaultPromptFor('substitute:gemini', { root: pr })))
     ok('a non-substitute slot reads its own file and is not substituted', defaultPromptFor('correctness', { root: pr }) === 'CORRECTNESS {{bot}}\n')
     ok('a missing slot file is an error naming the path', (() => { try { defaultPromptFor('spec', { root: pr }); return false } catch (e) { return /spec\.md/.test(e.message) } })())
+  }
+
+  // --- fresh repos for the review-fix cases below ---
+  const freshRepo = ({ onMain } = {}) => {
+    const d = mkrepo()
+    mkdirSync(join(d, 'docs'), { recursive: true })
+    put(d, 'base.txt', 'base\n')
+    put(d, 'docs/p.md', ['# Plan', 'UNCHANGED_BODY_LINE_1', 'UNCHANGED_BODY_LINE_2', 'a tpyo here', 'UNCHANGED_BODY_LINE_3', ''].join('\n'))
+    commit(d, 'base')
+    if (onMain) { repo = d; onMain(d); commit(d, 'main records') }
+    raw(d, ['checkout', '-q', '-b', 'pr'])
+    put(d, 'change.txt', 'PR_CHANGE\n')
+    commit(d, 'pr change')
+    repo = d
+    return d
+  }
+  const runs = async (argv, reply = envelopeOk) => { const sp = [], sent = []; const r = await cli(argv, { spawnImpl: (cmd, args, opts) => { sp.push({ cmd, args, opts }); return capturePrompt(sent, reply)(cmd, args) } }); return { ...r, sp, sent } }
+  const openP1 = [{ id: 'F1', severity: 'P1', summary: 'open bug' }]
+
+  // C-F1: conformance records come from review.mjs conformance (plan Task 18), not run --slot conformance
+  {
+    freshRepo()
+    const r = await runs(['run', '--slot', 'conformance', '--author', 'anthropic'])
+    ok('run --slot conformance is refused before spawning, naming review.mjs conformance and Task 18', r.code === 1 && r.sp.length === 0 && /review\.mjs conformance/.test(r.err) && /Task 18/.test(r.err))
+    ok('...and writes no record', readRecords({ cwd: repo }).length === 0)
+  }
+
+  // P2-1 layer 2: a fresh run refuses while a completed chain head of the slot has an open blocking finding
+  {
+    freshRepo()
+    const stale = store(prRecord({ input: { kind: 'pr', identity: 'f'.repeat(40), mergeBase: 'x', head: 'x' }, verdict: 'fail', findings: openP1 }))
+    const r = await runs(['run', '--slot', 'correctness', '--author', 'anthropic'])
+    ok('run without --supersedes is refused before spawning while a completed head (any identity) has an open P1', r.code === 1 && r.sp.length === 0 && r.err.includes(stale.stem) && /--supersedes/.test(r.err))
+    const other = await runs(['run', '--slot', 'substitute:codex', '--author', 'anthropic', '--reviewer', 'claude'])
+    ok('...a head of another slot does not block', other.code === 0 && other.sp.length === 1)
+    const chained = await runs(['run', '--slot', 'correctness', '--author', 'anthropic', '--supersedes', stale.stem], envelope(JSON.stringify({ verdict: 'pass', findings: [], inherited: [{ id: `${stale.stem}#F1`, status: 'resolved', note: 'fixed' }] })))
+    ok('...--supersedes of that head runs', chained.code === 0 && chained.sp.length === 1)
+  }
+  {
+    freshRepo()
+    store(prRecord({ input: { kind: 'pr', identity: 'f'.repeat(40), mergeBase: 'x', head: 'x' }, outcome: 'timeout', verdict: null, findings: openP1 }))
+    const r = await runs(['run', '--slot', 'correctness', '--author', 'anthropic'])
+    ok('a non-completed head with an undisposed finding does not block a fresh run (reviewer fallback)', r.code === 0 && r.sp.length === 1)
+  }
+  {
+    freshRepo({ onMain: () => store(prRecord({ input: { kind: 'pr', identity: 'e'.repeat(40), mergeBase: 'x', head: 'x' }, verdict: 'fail', findings: openP1 })) })
+    const r = await runs(['run', '--slot', 'correctness', '--author', 'anthropic'])
+    ok('a completed head with an open finding that is already on the base (another PR\'s) does not block', r.code === 0 && r.sp.length === 1)
+  }
+  {
+    freshRepo()
+    const blobId = raw(repo, ['rev-parse', 'HEAD:docs/p.md'])
+    const planOpen = store(prRecord({ type: 'plan', slot: 'plan', input: { kind: 'blob', identity: blobId, path: 'docs/p.md' }, verdict: 'fail', findings: openP1 }))
+    const same = await runs(['run', '--slot', 'plan', '--author', 'anthropic', '--path', './docs/p.md'])
+    ok('blob slot: an open completed head for the same path blocks a fresh run', same.code === 1 && same.sp.length === 0 && same.err.includes(planOpen.stem))
+    const otherPath = await runs(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'base.txt'])
+    ok('blob slot: a head for another path does not block', otherPath.code === 0 && otherPath.sp.length === 1)
+  }
+
+  // P3-2: --supersedes keeps the author vendor
+  {
+    freshRepo()
+    const prev = store(prRecord({ input: { kind: 'pr', identity: 'f'.repeat(40), mergeBase: 'x', head: 'x' } }))
+    const r = await runs(['run', '--slot', 'correctness', '--author', 'google', '--supersedes', prev.stem])
+    ok('--supersedes of a record with another authorVendor is refused before spawning', r.code === 1 && r.sp.length === 0 && /author/.test(r.err))
+  }
+
+  // P3-3: completeness takes the vendor of a PASSING correctness head
+  {
+    freshRepo()
+    const idNow = await inputIdentity({ cwd: repo, base: 'main', head: 'HEAD' })
+    const inputNow = { kind: 'pr', identity: idNow, mergeBase: 'x', head: 'x' }
+    store(prRecord({ input: inputNow, createdAt: '2026-11-05T10:00:00.000Z' })) // openai, passing
+    store(prRecord({ input: inputNow, reviewer: { vendor: 'google', model: 'g' }, verdict: 'fail', findings: openP1, createdAt: '2026-11-05T11:00:00.000Z' })) // later, not passing
+    const r = await runs(['run', '--slot', 'completeness', '--author', 'anthropic'])
+    ok('completeness skips a later non-passing correctness head and picks the third vendor against the passing one (gemini)', /with gemini\//.test(r.out) && r.sp.length === 0)
+  }
+
+  // P2-2: spec/plan re-reviews send the change between the two blobs
+  {
+    freshRepo()
+    const oldBlob = raw(repo, ['rev-parse', 'HEAD:docs/p.md'])
+    const blobIn = { kind: 'blob', identity: oldBlob, path: 'docs/p.md' }
+    const planRec = (over) => store(prRecord({ type: 'plan', slot: 'plan', input: blobIn, ...over }))
+    const clean = planRec({})
+    put(repo, 'docs/p.md', ['# Plan', 'UNCHANGED_BODY_LINE_1', 'UNCHANGED_BODY_LINE_2', 'a TYPO_FIXED here', 'UNCHANGED_BODY_LINE_3', ''].join('\n'))
+    commit(repo, 'typo fix')
+    const newBlob = raw(repo, ['rev-parse', 'HEAD:docs/p.md'])
+    const blobDelta = (await git([...DIFF_ARGS, oldBlob, newBlob], { cwd: repo })).stdout.toString()
+    ok('fixtures: the blob delta has the fix and none of the unchanged lines (the hunk header may quote the line above)', blobDelta.includes('TYPO_FIXED') && blobDelta.includes('UNCHANGED_BODY_LINE_1') === false && blobDelta.includes('UNCHANGED_BODY_LINE_3') === false)
+    const d = await runs(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--supersedes', clean.stem])
+    ok('plan --supersedes of a clean completed record sends only the blob delta', d.code === 0 && d.sent.length === 1 && d.sent[0].includes(blobDelta) && d.sent[0].includes('UNCHANGED_BODY_LINE_1') === false && d.sent[0].includes('UNCHANGED_BODY_LINE_3') === false && /Delta since superseded record/.test(d.sent[0]))
+    ok('...and says so on the run line', /reviewing plan \(delta\)/.test(d.out))
+
+    const withOpen = planRec({ verdict: 'fail', findings: openP1 })
+    const fd = await runs(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--supersedes', withOpen.stem], inheritedReply(`${withOpen.stem}#F1`, 'resolved'))
+    ok('plan --supersedes of a completed record with an open finding sends the full document and the blob delta', fd.code === 0 && fd.sent.length === 1 && fd.sent[0].includes('UNCHANGED_BODY_LINE_3') && fd.sent[0].includes(blobDelta) && /reviewing plan \(full\+delta\)/.test(fd.out))
+
+    const timedOut = planRec({ outcome: 'timeout', verdict: null })
+    const ft = await runs(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--supersedes', timedOut.stem])
+    ok('plan --supersedes of a timed-out record sends the full document only', ft.code === 0 && ft.sent[0].includes('UNCHANGED_BODY_LINE_3') && /Delta since/.test(ft.sent[0]) === false && /reviewing plan \(full\)/.test(ft.out))
+
+    const gone = store(prRecord({ type: 'plan', slot: 'plan', input: { kind: 'blob', identity: '0123456789abcdef0123456789abcdef01234567', path: 'docs/p.md' } }))
+    const fg = await runs(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--supersedes', gone.stem])
+    ok('plan --supersedes whose old blob is not in the repo falls back to the full document and says so on stderr', fg.code === 0 && fg.sent[0].includes('UNCHANGED_BODY_LINE_3') && /Delta since/.test(fg.sent[0]) === false && /0123456789ab/.test(fg.err))
   }
 } finally {
   rmSync(root, { recursive: true, force: true })

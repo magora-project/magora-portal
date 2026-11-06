@@ -1,6 +1,6 @@
 ---
 name: codex-review
-description: Use to run a local independent review (spec, plan, conformance, correctness, completeness, or a bot substitute) and write its evidence record. Picks the slot and reviewer, falls back on failure, never reports an unrun review as a pass.
+description: Use to run a local independent review (spec, plan, correctness, completeness, or a bot substitute; conformance arrives with plan Task 18) and write its evidence record. Picks the slot and reviewer, falls back on failure, never reports an unrun review as a pass.
 ---
 
 # Local Review
@@ -13,11 +13,13 @@ Runs one review slot through `scripts/review/review.mjs` and reads the record it
 |---|---|---|
 | Spec review (stage 3) | `spec` | the spec file |
 | Plan review (stage 5) | `plan` | the plan file |
-| Plan conformance (stage 8) | `conformance` | the PR's diff |
+| Plan conformance (stage 8) | `conformance`: not runnable yet (see below) | the PR's diff |
 | Pre-push, `standard` | `correctness` | the PR's diff |
 | Pre-push, `subtle-correctness` | `correctness`, then `completeness` | the PR's diff |
 | A bot did not or could not review (PR stage) | `substitute:coderabbit`, `substitute:codex` or `substitute:gemini` | the PR's diff |
 | `mechanical` | none | |
+
+Conformance records are written by `review.mjs conformance`, which arrives with plan Task 18 (PR C): it runs the plan's postconditions and fills the record's conformance block (tasks, deviations, commands), and review-evidence fails a conformance record without that block. Until then `run --slot conformance` refuses, so there is no local conformance review yet.
 
 A review is of one input. `spec` and `plan` cover one file's blob at `HEAD` (commit it first); the rest cover the PR's own diff against its merge base at `HEAD`, so commit before you run. Any later edit voids the record.
 
@@ -27,7 +29,7 @@ For a `spec` or `plan` slot, run Semgrep over the document's code blocks before 
 
 `node scripts/review/semgrep-artifact.mjs <path>`
 
-Exit 0: it ran, no findings. Exit 1: it ran and found something; print lines are `file:line: severity rule: message` and each is a finding to fix. Exit 2: **UNRUN** (Semgrep not installed, or the document has no scannable code blocks); the reason is printed. Record the scan as UNRUN in the PR, never as a pass, and carry on to the reviewer. (To install: `pipx install semgrep` or `brew install semgrep`.)
+Exit 0: it ran, no findings. Exit 1: it ran and found something; print lines are `file:line: severity rule: message` and each is a finding to fix. Exit 2: **UNRUN** (Semgrep not installed, the document has no scannable code blocks, or Semgrep reported errors and scanned only part of it); the reason is printed, and any finding lines printed with it are still findings to fix. Record the scan as UNRUN in the PR, never as a pass, and carry on to the reviewer. (To install: `pipx install semgrep` or `brew install semgrep`.)
 
 ## 3. Run the reviewer
 
@@ -60,7 +62,7 @@ A fix voids the record that found the problem. Re-run the same slot with the ste
 
 `npm run review -- run --slot <slot> --author <vendor> [--path <doc>] --supersedes <stem>`
 
-The new record inherits every undisposed finding and reviews only the delta (or the delta plus the full input when a blocking finding is still open, or when the earlier record never completed). Its verdict marks each inherited finding resolved or open. Apply `## Stop rule` in `.claude/rules/process.md` if the new findings keep landing in your own fixes.
+A run without `--supersedes` is refused while a completed record of the same slot (and path) that this branch added still has an open blocking finding, and review-evidence fails the slot on such a record even when another chain passes. The new record inherits every undisposed finding and reviews only the delta, which for a spec or plan is the change between the two blobs (or the delta plus the full input when a blocking finding is still open, or when the earlier record never completed). Its verdict marks each inherited finding resolved or open. Apply `## Stop rule` in `.claude/rules/process.md` if the new findings keep landing in your own fixes.
 
 ## 6. Dispose a finding without a fix
 

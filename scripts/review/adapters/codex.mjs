@@ -32,6 +32,14 @@ export const resolveCommand = (name, { install, platform = process.platform, whe
   throw new Error(`cannot run ${name}: ${found}. Install it with: ${install}`)
 }
 
+// The environment for a CLI reviewer child: a copy of env (default process.env) with `extra` set and
+// GEMINI_API_KEY removed, so only the Gemini adapter, which calls the API itself, ever holds that key.
+export const childEnv = (env, extra = {}) => {
+  const e = { ...(env ?? process.env), ...extra }
+  delete e.GEMINI_API_KEY
+  return e
+}
+
 // An injected spawnImpl (tests) gets the bare command name; only the real spawn resolves Windows shims.
 export const commandFor = (name, { install, spawnImpl, resolveImpl }) =>
   (resolveImpl ?? (spawnImpl ? (n) => ({ cmd: n, args: [] }) : resolveCommand))(name, { install })
@@ -81,7 +89,7 @@ export const run = async ({ prompt, timeoutMs, spawnImpl, resolveImpl, cwd, env 
   try {
     const r = await spawnCollect({
       cmd: c.cmd, args: [...c.args, 'exec', '--sandbox', 'read-only', '--output-schema', SCHEMA_PATH, '-o', outFile, '-'],
-      input: prompt, timeoutMs, spawnImpl, cwd, env, install: INSTALL,
+      input: prompt, timeoutMs, spawnImpl, cwd, env: childEnv(env), install: INSTALL,
     })
     let stdout = ''
     try { stdout = readFileSync(outFile, 'utf8') } catch { /* no final message: refused or failed downstream */ }

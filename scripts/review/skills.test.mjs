@@ -69,6 +69,9 @@ ok('codex-review documents --author, --supersedes, dispose and the scan', (() =>
   return /--author/.test(b) && /--supersedes/.test(b) && /dispose/.test(b) && /semgrep-artifact\.mjs/.test(b)
 })())
 
+export const conformanceDeferred = (body) => /`review\.mjs conformance`[^\n]*Task 18/.test(body) && /run --slot conformance` refuses/.test(body)
+ok('codex-review does not present conformance as runnable before plan Task 18', conformanceDeferred(skills.find((x) => x.dir === 'codex-review')?.body ?? ''))
+
 // The checker itself: it must be able to fail.
 const fake = (dir, text) => parseSkill(dir, text)
 ok('a skill with a mismatched name is caught', !(fake('a', '---\nname: b\ndescription: x\n---\nbody').frontmatter.name === 'a'))

@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
-const { chainHeads, dispositionOk, inherit, isBlockingByDefault, readRecords, slotFile, validateRecord, writeRecord } = await import('./records.mjs')
+const { chainHeads, dispositionOk, inherit, isBlockingByDefault, readRecords, repoPath, slotFile, undisposedBlocking, validateRecord, writeRecord } = await import('./records.mjs')
 
 let pass = 0, fail = 0
 const ok = (n, c) => {
@@ -168,6 +168,36 @@ try {
   ok('accepts a conformance block', validateRecord(mk({ type: 'conformance', slot: 'conformance', conformance: conf })).length === 0)
   ok('rejects a malformed conformance block', bad({ conformance: { tasks: 'x', deviations: [], commands: [{ cmd: 1, exit: 'a' }] } }, /conformance/))
   ok('rejects a non-object record', validateRecord(null).length > 0 && validateRecord([]).length > 0 && validateRecord('x').length > 0)
+  // type <-> slot
+  const pairs = [['spec', 'spec'], ['plan', 'plan'], ['conformance', 'conformance'], ['prepush', 'correctness'], ['prepush', 'completeness'],
+    ['substitute', 'substitute:coderabbit'], ['substitute', 'substitute:codex'], ['substitute', 'substitute:gemini']]
+  ok('every consistent type/slot pair validates', pairs.every(([type, slot]) => validateRecord(mk({ type, slot })).length === 0))
+  ok('type prepush with slot spec is rejected, naming both', bad({ type: 'prepush', slot: 'spec' }, /type.*prepush.*slot.*spec|slot.*spec.*type.*prepush/))
+  ok('type spec with slot correctness is rejected', bad({ type: 'spec', slot: 'correctness' }, /type/))
+  ok('type conformance with slot plan is rejected', bad({ type: 'conformance', slot: 'plan' }, /type/))
+  ok('type substitute with slot completeness is rejected', bad({ type: 'substitute', slot: 'completeness' }, /type/))
+  ok('type prepush with slot substitute:codex is rejected', bad({ type: 'prepush', slot: 'substitute:codex' }, /type/))
+
+  // --- inherit keeps a conformance justified-deviation (judged at the chain head against the Deviations field) ---
+  const confRec = { stem: 'conformance--abc--1', type: 'conformance', findings: [
+    { id: 'D1', severity: 'P1', summary: 'dev', disposition: { kind: 'justified-deviation', reason: 'see Deviations' } },
+    { id: 'D2', severity: 'P1', summary: 'open dev' },
+  ] }
+  const inhConf = inherit(confRec)
+  ok('inherit carries a conformance justified-deviation with its ID and disposition', (() => { const d = inhConf.find((x) => x.id === 'D1'); return d !== undefined && d.disposition?.kind === 'justified-deviation' })())
+  ok('inherit still prefixes and reopens an undisposed conformance finding', inhConf.some((x) => x.id === `${confRec.stem}#D2` && x.disposition === undefined))
+  const preRec = { stem: 'correctness--abc--9', type: 'prepush', findings: [{ id: 'D1', severity: 'P1', summary: 'dev', disposition: { kind: 'justified-deviation', reason: 'x' } }] }
+  ok('inherit reopens a justified-deviation on a non-conformance record', inherit(preRec).map((x) => `${x.id}:${x.disposition === undefined}`).join() === `${preRec.stem}#D1:true`)
+
+  // --- undisposedBlocking ---
+  ok('undisposedBlocking lists the blocking findings without an acceptable disposition', (() => {
+    const r = { type: 'prepush', findings: [{ id: 'A', severity: 'P1', summary: 's' }, { id: 'B', severity: 'P3', summary: 's' }, { id: 'C', severity: 'P0', summary: 's', disposition: { kind: 'reclassified-nit', reason: 'r' } }] }
+    return undisposedBlocking?.(r).map((x) => x.id).join() === 'A'
+  })())
+  ok('undisposedBlocking honours a conformance deviation listed in deviations', undisposedBlocking?.({ type: 'conformance', findings: [{ id: 'D1', severity: 'P1', summary: 's', disposition: { kind: 'justified-deviation' } }] }, { deviations: [{ id: 'D1', justification: 'j' }] }).length === 0)
+
+  // --- repoPath ---
+  ok('repoPath strips ./ and turns \\ into /', repoPath?.('./docs/x.md') === 'docs/x.md' && repoPath?.('docs\\superpowers\\a.md') === 'docs/superpowers/a.md' && repoPath?.('.\\docs\\a.md') === 'docs/a.md')
 } finally {
   rmSync(cwd, { recursive: true, force: true })
 }

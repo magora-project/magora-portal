@@ -1,8 +1,8 @@
 // Review records (schema 1) and the on-disk store at .review/records/.
 // Consumed by the review runner and the review-evidence CI check.
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
-import { EVIDENCE_DIR } from './identity.mjs'
+import { basename, join, posix } from 'node:path'
+import { EVIDENCE_DIR, git } from './identity.mjs'
 
 export const TYPES = ['spec', 'plan', 'conformance', 'prepush', 'substitute']
 export const SLOTS = ['spec', 'plan', 'conformance', 'correctness', 'completeness', 'substitute:coderabbit', 'substitute:codex', 'substitute:gemini']
@@ -14,9 +14,21 @@ const GATE_PREFIXES = ['thread:', 'cr:', 'gemini:']
 const recordsDir = (cwd) => join(cwd, EVIDENCE_DIR, 'records')
 const nonEmpty = (s) => typeof s === 'string' && s.trim() !== ''
 const isObj = (o) => o !== null && typeof o === 'object' && !Array.isArray(o)
-const isGateId = (id) => typeof id === 'string' && GATE_PREFIXES.some((p) => id.startsWith(p))
+export const isGateId = (id) => typeof id === 'string' && GATE_PREFIXES.some((p) => id.startsWith(p))
 
 export const slotFile = (slot) => slot.replaceAll(':', '-')
+
+// The record type each slot is written with.
+export const typeForSlot = (slot) => {
+  if (slot === 'spec' || slot === 'plan' || slot === 'conformance') return slot
+  if (slot === 'correctness' || slot === 'completeness') return 'prepush'
+  if (typeof slot === 'string' && slot.startsWith('substitute:')) return 'substitute'
+  return undefined
+}
+
+// A repo path as records store it: `/` separators, no leading `./`. The runner and the review-evidence check
+// both normalise through this, so `./docs/x.md` and `docs\x.md` name the same record input as `docs/x.md`.
+export const repoPath = (p) => posix.normalize(String(p).replaceAll('\\', '/')).replace(/^\.\//, '')
 
 export const validateRecord = (r) => {
   if (!isObj(r)) return ['record: must be a JSON object']
@@ -25,6 +37,7 @@ export const validateRecord = (r) => {
   if (r.schema !== 1) p.push('schema: must be 1')
   oneOf('type', r.type, TYPES)
   oneOf('slot', r.slot, SLOTS)
+  if (TYPES.includes(r.type) && SLOTS.includes(r.slot) && typeForSlot(r.slot) !== r.type) p.push(`type: ${r.type} does not match slot ${r.slot} (a ${r.slot} record has type ${typeForSlot(r.slot)})`)
   if (!isObj(r.input)) p.push('input: must be an object')
   else {
     oneOf('input.kind', r.input.kind, ['pr', 'blob'])
@@ -106,6 +119,22 @@ export const readRecords = ({ cwd }) => {
   })
 }
 
+// Stems of the records this branch adds: files directly under .review/records/ that
+// `git diff --diff-filter=A <mergeBase> <head>` lists, plus, with `untracked`, files not committed yet.
+// A record already on the base was written for another PR. cwd must be the repository root.
+export const addedRecordStems = async ({ cwd, mergeBase, head, untracked = false }) => {
+  const dir = `${EVIDENCE_DIR}/records`
+  const list = async (args, what) => {
+    const r = await git(args, { cwd })
+    if (r.code !== 0) throw new Error(`${what} failed (${r.code}): ${r.stderr.trim()}`)
+    return r.stdout.toString().split('\0')
+  }
+  const names = await list(['diff', '--name-only', '-z', '--no-renames', '--diff-filter=A', mergeBase, head, '--', dir], 'git diff --diff-filter=A')
+  if (untracked) names.push(...await list(['ls-files', '--others', '--exclude-standard', '-z', '--', dir], 'git ls-files --others'))
+  const inDir = (n) => n.startsWith(`${dir}/`) && n.endsWith('.json') && !n.slice(dir.length + 1).includes('/')
+  return new Set(names.filter(inDir).map((n) => n.slice(dir.length + 1, -'.json'.length)))
+}
+
 export const chainHeads = (records) => {
   const superseded = new Set(records.map((r) => r.supersedes).filter((s) => typeof s === 'string'))
   return records.filter((r) => !superseded.has(r.stem))
@@ -130,15 +159,23 @@ export const dispositionOk = (finding, { deviations = [], recordType } = {}) => 
   }
 }
 
+// The findings of a record that fail §5.3 predicate 4 on their face: blocking by default and without an
+// acceptable disposition. (Whether a `fixed.by` names a record of the chain is the CI check's part.)
+export const undisposedBlocking = (rec, { deviations = [] } = {}) =>
+  (rec.findings || []).filter((f) => isBlockingByDefault(f) && !dispositionOk(f, { deviations, recordType: rec.type }))
 
 // Findings to carry into a re-review. Ordinary IDs are prefixed with the old record's stem; a gate ID keeps
 // its ID and is always carried: one with an acceptable disposition (or a P3) is copied as is, so it stays verifiable at the chain head.
-export const inherit = (old) => {
+// A justified-deviation on a conformance record is copied as is too (ID and disposition): whether it is
+// acceptable depends on the PR body's Deviations field, which only the review-evidence check reads, at the chain head.
+export const inherit = (old, { deviations = [] } = {}) => {
   const out = []
+  const opts = { deviations, recordType: old.type }
   for (const f of old.findings || []) {
     const gate = isGateId(f.id)
-    if (gate && dispositionOk(f)) { out.push({ ...f }); continue } // every gate ID stays visible at the chain head
-    if (!isBlockingByDefault(f) || dispositionOk(f)) continue
+    if (gate && dispositionOk(f, opts)) { out.push({ ...f }); continue } // every gate ID stays visible at the chain head
+    if (old.type === 'conformance' && isObj(f.disposition) && f.disposition.kind === 'justified-deviation') { out.push({ ...f }); continue }
+    if (!isBlockingByDefault(f) || dispositionOk(f, opts)) continue
     const { disposition: _d, ...rest } = f // eslint-disable-line no-unused-vars
     out.push({ ...rest, id: gate ? f.id : `${old.stem}#${f.id}` })
   }
