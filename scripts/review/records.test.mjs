@@ -166,6 +166,9 @@ try {
   ok('rejects a missing createdAt', bad({ createdAt: undefined }, /createdAt/))
   const conf = { tasks: ['T1'], deviations: ['D1'], commands: [{ cmd: 'npm test', exit: 0 }] }
   ok('accepts a conformance block', validateRecord(mk({ type: 'conformance', slot: 'conformance', conformance: conf })).length === 0)
+  ok('accepts a plan record\'s rev and tasks (an empty task list too)', validateRecord(mk({ type: 'plan', slot: 'plan', rev: 'a'.repeat(40), tasks: ['T1', 'T2'] })).length === 0 && validateRecord(mk({ type: 'plan', slot: 'plan', rev: 'a'.repeat(40), tasks: [] })).length === 0)
+  ok('rejects a blank rev', bad({ rev: ' ' }, /rev/))
+  ok('rejects tasks that are not an array of strings', bad({ tasks: 'T1' }, /tasks/) && bad({ tasks: [1] }, /tasks/))
   ok('rejects a malformed conformance block', bad({ conformance: { tasks: 'x', deviations: [], commands: [{ cmd: 1, exit: 'a' }] } }, /conformance/))
   ok('rejects a non-object record', validateRecord(null).length > 0 && validateRecord([]).length > 0 && validateRecord('x').length > 0)
   // type <-> slot

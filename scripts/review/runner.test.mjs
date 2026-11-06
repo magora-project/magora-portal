@@ -15,7 +15,7 @@ process.env.GIT_CONFIG_GLOBAL = emptyConfig
 process.env.GIT_CONFIG_NOSYSTEM = '1'
 
 const { DIFF_ARGS, geminiDiff, git, inputIdentity, mergeBase } = await import('./identity.mjs')
-const { readRecords, writeRecord } = await import('./records.mjs')
+const { readRecords, undisposedBlocking, writeRecord } = await import('./records.mjs')
 const { classifyOutcome, defaultPromptFor, pickReviewer, planTaskSections, runCli } = await import('./runner.mjs')
 
 const mkOk = (counter, log = console.log) => (n, c) => {
@@ -82,9 +82,13 @@ const io = () => {
   o.io = { out: (s) => { o.out += s }, err: (s) => { o.err += s } }
   return o
 }
+// The plan slot's reference check (plan Task 17) needs a revision and a task scope. These scratch repos have no
+// origin, and the plan under review is already at HEAD, so unless a test sets either flag (or `bare`), the plan
+// runs below check nothing: `--rev HEAD --tasks none`. The reference check itself is tested near the end.
+const withPlanScope = (argv) => (argv[argv.indexOf('--slot') + 1] === 'plan' && !argv.includes('--rev') && !argv.includes('--tasks') ? [...argv, '--rev', 'HEAD', '--tasks', 'none'] : argv)
 const cli = async (argv, opts = {}) => {
   const o = io()
-  const code = await runCli(argv, { cwd: repo, promptFor, env: {}, io: o.io, ...opts })
+  const code = await runCli(opts.bare ? argv : withPlanScope(argv), { cwd: repo, promptFor, env: {}, io: o.io, ...opts })
   return { code, ...o }
 }
 const errOfCli = async (argv, opts) => (await cli(argv, opts)).err
@@ -575,6 +579,84 @@ try {
     const fetchCalls = []
     const rg = await runIn(big, 'completeness', { args: ['--reviewer', 'gemini'], env: { GEMINI_API_KEY: 'KEY123' }, fetchImpl: async (u) => { fetchCalls.push(u); return new Response('') } })
     ok('P2 gemini: diff plus context over 400,000 bytes makes no request and fails', fetchCalls.length === 0 && rg.code === 1 && /400000/.test(rg.err))
+  }
+
+  // plan Task 17: the plan slot runs the reference check first, refuses a bad scope before any review, and records
+  // its problems as P1 findings together with the rev and tasks it used
+  {
+    const PLAN = ['# Plan', '', '### Task 1: A', '', '**Files:**', '- existing: `base.txt`', '- create: `scripts/new.mjs`', '- modify: `ghost.mjs` (not anywhere)', '- command: `npm test`', '',
+      '### Task 2: B', '', '**Files:**', '- create: `change.txt`', ''].join('\n')
+    const planRepo = () => {
+      const d = mkrepo()
+      mkdirSync(join(d, 'docs'), { recursive: true })
+      put(d, 'base.txt', 'base\n')
+      commit(d, 'base')
+      const mainSha = raw(d, ['rev-parse', 'HEAD'])
+      raw(d, ['checkout', '-q', '-b', 'pr'])
+      put(d, 'docs/plan.md', PLAN)
+      put(d, 'change.txt', 'PR_CHANGE\n')
+      commit(d, 'pr: plan and change')
+      repo = d
+      return mainSha
+    }
+    const planRun = async (extra, opts = {}) => {
+      const sp = []
+      const r = await cli(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/plan.md', ...extra], { bare: true, spawnImpl: recordSpawn(sp, envelopeOk), ...opts })
+      return { ...r, sp, recs: readRecords({ cwd: repo }) }
+    }
+
+    let mainSha = planRepo()
+    const a = await planRun(['--rev', mainSha])
+    const arec = a.recs[0]
+    ok('a new plan (absent at --rev) defaults to every task, runs the reviewer and exits 0', a.code === 0 && a.sp.length === 1 && arec && arec.tasks.join() === 'T1,T2')
+    ok('...its reference problem is a P1 finding naming the missing file, with the plan as its file', arec.findings.length === 1 && arec.findings[0].severity === 'P1' && arec.findings[0].id === 'ref-1' && /ghost\.mjs/.test(arec.findings[0].summary) && arec.findings[0].file === 'docs/plan.md')
+    ok('...the record stores rev and tasks, and is valid', arec.rev === mainSha && arec.invalid === undefined)
+    ok('...an undisposed P1 stays blocking in the record', undisposedBlocking(arec).length === 1)
+    ok('...the problem is reported on stderr and the scope on stdout', /ghost\.mjs/.test(a.err) && /2 task\(s\)/.test(a.out))
+
+    planRepo()
+    const b = await planRun(['--rev', 'HEAD'])
+    ok('an amendment to a plan already at the rev, without --tasks, is refused naming the flag, before any spawn or record', b.code === 1 && /--tasks/.test(b.err) && b.sp.length === 0 && b.recs.length === 0)
+
+    planRepo()
+    const c1 = await planRun(['--rev', 'HEAD', '--tasks', 'T1,T99'])
+    ok('an unknown task, mixed with a valid one, is refused naming it, before any spawn or record', c1.code === 1 && /T99/.test(c1.err) && c1.sp.length === 0 && c1.recs.length === 0)
+
+    planRepo()
+    const d = await planRun(['--rev', 'HEAD', '--tasks', 'T2'])
+    ok('--tasks T2 at HEAD: Task 2\'s create target already exists there, so it is a finding, and only T2 is stored', d.code === 0 && d.recs[0].tasks.join() === 'T2' && d.recs[0].findings.length === 1 && /change\.txt/.test(d.recs[0].findings[0].summary))
+
+    planRepo()
+    const e = await planRun(['--rev', 'HEAD', '--tasks', 'none'])
+    ok('--tasks none checks nothing, says so, and records an empty scope', e.code === 0 && e.recs[0].findings.length === 0 && Array.isArray(e.recs[0].tasks) && e.recs[0].tasks.length === 0 && /no remaining tasks/.test(e.out))
+
+    mainSha = planRepo()
+    const f = await planRun([], { gitFacts: async () => ({ mergeBase: mainSha }) })
+    ok('with no --rev the default is the merge base from gitFacts (a new plan there: every task)', f.code === 0 && f.recs[0].rev === mainSha && f.recs[0].tasks.join() === 'T1,T2')
+
+    planRepo()
+    const g = await planRun([])
+    ok('with no --rev and no origin the fetch failure is reported, before any spawn or record', g.code === 1 && /fetch origin main/.test(g.err) && g.sp.length === 0 && g.recs.length === 0)
+
+    planRepo()
+    const h = await planRun(['--rev', 'no-such-rev'])
+    ok('an unknown --rev is refused', h.code === 1 && /--rev/.test(h.err) && h.sp.length === 0 && h.recs.length === 0)
+
+    ok('--tasks on a slot that is not plan is refused', /plan slot/.test(await errOfCli(['run', '--slot', 'correctness', '--author', 'anthropic', '--tasks', 'none'], { bare: true })))
+    ok('--rev on a slot that is not plan is refused', /plan slot/.test(await errOfCli(['run', '--slot', 'spec', '--author', 'anthropic', '--path', 'docs/plan.md', '--rev', 'HEAD'], { bare: true })))
+
+    mainSha = planRepo()
+    const first = await planRun(['--rev', mainSha])
+    const stem = first.recs[0].stem
+    const again = await planRun(['--rev', mainSha, '--supersedes', stem])
+    const second = again.recs.find((x) => x.supersedes === stem)
+    ok('a re-review recomputes the reference findings instead of inheriting the old ones', again.code === 0 && second && second.findings.length === 1 && second.findings[0].id === 'ref-1' && second.rev === mainSha)
+
+    planRepo()
+    const sp3 = []
+    const failed = await cli(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/plan.md', '--rev', 'HEAD~1'], { bare: true, spawnImpl: recordSpawn(sp3, envelope('{}'), 3) })
+    const frec = readRecords({ cwd: repo })[0]
+    ok('a reviewer that does not complete still leaves the reference findings (and the scope) in the record', failed.code === 1 && frec.outcome === 'failed' && frec.findings.some((x) => x.id === 'ref-1') && frec.tasks.join() === 'T1,T2')
   }
 } finally {
   rmSync(root, { recursive: true, force: true })

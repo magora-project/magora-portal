@@ -73,6 +73,9 @@ export const validateRecord = (r) => {
   })
   if (r.supersedes !== null && typeof r.supersedes !== 'string') p.push('supersedes: must be a string or null')
   if (typeof r.createdAt !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)$/.test(r.createdAt) || Number.isNaN(Date.parse(r.createdAt))) p.push('createdAt: must be an ISO 8601 timestamp')
+  // A plan record's reference-check scope (plan Task 17): the revision the in-scope tasks start from, and those tasks.
+  if (r.rev !== undefined && !nonEmpty(r.rev)) p.push('rev: must be a non-empty string when present')
+  if (r.tasks !== undefined && !(Array.isArray(r.tasks) && r.tasks.every((t) => typeof t === 'string'))) p.push('tasks: must be an array of strings when present')
   if (r.conformance !== undefined) {
     const c = r.conformance
     const strs = (a) => Array.isArray(a) && a.every((s) => typeof s === 'string')

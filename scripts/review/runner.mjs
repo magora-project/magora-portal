@@ -5,6 +5,7 @@
 //
 //   run     --slot <slot> --author <openai|anthropic|google|none> [--reviewer codex|claude|gemini]
 //           [--path <spec-or-plan>] [--supersedes <stem>] [--base <ref>] [--model opus|fable] [--timeout-min <n>]
+//           [--tasks <T10,T12-T14|none>] [--rev <sha>]   (the plan slot: the reference check, plan Task 17)
 //   dispose --record <stem> --finding <id> --kind pre-existing|reclassified-nit|justified-deviation --reason <text> [--issue <url>]
 //
 // Exit 0 only for a completed review (or a written disposition); 1 for any other outcome or a usage error.
@@ -13,6 +14,7 @@ import { basename, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { DIFF_ARGS, EVIDENCE_DIR, blobIdentity, geminiDiff, git, inputIdentity, mergeBase } from './identity.mjs'
 import { SLOTS, addedRecordStems, chainHeads, inherit, isBlockingByDefault, isGateId, readRecords, repoPath, slotFile, typeForSlot, undisposedBlocking, writeRecord } from './records.mjs'
+import { checkExisting, filesAtRev, gitFacts, resolveRev, resolveTasks } from './plan-targets.mjs'
 import * as codex from './adapters/codex.mjs'
 import * as claude from './adapters/claude.mjs'
 import * as gemini from './adapters/gemini.mjs'
@@ -271,6 +273,7 @@ export const buildPrompt = ({ slotPrompt, mode, full, fullLabel, delta, deltaLab
 const RUN_OPTIONS = {
   slot: { type: 'string' }, author: { type: 'string' }, reviewer: { type: 'string' }, path: { type: 'string' },
   supersedes: { type: 'string' }, base: { type: 'string' }, model: { type: 'string' }, 'timeout-min': { type: 'string' },
+  tasks: { type: 'string' }, rev: { type: 'string' },
 }
 const DISPOSE_OPTIONS = {
   record: { type: 'string' }, finding: { type: 'string' }, kind: { type: 'string' }, reason: { type: 'string' }, issue: { type: 'string' },
@@ -278,6 +281,7 @@ const DISPOSE_OPTIONS = {
 const USAGE = `usage:
   review.mjs run --slot <${SLOTS.join('|')}> --author <${AUTHOR_VENDORS.join('|')}> [--reviewer codex|claude|gemini]
                  [--path <spec-or-plan>] [--supersedes <stem>] [--base <ref>] [--model opus|fable] [--timeout-min <n>]
+                 [--tasks <T10,T12-T14|none>] [--rev <sha>]   (plan slot: --tasks is required when the plan is already at the revision)
   review.mjs dispose --record <stem> --finding <id> --kind ${DISPOSE_KINDS.join('|')} --reason <text> [--issue <url>]`
 
 class UsageError extends Error {}
@@ -360,6 +364,7 @@ const cmdRun = async (argv, ctx) => {
   const blob = BLOB_SLOTS.includes(o.slot)
   if (blob && o.path === undefined) usage(`slot ${o.slot} needs --path <spec-or-plan>`)
   if (!blob && o.path !== undefined) usage(`--path is only for the ${BLOB_SLOTS.join('|')} slots`)
+  if (o.slot !== 'plan' && (o.tasks !== undefined || o.rev !== undefined)) usage('--tasks and --rev are only for the plan slot')
 
   const root = must(await git(['rev-parse', '--show-toplevel'], { cwd }), 'git rev-parse --show-toplevel').trim()
   const head = must(await git(['rev-parse', 'HEAD'], { cwd: root }), 'git rev-parse HEAD').trim()
@@ -381,6 +386,29 @@ const cmdRun = async (argv, ctx) => {
     input = { kind: 'pr', identity, mergeBase: mb, head }
     full = (await geminiDiff({ cwd: root, base: mb, head })).toString('utf8')
     fullLabel = `Full current diff (merge base ${mb} .. ${head})`
+  }
+
+  // The plan reference check (plan Task 17): the typed Files targets against the tree the in-scope tasks start from.
+  // --rev defaults to the merge base with origin/main, not HEAD, where this branch's own creations already exist.
+  // Its problems become P1 findings of the plan record, whatever the reviewer says. Refusals come before any review.
+  let planRef = null
+  if (o.slot === 'plan') {
+    let rev = o.rev
+    if (rev === undefined) {
+      try { rev = resolveRev({ rev, gitImpl: await (ctx.gitFacts ?? gitFacts)({ cwd: root }) }) } catch (e) { usage(e.message) }
+    }
+    const resolved = await git(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], { cwd: root })
+    if (resolved.code !== 0) usage(`--rev ${rev} is not a commit in this repository`)
+    rev = resolved.stdout.toString().trim()
+    const files = await filesAtRev({ cwd: root, rev })
+    const sel = resolveTasks({ tasks: o.tasks, planExistsAtRev: files.has(input.path), plan: full })
+    if (sel.error) usage(sel.error)
+    const chk = checkExisting({ plan: full, exists: (p) => files.has(p), tasks: sel.tasks, ci: ctx.ci })
+    for (const n of chk.notes) io.out(`plan reference check: ${n}\n`)
+    const refFindings = chk.problems.map((text, i) => ({ id: `ref-${i + 1}`, severity: 'P1', summary: text, file: input.path }))
+    io.out(`plan reference check: ${sel.tasks.length} task(s) from ${rev.slice(0, 12)}, ${chk.considered.length} target(s), ${refFindings.length} problem(s)\n`)
+    for (const f of refFindings) io.err(`plan reference check: ${f.summary}\n`)
+    planRef = { rev, tasks: sel.tasks, findings: refFindings }
   }
 
   // A fresh chain while a head of this slot (and path) that this branch added still carries an open blocking
@@ -416,7 +444,8 @@ const cmdRun = async (argv, ctx) => {
     if (old.slot !== o.slot) usage(`record ${old.stem} is slot ${old.slot}, not ${o.slot}`)
     if (old.input.kind !== input.kind || (blob && old.input.path !== input.path)) usage(`record ${old.stem} covers ${old.input.kind} ${old.input.path ?? ''}, not this input`)
     if (old.authorVendor !== o.author) usage(`record ${old.stem} has authorVendor ${old.authorVendor}, not ${o.author}: a re-review keeps the author`)
-    for (const f of inherit(old)) (f.disposition !== undefined ? carried : toAssess).push(f)
+    // The reference check is recomputed on every run, so the old record's findings from it are not inherited.
+    for (const f of inherit(old)) if (!(planRef && /#ref-\d+$/.test(f.id))) (f.disposition !== undefined ? carried : toAssess).push(f)
     // §5.3 scope: the delta between the two identities, or the two blobs for a spec or plan, and only after a
     // completed review; the full input too while an inherited blocking finding is open.
     if (blob && old.outcome === 'completed') {
@@ -475,14 +504,15 @@ const cmdRun = async (argv, ctx) => {
     if (c.outcome === 'completed') {
       const status = new Map(c.inherited.map((e) => [e.id, e.status]))
       const assessed = toAssess.map((f) => (status.get(f.id) === 'resolved' ? { ...f, disposition: { kind: 'fixed', by: newStem } } : f))
-      findings = [...c.findings, ...assessed, ...carried]
+      findings = [...(planRef?.findings ?? []), ...c.findings, ...assessed, ...carried]
     } else {
-      findings = [...toAssess, ...carried] // nobody reviewed: carry everything forward undisposed
+      findings = [...(planRef?.findings ?? []), ...toAssess, ...carried] // nobody reviewed: carry everything forward undisposed
     }
     return {
       schema: 1, type: recordType(o.slot), slot: o.slot, input,
       reviewer: { vendor: ADAPTER_VENDOR[reviewer], model }, authorVendor: o.author,
       outcome: c.outcome, verdict: c.verdict, findings, supersedes: old ? old.stem : null,
+      ...(planRef ? { rev: planRef.rev, tasks: planRef.tasks } : {}),
       createdAt: (ctx.now ?? (() => new Date()))().toISOString(),
     }
   })
