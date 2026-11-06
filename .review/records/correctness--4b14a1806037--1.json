@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "4b14a18060375e6ceafd3f05281ad6426fff44ad",
+    "mergeBase": "ac5294329ed3c879b94c7d328016ab6f87ff075a",
+    "head": "feb48f6ff8108ab050c632b6c128f620320203a1"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "The docs-only lane ignores the inferred depth without checking changed-path eligibility, so a PR changing a spec alongside application or control files can pass with only a spec record and bypass the promised correctness/completeness requirements.",
+      "file": "scripts/ci/review-evidence.mjs",
+      "line": 74
+    }
+  ],
+  "supersedes": "correctness--7edca78dcfd1--1",
+  "createdAt": "2026-11-06T18:14:13.608Z"
+}
