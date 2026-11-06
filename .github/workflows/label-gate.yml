@@ -15,7 +15,12 @@ name: label-gate
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    # `edited` is for a retarget (issue #62): a PR moved onto a new base (such as a stacked PR GitHub
+    # retargets to main after its base merges) changes its diff, and so its inferred label and its
+    # Gemini dispatch, without a push. Every `edited` run judges in full, title and body edits
+    # included: this job is a required check, and a job skipped by `if:` reports success, so a
+    # skipped run for a title edit would turn a failing gate green on the same head.
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
 
 permissions:
   contents: read
