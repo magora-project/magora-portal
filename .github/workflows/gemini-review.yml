@@ -55,7 +55,11 @@ name: Gemini review
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, synchronize, labeled]
+    # `edited` is for a retarget (issue #62): a stacked PR that GitHub moves onto main after its base
+    # merges fires only `edited`, so without it that head got no review until its next push. An
+    # `edited` run with no base change (title, body) skips, and takes a `-noop-` group below so it
+    # cannot cancel a review in flight. `branches:` filters on the NEW base.
+    types: [opened, reopened, ready_for_review, synchronize, labeled, edited]
     branches: [main]
   # label-gate.yml dispatches this (on `main`) after its bot applies `subtle-correctness`: a label
   # written with the workflow token starts no `labeled` run, and the `pull_request` runs judge the
@@ -79,10 +83,11 @@ concurrency:
   # A run that will skip gets a unique group (suffix `-noop-<run_id>`), so it cannot cancel a
   # review already in flight for the same PR (such as one label-gate just dispatched): a
   # `pull_request` run for a `labeled` event of any other label or whose payload lacks
-  # `subtle-correctness`, and a dispatch on any ref but main.
+  # `subtle-correctness`, an `edited` run that did not change the base, and a dispatch on any ref
+  # but main.
   # Accepted cost: a push to a PR whose label was just changed away from `subtle-correctness` no
   # longer cancels a review in flight for the previous head; that review still posts, naming its SHA.
-  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ ((github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')) && format('-noop-{0}', github.run_id) || '' }}
+  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ ((github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || (github.event.action == 'edited' && !github.event.changes.base) || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')) && format('-noop-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -102,7 +107,8 @@ jobs:
       github.actor != 'dependabot[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       contains(github.event.pull_request.labels.*.name, 'subtle-correctness') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'subtle-correctness'))
+      (github.event.action != 'labeled' || github.event.label.name == 'subtle-correctness') &&
+      (github.event.action != 'edited' || github.event.changes.base))
     steps:
       - name: Resolve the PR
         id: pr
