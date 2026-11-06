@@ -45,8 +45,13 @@ export const childEnv = (env, extra = {}) => {
 export const commandFor = (name, { install, spawnImpl, resolveImpl }) =>
   (resolveImpl ?? (spawnImpl ? (n) => ({ cmd: n, args: [] }) : resolveCommand))(name, { install })
 
+// After the child exits, how long to keep reading its pipes. A descendant that inherited them can hold them open
+// (so 'close' never comes while it lives); past this the result is taken from what was read.
+export const DRAIN_MS = 2000
+
 // Run a child with an argument array, no shell, the prompt on stdin. On timeout the child itself is killed
-// (child.kill(), then SIGKILL after a grace period): never a process-name match.
+// (child.kill(), then SIGKILL after a grace period): never a process-name match. The result comes at 'close', or
+// DRAIN_MS after 'exit' (at once if the run timed out), so a descendant holding the pipes cannot hold the result.
 export const spawnCollect = ({ cmd, args, input, timeoutMs, spawnImpl = nodeSpawn, cwd, env, install }) => new Promise((resolve) => {
   const startFail = (e) => ({ exitCode: 127, stdout: '', stderr: `could not start ${cmd}: ${e && e.message}. Install it with: ${install}`, timedOut: false })
   let child
@@ -54,12 +59,23 @@ export const spawnCollect = ({ cmd, args, input, timeoutMs, spawnImpl = nodeSpaw
     child = spawnImpl(cmd, args, { cwd, env, shell: false, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
   } catch (e) { resolve(startFail(e)); return }
   const out = [], err = []
-  let timedOut = false, done = false, killTimer
+  let timedOut = false, done = false, killTimer, drainTimer, exitCode
   const finish = (r) => {
     if (done) return
     done = true
-    clearTimeout(timer); clearTimeout(killTimer)
+    clearTimeout(timer); clearTimeout(killTimer); clearTimeout(drainTimer)
     resolve(r)
+  }
+  const collected = (code) => ({
+    exitCode: code === null || code === undefined ? 1 : code,
+    stdout: Buffer.concat(out).toString('utf8'),
+    stderr: Buffer.concat(err).toString('utf8'),
+    timedOut,
+  })
+  // Stop reading pipes a descendant still holds, and resolve with what was read.
+  const finishExited = () => {
+    for (const s of [child.stdout, child.stderr]) { try { s.destroy() } catch { /* already closed */ } }
+    finish(collected(exitCode))
   }
   const timer = timeoutMs > 0 ? setTimeout(() => {
     timedOut = true
@@ -71,12 +87,11 @@ export const spawnCollect = ({ cmd, args, input, timeoutMs, spawnImpl = nodeSpaw
   child.stderr.on('data', (d) => err.push(Buffer.from(d)))
   child.on('error', (e) => finish(startFail(e)))
   child.stdin.on('error', () => {}) // the child may exit before reading all of its input
-  child.on('close', (code) => finish({
-    exitCode: code === null ? 1 : code,
-    stdout: Buffer.concat(out).toString('utf8'),
-    stderr: Buffer.concat(err).toString('utf8'),
-    timedOut,
-  }))
+  child.on('exit', (code) => {
+    exitCode = code
+    drainTimer = setTimeout(finishExited, timedOut ? 0 : DRAIN_MS)
+  })
+  child.on('close', (code) => finish(collected(code)))
   child.stdin.end(input)
 })
 

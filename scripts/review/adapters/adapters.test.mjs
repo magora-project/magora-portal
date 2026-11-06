@@ -1,6 +1,7 @@
 // Self-test for scripts/review/adapters/*.mjs. Never spawns a real reviewer or makes a network call:
-// every run injects spawnImpl / fetchImpl.
+// every reviewer run injects spawnImpl / fetchImpl. Only the spawnCollect pipe tests spawn real `node` children.
 // Run: node scripts/review/adapters/adapters.test.mjs
+import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
@@ -252,6 +253,27 @@ ok('gemini: parseSse folds text and the last finish reason', (() => { const p = 
     server.closeAllConnections()
     await new Promise((r) => server.close(r))
   }
+}
+
+// --- a descendant holding the child's pipes cannot hold the result (Codex, mark-reviewed, PR #77) ---
+// Real subprocesses: the child starts a grandchild that inherits stdout/stderr and lives GRAND_MS, so 'close'
+// waits for the grandchild. The result must come once the child has exited (plus the drain), not at 'close'.
+{
+  const GRAND_MS = 6000
+  const grand = `require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, ${GRAND_MS})'], { stdio: ['ignore', 'inherit', 'inherit'] })`
+  const timed = async (args, timeoutMs) => { const t0 = Date.now(); const r = await codex.spawnCollect({ cmd: process.execPath, args, input: '', timeoutMs, install: 'x' }); return { r, ms: Date.now() - t0 } }
+  const a = await timed(['-e', `${grand}; process.stdout.write('PARTIAL'); setInterval(() => {}, 1000)`], 300)
+  ok(`a timed-out child whose grandchild holds the pipes resolves without waiting for the grandchild (${a.ms} ms)`, a.r.timedOut === true && a.ms < codex.DRAIN_MS && a.r.stdout.includes('PARTIAL') && classifyOutcome(a.r).outcome === 'timeout')
+  const b = await timed(['-e', `${grand}; process.stdout.write('DONE'); process.exit(0)`], 60_000)
+  ok(`a child that exits while its grandchild holds the pipes resolves after the drain (${b.ms} ms)`, b.r.timedOut === false && b.r.exitCode === 0 && b.ms < GRAND_MS - 2000 && b.r.stdout.includes('DONE'))
+  // The caller's process must be free to exit too: the drained pipes are closed, not left referenced until the
+  // grandchild lets go. The runner script below never calls process.exit.
+  const codexUrl = new URL('./codex.mjs', import.meta.url).href
+  const caller = `const { spawnCollect } = await import(${JSON.stringify(codexUrl)}); await spawnCollect({ cmd: process.execPath, args: ['-e', ${JSON.stringify(`${grand}; process.exit(0)`)}], input: '', timeoutMs: 60000, install: 'x' })`
+  const t0 = Date.now()
+  await new Promise((res) => { const c = spawn(process.execPath, ['--input-type=module', '-e', caller], { stdio: 'ignore' }); c.on('exit', res) })
+  const callerMs = Date.now() - t0
+  ok(`the calling process exits without waiting for the grandchild (${callerMs} ms)`, callerMs < GRAND_MS - 2000)
 }
 
 console.log(`${counter.pass} passed, ${counter.fail} failed`)
