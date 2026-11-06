@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "c1f2c934a17346c451fe426a324701adb5e2a12e",
+    "mergeBase": "e554838e47127191cc7e7682345a7fbf6aa5fd98",
+    "head": "89c1b3ea3c8e3e876f59da19ba3be82276fb74eb"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "The zero-context diff hashed by patch-id ignores hunk locations, so applying the same replacement to a different occurrence in the same file can retain the identity and let review-evidence accept a review of different code.",
+      "file": "scripts/review/identity.mjs",
+      "line": 46,
+      "disposition": {
+        "kind": "reclassified-nit",
+        "reason": "Accepted known limitation, not a new defect: spec §5.3 and plan Task 10 record that the identity has no location, so moving an edit onto another identical line keeps it (accepted by David 2026-11-02, PR #52). Adding line numbers would break D-10: a main change above the PR's lines would void its reviews."
+      }
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "A task range such as T9007199254740992-T9007199254740992 passes validation but loops forever because incrementing that Number no longer changes it, allowing a PR body to hang the evidence check until its timeout.",
+      "file": "scripts/review/pr-body.mjs",
+      "line": 25
+    }
+  ],
+  "supersedes": "correctness--c1f2c934a173--1",
+  "createdAt": "2026-11-06T21:12:23.761Z"
+}

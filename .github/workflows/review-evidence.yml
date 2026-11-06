@@ -1,0 +1,46 @@
+# review-evidence (shared dev process spec §5.3): the committed review records under .review/records/
+# must cover the PR's current input identity for every slot its lane and depth require. The job's
+# pass/fail IS the check; it posts no status with any credential.
+# PR state (body, labels, head, base, creation time) is read live from the API when the job runs, not
+# from the event payload, so an edit to the body or a label change is judged as it now is.
+# The job checks out the PR HEAD (not GitHub's merge commit), so records and identity come from the
+# real head; the script then requires the API's current head to equal that checkout, else it fails
+# "could not judge" (a newer push has its own run). fetch-depth: 0 so the merge base with base.sha
+# can be computed. Grandfathering reads .github/review-activation.json from the BASE branch via the API.
+# Fork PRs: only read permissions and no secrets are used, so the job runs the same on a fork's
+# read-only token. Like every pull_request workflow, it runs the PR's own copy of this file and of
+# scripts/ci/review-evidence.mjs; both are control files (AGENTS.md), read by the merging maintainer.
+# Concurrency is keyed on the PR and head SHA: runs for one head queue (cancel-in-progress: false), so
+# a body edit or label change always gets its own completed run.
+name: review-evidence
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: review-evidence-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  review-evidence:
+    name: review-evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/ci/review-evidence.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}

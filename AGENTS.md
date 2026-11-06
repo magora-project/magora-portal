@@ -5,11 +5,12 @@ For agents and contributors (Claude Code via `CLAUDE.md`, Codex CLI directly). D
 ## Commands
 
 - `npm ci`: install
-- `npm test`: every `*.test.mjs` (fails if none found)
-- `npm run lint:ratchet`: ESLint; fails if a rule's finding count exceeds `.github/lint-baseline.json`. If a count falls, lower the baseline in the same PR.
-- `npm run build`: production build (no env vars)
-- `npm run check:migrations`: each new migration has a rollback
-- `npm run check:deno`: type-check and lint the Edge Functions (needs Deno 2.9.5)
+- `npm test`: all `*.test.mjs`; fails if none
+- `npm run lint:ratchet`: ESLint; fails if a rule's count exceeds `.github/lint-baseline.json`; if one falls, lower it in the same PR
+- `npm run build`: prod build, no env vars
+- `npm run check:migrations`: new migrations have rollbacks
+- `npm run check:deno`: type-check, lint Edge Functions (Deno 2.9.5)
+- `npm run review -- check --local`: `.review/` records
 
 ## Flow
 

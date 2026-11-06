@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "be14642d523cd5355ab8e8cbe4afaf18e2be33eb",
+    "mergeBase": "df03fb7a568f881c083b7e81a3ed246560c65db6",
+    "head": "e8fa6a56aabb256417777cb278cf1b64c14ab7f0"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "The runner never writes a conformance block or accepts the covered tasks and deviations, so every conformance record it generates fails the new evidence check and specced PRs cannot pass through the documented workflow.",
+      "file": "scripts/review/runner.mjs",
+      "line": 310
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "The scanner ignores Semgrep's errors array, so an exit-0 response containing parse or partial-scan errors and no results is reported as a clean scan even when code blocks could not be checked.",
+      "file": "scripts/review/semgrep-artifact.mjs",
+      "line": 57
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-06T02:48:13.358Z"
+}
