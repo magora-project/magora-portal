@@ -14,12 +14,18 @@ export function expandTasks(text) {
   const tokens = String(text).split(/[\s,]+/).filter(Boolean)
   if (tokens.length === 0) throw new Error('no task IDs')
   const out = []
+  // Past 2^53 a Number stops counting (i++ leaves it unchanged), so a range there would never end.
+  const num = (s, tok) => {
+    const n = Number(s)
+    if (!Number.isSafeInteger(n)) throw new Error(`task number ${s} in "${tok}" is too large`)
+    return n
+  }
   for (const tok of tokens) {
     let m = /^T(\d+)$/.exec(tok)
-    if (m) { out.push(`T${Number(m[1])}`); continue }
+    if (m) { out.push(`T${num(m[1], tok)}`); continue }
     m = /^T(\d+)-T(\d+)$/.exec(tok)
     if (!m) throw new Error(`malformed task token "${tok}"`)
-    const a = Number(m[1]), b = Number(m[2])
+    const a = num(m[1], tok), b = num(m[2], tok)
     if (a > b) throw new Error(`invalid range "${tok}": start is after end`)
     if (b - a + 1 > MAX_RANGE) throw new Error(`invalid range "${tok}": more than ${MAX_RANGE} tasks`)
     for (let i = a; i <= b; i++) out.push(`T${i}`)

@@ -28,6 +28,8 @@ ok('duplicate Lane -> problem naming the field', /Lane/.test(probs('Lane: direct
 ok('duplicate Plan -> problem', /Plan.*more than once/.test(probs('Lane: direct\nPlan: none\nPlan: p T1\nDeviations: none')))
 ok('field names are case-sensitive', /Lane/.test(probs('lane: direct\nDeviations: none')))
 ok('expandTasks dedupes preserving order', expandTasks('T2, T1-T3 T2').join() === 'T2,T1,T3')
+// 2^53: i++ no longer changes it, so a range ending there would loop forever (Codex, PR #77)
+ok('expandTasks rejects task numbers past the safe-integer range', throws(() => expandTasks('T9007199254740992-T9007199254740992')) && throws(() => expandTasks('T9007199254740993')))
 ok('expandTasks space separated', expandTasks('T1 T4').join() === 'T1,T4')
 ok('expandTasks malformed throws', throws(() => expandTasks('T1,x')) && throws(() => expandTasks('')) && throws(() => expandTasks('T1-')) && throws(() => expandTasks('T3-T1')))
 ok('malformed task token is a problem naming the token', /T1x/.test(probs('Lane: specced\nSpec: s\nPlan: p T1x\nDeviations: none')))
