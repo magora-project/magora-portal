@@ -10,9 +10,12 @@ const DETECTION = {
   detected_at: '2026-11-04T15:00:00Z', range_status: 'unchecked',
 }
 
+const ENV_KEYS = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'EBIRD_API_KEY']
+
 function withFetch(routes, fn) {
   const real = globalThis.fetch
-  const env = { ...process.env }
+  // Save and restore each variable this stub touches, key by key, so nothing leaks past the test.
+  const saved = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]))
   process.env.VITE_SUPABASE_URL = 'https://sb.test'
   process.env.VITE_SUPABASE_ANON_KEY = 'anon'
   delete process.env.EBIRD_API_KEY
@@ -25,7 +28,10 @@ function withFetch(routes, fn) {
   }
   return Promise.resolve(fn(seen)).finally(() => {
     globalThis.fetch = real
-    process.env = env
+    for (const k of ENV_KEYS) {
+      if (saved[k] === undefined) delete process.env[k]
+      else process.env[k] = saved[k]
+    }
   })
 }
 
