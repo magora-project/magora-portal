@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -15,6 +15,7 @@ import ListenButton from '../components/ListenButton'
 import MobileDetectionCard from '../components/MobileDetectionCard'
 import { AMBER } from '../lib/listen'
 import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
+import { createMapSectionLoader, insightsAvailableFor } from '../lib/mapSections'
 
 function MapController({ points }) {
   const map = useMap()
@@ -94,105 +95,105 @@ export default function MapPage() {
     return unsubscribe
   }, [user])
 
-  async function fetchData() {
-    // Local midnight, not UTC — UTC midnight is ~5-6pm Mountain, which made the
-    // "species today" count roll over in the afternoon.
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
-
-    try {
-      const results = await Promise.allSettled([
-        // All nodes that have SPOKEN, regardless of whether they still are.
-        //
-        // Two different rules live in this one query, and they pull in opposite directions:
-        //
-        //   * A node that stops listening is LABELLED offline, never hidden. The place was
-        //     genuinely listened to and its record stays reachable. Filtering by is_active here
-        //     would have made "mark it offline" mean "delete it from view" — the opposite of
-        //     labelling — and would strand its page with no way in. So: no is_active filter.
-        //
-        //   * A node that has NEVER spoken is not yet a place on the map. Registration is
-        //     self-serve, so anyone signed in can create a node row; without this, the map fills
-        //     with empty pins for hardware that was never built. A place earns its pin by
-        //     speaking.
-        //
-        // `detections!inner(...)` makes this an inner join, so a node with no matching detection
-        // is dropped from the result entirely. `range_status = 'plausible'` reuses the
-        // Range-Validity Gate, so a node that only ever posts implausible garbage never goes
-        // public either. The embedded limit keeps the payload to one throwaway row per node —
-        // it's an existence test, not data we use.
-        //
-        // The steward's own view is unaffected: NodePage and JournalPage query `nodes` directly,
-        // so a freshly-registered node is fully visible to its owner from the moment it exists.
-        supabase.from('nodes')
-          .select('*, detections!inner(id)')
-          .eq('detections.range_status', 'plausible')
-          .limit(1, { foreignTable: 'detections' }),
-        supabase.from('detections')
-          .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
-          .gte('confidence', MIN_CONFIDENCE)
-          // Range gate: keep quarantined range false-positives off the live feed (null-safe → fail-open).
-          .or('range_status.is.null,range_status.neq.quarantined')
-          .order('detected_at', { ascending: false }).limit(50),
-        supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
-        supabase.from('detections').select('species_name, raw_label').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString())
-          .or('range_status.is.null,range_status.neq.quarantined'),
-        supabase.from('public_mobile_detections').select('*').order('detected_at', { ascending: false }).limit(50),
-        supabase.from('public_listen_sessions').select('*').order('started_at', { ascending: false }).limit(50),
-      ])
-
-      const settled = results.map(result => result.status === 'fulfilled'
-        ? result.value
-        : { data: null, error: result.reason })
-      const [nodesRes, detRes, aciRes, todayRes, mobileRes, sessionsRes] = settled
-
-      if (nodesRes.error) {
-        console.warn('MapPage nodes query failed:', nodesRes.error)
-        setNodes([])
-        setNodesAvailable(false)
+  // Applies one section's { data, error } result. Created once: it only calls state setters.
+  const [loadSections] = useState(() => createMapSectionLoader({
+    apply(name, res) {
+      if (name === 'nodes') {
+        if (res.error) {
+          console.warn('MapPage nodes query failed:', res.error)
+          setNodes([])
+          setNodesAvailable(false)
+        } else {
+          // Drop the embedded `detections` existence-probe so a node object keeps exactly the shape
+          // the rest of the page (and NodePage) expects — the join is a filter, not data.
+          setNodes((res.data || []).map(row => {
+            const node = { ...row }
+            delete node.detections
+            return node
+          }))
+          setNodesAvailable(true)
+        }
+      } else if (name === 'today') {
+        const todayData = res.error ? null : (res.data || [])
+        setTodayDetections(todayData || [])
+        setTodaySpeciesCount(todayData == null
+          ? null
+          : new Set(todayData.map(d => d.species_name || d.raw_label).filter(n => n && !isHiddenSpecies(n))).size)
       } else {
-        // Drop the embedded `detections` existence-probe so a node object keeps exactly the shape
-        // the rest of the page (and NodePage) expects — the join is a filter, not data.
-        const loadedNodes = (nodesRes.data || []).map(row => {
-          const node = { ...row }
-          delete node.detections
-          return node
-        })
-        setNodes(loadedNodes)
-        setNodesAvailable(true)
+        const rows = res.error ? [] : (res.data || [])
+        if (name === 'detections') setDetections(rows)
+        else if (name === 'mobile') setMobileDetections(rows)
+        else if (name === 'sessions') setSessions(rows)
+        else if (name === 'aci') setAciLogs(rows)
       }
-
-      setDetections(detRes.error ? [] : (detRes.data || []))
-      setMobileDetections(mobileRes.error ? [] : (mobileRes.data || []))
-      setSessions(sessionsRes.error ? [] : (sessionsRes.data || []))
-      setAciLogs(aciRes.error ? [] : (aciRes.data || []))
-      const todayData = todayRes.error ? null : (todayRes.data || [])
-      setTodayDetections(todayData || [])
-      setTodaySpeciesCount(todayData == null
-        ? null
-        : new Set(todayData.map(d => d.species_name || d.raw_label).filter(n => n && !isHiddenSpecies(n))).size)
-
-      const feedErrors = [detRes, mobileRes, sessionsRes].filter(res => res.error)
+    },
+    // The feed's error banner and loading state wait for the three feed sources only, never for
+    // nodes, aci or today.
+    onFeedSettled(feedResults) {
+      const feedErrors = feedResults.filter(res => res.error)
       if (feedErrors.length > 0 && feedErrors.length < 3) {
         console.warn('MapPage feed section failed:', feedErrors.map(res => res.error))
       }
       setPartialFeedError(feedErrors.length > 0 && feedErrors.length < 3)
       setError(feedErrors.length === 3)
-    } catch (e) {
-      console.warn('MapPage fetch failed:', e)
-      setPartialFeedError(false)
-      setError(true)
-    } finally {
       setLoading(false)
-    }
-  }
+    },
+  }))
+
+  const fetchData = useCallback(() => {
+    // Local midnight, not UTC — UTC midnight is ~5-6pm Mountain, which made the
+    // "species today" count roll over in the afternoon.
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+
+    // Each section updates as soon as its own query settles (#64), so a slow nodes query no
+    // longer holds the feed, the species count and the ACI logs on their loading state.
+    loadSections({
+      // All nodes that have SPOKEN, regardless of whether they still are.
+      //
+      // Two different rules live in this one query, and they pull in opposite directions:
+      //
+      //   * A node that stops listening is LABELLED offline, never hidden. The place was
+      //     genuinely listened to and its record stays reachable. Filtering by is_active here
+      //     would have made "mark it offline" mean "delete it from view" — the opposite of
+      //     labelling — and would strand its page with no way in. So: no is_active filter.
+      //
+      //   * A node that has NEVER spoken is not yet a place on the map. Registration is
+      //     self-serve, so anyone signed in can create a node row; without this, the map fills
+      //     with empty pins for hardware that was never built. A place earns its pin by
+      //     speaking.
+      //
+      // `detections!inner(...)` makes this an inner join, so a node with no matching detection
+      // is dropped from the result entirely. `range_status = 'plausible'` reuses the
+      // Range-Validity Gate, so a node that only ever posts implausible garbage never goes
+      // public either. The embedded limit keeps the payload to one throwaway row per node —
+      // it's an existence test, not data we use.
+      //
+      // The steward's own view is unaffected: NodePage and JournalPage query `nodes` directly,
+      // so a freshly-registered node is fully visible to its owner from the moment it exists.
+      nodes: () => supabase.from('nodes')
+        .select('*, detections!inner(id)')
+        .eq('detections.range_status', 'plausible')
+        .limit(1, { foreignTable: 'detections' }),
+      detections: () => supabase.from('detections')
+        .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
+        .gte('confidence', MIN_CONFIDENCE)
+        // Range gate: keep quarantined range false-positives off the live feed (null-safe → fail-open).
+        .or('range_status.is.null,range_status.neq.quarantined')
+        .order('detected_at', { ascending: false }).limit(50),
+      aci: () => supabase.from('aci_logs').select('*').order('recorded_at', { ascending: false }).limit(10),
+      today: () => supabase.from('detections').select('species_name, raw_label').gte('confidence', MIN_CONFIDENCE).gte('detected_at', todayStart.toISOString())
+        .or('range_status.is.null,range_status.neq.quarantined'),
+      mobile: () => supabase.from('public_mobile_detections').select('*').order('detected_at', { ascending: false }).limit(50),
+      sessions: () => supabase.from('public_listen_sessions').select('*').order('started_at', { ascending: false }).limit(50),
+    })
+  }, [loadSections])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData()
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchData])
 
   useEffect(() => {
     const uniqueSpecies = [...new Set(detections.map(d => d.species_name).filter(Boolean))]
@@ -506,9 +507,9 @@ export default function MapPage() {
             </div>
           )}
 
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Loading...</div>
-          ) : feedItems.length > 0 ? (
+          {/* Cards render as soon as any feed source has returned some (#64); "Loading..." shows only
+              while the feed is still empty and a feed source is outstanding. */}
+          {feedItems.length > 0 ? (
             <div className="detection-grid">
               {feedItems.map(item => (
                 item.type === 'session' ? (
@@ -539,11 +540,13 @@ export default function MapPage() {
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
                     count={speciesCountToday == null ? null : (speciesCountToday[item.d.species_name || item.d.raw_label] ?? 0)}
                     insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
-                    insightsAvailable={Boolean(item.d.insight) || nodesAvailable !== false}
+                    insightsAvailable={insightsAvailableFor(item.d, nodeById[item.d.node_id])}
                   />
                 )
               ))}
             </div>
+          ) : loading ? (
+            <div style={{ textAlign: 'center', padding: '40px', color: C.textMuted }}>Loading...</div>
           ) : error ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: C.textMuted }}>
               <div style={{ fontSize: '15px', fontWeight: '700', color: C.text, marginBottom: '6px' }}>Couldn't reach the network</div>
