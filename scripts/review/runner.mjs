@@ -280,12 +280,13 @@ const cmdRun = async (argv, ctx) => {
     fullLabel = `Full current diff (merge base ${mb} .. ${head})`
   }
 
-  // A fresh chain while a completed head of this slot (and path) that this branch added still has an open
-  // blocking finding would let that finding go unassessed (§5.3: a re-review inherits every undisposed finding).
-  // A head that never completed does not block: nobody reviewed, and the reviewer fallback starts a new chain.
+  // A fresh chain while a head of this slot (and path) that this branch added still carries an open blocking
+  // finding would let that finding go unassessed (§5.3: a re-review inherits every undisposed finding). That holds
+  // whatever the head's outcome: a failed re-review carries its inherited findings forward undisposed. A head with
+  // no open finding (a fresh run that never completed) does not block, so the reviewer fallback still works.
   if (o.supersedes === undefined) {
     const added = await addedStemsFor(root, await defaultBase(root, o.base), head)
-    const open = chainHeads(records).filter((r) => !r.invalid && r.slot === o.slot && r.outcome === 'completed'
+    const open = chainHeads(records).filter((r) => !r.invalid && r.slot === o.slot
       && (!blob || r.input.path === input.path) && (added === null || added.has(r.stem)) && undisposedBlocking(r).length > 0)
     if (open.length) {
       usage(`${open.map((r) => `record ${r.stem} left ${undisposedBlocking(r).map((f) => f.id).join(', ')} open`).join('; ')}: re-review with --supersedes ${open.length === 1 ? open[0].stem : '<stem>'} so the open finding is inherited, or dispose it`)

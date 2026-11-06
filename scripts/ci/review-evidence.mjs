@@ -157,14 +157,24 @@ export function evaluate({ records, required, identity, body, addedStems, author
     const label = input.kind === 'blob' ? `${slot} ${input.path}@${short(input.identity)}` : `${slot} pr ${short(identity)}`
     if (input.error) { fail(`FAIL ${label}: ${input.error}`); continue }
     const candidates = heads.filter((r) => r.slot === slot && r.input.kind === input.kind && (input.kind !== 'blob' || r.input.path === input.path))
-    if (candidates.length === 0) { fail(`FAIL ${label}: no record (write one with npm run review -- run --slot ${slot}${input.kind === 'blob' ? ` --path ${input.path}` : ''})`); continue }
+    if (candidates.length === 0) {
+      // Conformance records come from `review.mjs conformance` (plan Task 18, PR C); `run --slot conformance` refuses.
+      const how = slot === 'conformance'
+        ? 'conformance records come from npm run review -- conformance, which arrives with plan Task 18'
+        : `write one with npm run review -- run --slot ${slot}${input.kind === 'blob' ? ` --path ${input.path}` : ''}`
+      fail(`FAIL ${label}: no record (${how})`)
+      continue
+    }
     const judged = candidates.map((r) => ({ r, reasons: judge(r, want) }))
     const passing = judged.filter((j) => j.reasons.length === 0)
     const judgedText = () => judged.map((j) => `${j.r.stem}: ${j.reasons.join('; ')}`).join(' | ')
-    const open = candidates.filter((r) => (added === null || added.has(r.stem)) && r.outcome === 'completed')
+    // Any head this PR added that still carries an open blocking finding fails the slot, whatever its outcome:
+    // a failed re-review carries its inherited findings forward undisposed, so it must not let a fresh passing
+    // chain bypass them. A head with no open finding (a fresh run that never completed) does not block.
+    const open = candidates.filter((r) => (added === null || added.has(r.stem)))
       .map((r) => ({ r, ids: undisposedBlocking(r, { deviations: body?.deviations ?? [] }).map((f) => f.id) })).filter((x) => x.ids.length)
     if (open.length) {
-      fail(`FAIL ${label}: ${open.map(({ r, ids }) => `${r.stem} (a completed review this PR added) left ${ids.join(', ')} open: re-review with --supersedes ${r.stem}, or dispose ${ids.length === 1 ? 'it' : 'them'}`).join(' | ')}${passing.length ? '' : ` | ${judgedText()}`}`)
+      fail(`FAIL ${label}: ${open.map(({ r, ids }) => `${r.stem} (a review this PR added) left ${ids.join(', ')} open: re-review with --supersedes ${r.stem}, or dispose ${ids.length === 1 ? 'it' : 'them'}`).join(' | ')}${passing.length ? '' : ` | ${judgedText()}`}`)
     } else if (passing.length) {
       if (slot === 'correctness') passingCorrectness.set(inputKey(want), passing.map((j) => j.r.reviewer.vendor))
       lines.push(`ok ${label} (${passing.map((j) => j.r.stem).join(', ')})`)

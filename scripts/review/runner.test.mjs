@@ -297,13 +297,15 @@ try {
     ok('the open gate finding keeps its ID, undisposed', rec.findings.find((f) => f.id === 'cr:1').disposition === undefined)
   }
 
-  // gemini through the CLI: the key never reaches stdout, stderr or the record
+  // gemini through the CLI: the key never reaches stdout, stderr or the record. It uses a slot no earlier test
+  // touched (substitute:coderabbit), because an earlier substitute:gemini head carries an open finding and would
+  // (correctly) refuse a fresh run.
   {
-    const r = await cli(['run', '--slot', 'substitute:gemini', '--author', 'anthropic', '--reviewer', 'gemini'], {
+    const r = await cli(['run', '--slot', 'substitute:coderabbit', '--author', 'anthropic', '--reviewer', 'gemini'], {
       env: { GEMINI_API_KEY: 'KEY123' },
       fetchImpl: async () => new Response('upstream echoed key=KEY123', { status: 403 }),
     })
-    const rec = recordsBy((x) => x.slot === 'substitute:gemini' && x.reviewer.vendor === 'google' && x.supersedes === null && x.outcome === 'failed')
+    const rec = recordsBy((x) => x.slot === 'substitute:coderabbit' && x.reviewer.vendor === 'google' && x.supersedes === null && x.outcome === 'failed')
     const all = r.out + r.err + rec.map((x) => readFileSync(join(repo, '.review', 'records', `${x.stem}.json`), 'utf8')).join('')
     ok('gemini CLI run: the output under test is non-empty', typeof all === 'string' && all.length > 0 && rec.length === 1 && /403/.test(r.err))
     ok('gemini: the API key never appears in stdout, stderr or the record', !all.includes('KEY123'))
@@ -414,7 +416,13 @@ try {
     freshRepo()
     store(prRecord({ input: { kind: 'pr', identity: 'f'.repeat(40), mergeBase: 'x', head: 'x' }, outcome: 'timeout', verdict: null, findings: openP1 }))
     const r = await runs(['run', '--slot', 'correctness', '--author', 'anthropic'])
-    ok('a non-completed head with an undisposed finding does not block a fresh run (reviewer fallback)', r.code === 0 && r.sp.length === 1)
+    ok('a non-completed head still carrying an undisposed blocking finding blocks a fresh run, naming it', r.code === 1 && r.sp.length === 0 && /--supersedes/.test(r.err))
+  }
+  {
+    freshRepo()
+    store(prRecord({ input: { kind: 'pr', identity: 'f'.repeat(40), mergeBase: 'x', head: 'x' }, outcome: 'timeout', verdict: null, findings: [] }))
+    const r = await runs(['run', '--slot', 'correctness', '--author', 'anthropic'])
+    ok('a non-completed head with no findings does not block a fresh run (reviewer fallback)', r.code === 0 && r.sp.length === 1)
   }
   {
     freshRepo({ onMain: () => store(prRecord({ input: { kind: 'pr', identity: 'e'.repeat(40), mergeBase: 'x', head: 'x' }, verdict: 'fail', findings: openP1 })) })
