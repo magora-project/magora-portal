@@ -40,8 +40,10 @@ test('a detection_id with no location builds a prompt from the node the server l
     assert.ok(seen.some(p => p.startsWith('nodes?id=eq.n-unlisted&')), 'node looked up from the detection')
   }))
 
-test('a quarantined detection (not returned under the range gate) with no location is refused, not invented', () =>
-  withFetch([], async () => {
+test('the detection is read under the range gate; with no row and no location the request is refused', () =>
+  withFetch([], async seen => {
     const built = await buildNodeInsightPrompt({ detection_id: 'd1', species_name: 'American Robin' })
-    assert.equal(built.status, 400)
+    assert.equal(built.status, 400, 'no location is invented when the gated read returns nothing')
+    const detectionRead = seen.find(p => p.startsWith('detections?id=eq.d1&'))
+    assert.match(detectionRead, /range_status\.neq\.quarantined/, 'a quarantined row is withheld by the read itself')
   }))

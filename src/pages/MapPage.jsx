@@ -235,10 +235,12 @@ export default function MapPage() {
   const baseDetections = activeTab === 'following'
     ? detections.filter(d => followedSet.has(d.node_id))
     : detections
+  // One card per species, on the same key as today's counts (speciesKey), so a species is not shown
+  // twice when some of its rows only have raw_label.
   const dedupedDetections = baseDetections.filter((d, idx) => {
-    const name = d.species_name || d.raw_label || ''
-    if (isHiddenSpecies(name)) return false
-    return baseDetections.findIndex(x => (x.species_name || x.raw_label) === name) === idx
+    const key = speciesKey(d) || ''
+    if (isHiddenSpecies(key)) return false
+    return baseDetections.findIndex(x => (speciesKey(x) || '') === key) === idx
   })
 
   // Mobile Listens with at least one confident, non-hidden ID (avoids empty cards).
