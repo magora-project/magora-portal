@@ -15,7 +15,7 @@ import ListenButton from '../components/ListenButton'
 import MobileDetectionCard from '../components/MobileDetectionCard'
 import { AMBER } from '../lib/listen'
 import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
-import { createMapSectionLoader } from '../lib/mapSections'
+import { createMapSectionLoader, insightsAvailableFor } from '../lib/mapSections'
 
 function MapController({ points }) {
   const map = useMap()
@@ -540,7 +540,7 @@ export default function MapPage() {
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
                     count={speciesCountToday == null ? null : (speciesCountToday[item.d.species_name || item.d.raw_label] ?? 0)}
                     insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
-                    insightsAvailable={Boolean(item.d.insight) || nodesAvailable !== false}
+                    insightsAvailable={insightsAvailableFor(item.d, nodesAvailable)}
                   />
                 )
               ))}

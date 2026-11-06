@@ -3,7 +3,7 @@
 // Run: node src/lib/mapSections.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createMapSectionLoader, MAP_SECTIONS, FEED_SECTIONS } from './mapSections.js'
+import { createMapSectionLoader, insightsAvailableFor, MAP_SECTIONS, FEED_SECTIONS } from './mapSections.js'
 
 const never = () => new Promise(() => {})
 const ok = data => () => Promise.resolve({ data, error: null })
@@ -99,4 +99,12 @@ test('the returned promise resolves once every query has settled', async () => {
   const { applied, loader } = recorder()
   await loader(allOk())
   assert.equal(applied.length, MAP_SECTIONS.length)
+})
+
+test('the insight button waits for nodes to load; a stored insight always shows', () => {
+  assert.equal(insightsAvailableFor({}, null), false, 'nodes still pending')
+  assert.equal(insightsAvailableFor({}, false), false, 'nodes query failed')
+  assert.equal(insightsAvailableFor({}, true), true, 'nodes loaded')
+  assert.equal(insightsAvailableFor({ insight: 'stored' }, null), true)
+  assert.equal(insightsAvailableFor({ insight: 'stored' }, false), true)
 })

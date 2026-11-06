@@ -5,6 +5,14 @@ export const MAP_SECTIONS = ['nodes', 'detections', 'aci', 'today', 'mobile', 's
 // The three sources behind the live feed. Their combined outcome decides the feed's error banner.
 export const FEED_SECTIONS = ['detections', 'mobile', 'sessions']
 
+// Whether a feed card offers the insight button. Generating an insight needs the card's node, so
+// the button waits until the nodes query has loaded (nodesAvailable === true): feed cards now show
+// before nodes arrive, and a click in that window would find no node and do nothing. A stored
+// insight is always shown.
+export function insightsAvailableFor(detection, nodesAvailable) {
+  return Boolean(detection.insight) || nodesAvailable === true
+}
+
 // Turns any outcome into a { data, error } result: a rejection, a synchronous throw, or a value
 // that is not a result object all become { data: null, error }.
 function settle(run) {
