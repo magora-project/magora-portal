@@ -333,9 +333,14 @@ export async function main({ env = process.env, fetchImpl = fetch, gitImpl = def
     return 0
   }
 
-  // 3. Depth (label-gate enforces exactly one) and the body fields.
+  // 3. Depth and the body fields. label-gate is the check that enforces exactly one depth label; this one does not
+  // fail on the count, because it can read the labels before label-gate's auto-label lands, and a label written with
+  // the workflow token starts no new run, so a valid PR would stay red. With no depth label it judges at `standard`,
+  // the lowest the bot ever applies; with several, at the highest. The changed-path floor (requiredDepth) still
+  // applies. A person's later label change is a `labeled`/`unlabeled` event and so a new run.
   const depths = pr.labels.map((l) => l?.name).filter((x) => DEPTH_LABELS.includes(x))
-  if (depths.length !== 1) return cnj(`need exactly one depth label (label-gate); found ${depths.length ? depths.join(', ') : 'none'}`)
+  const label = depths.length === 0 ? 'standard' : DEPTH_LABELS.filter((d) => depths.includes(d)).at(-1)
+  if (depths.length !== 1) console.log(`depth: ${depths.length ? `several depth labels (${depths.join(', ')})` : 'no depth label'}; judging at ${label} (label-gate enforces exactly one)`)
   const body = parseBody(pr.body ?? '', { author: pr.user?.login })
 
   // 4. The checkout must be the PR's current head: records are read from it, and the identity is its diff.
@@ -343,7 +348,7 @@ export async function main({ env = process.env, fetchImpl = fetch, gitImpl = def
   try {
     const local = await gitImpl.head({ cwd })
     if (local !== pr.head.sha) return cnj(`the checkout is ${local}, but the PR's head is now ${pr.head.sha} (a newer push; its own run judges it)`)
-    result = await judgeCheckout({ cwd, lane: body.lane, depth: depths[0], body, base: pr.base.sha, head: pr.head.sha, gitImpl })
+    result = await judgeCheckout({ cwd, lane: body.lane, depth: label, body, base: pr.base.sha, head: pr.head.sha, gitImpl })
   } catch (e) { return cnj(e.message) }
   for (const l of result.lines) console.log(l)
   console.log(result.ok ? 'review-evidence: ok' : 'review-evidence: FAIL')

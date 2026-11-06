@@ -296,9 +296,19 @@ try {
     const r = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, head: noRecords.head })))
     ok('main: API head differs from the checkout -> "could not judge"', r.code === 1 && /could not judge/.test(r.out) && /head/.test(r.out))
   }
-  for (const labels of [[], ['standard', 'mechanical']]) {
-    const r = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels })))
-    ok(`main: ${labels.length} depth labels -> "could not judge" naming label-gate`, r.code === 1 && /could not judge/.test(r.out) && /label-gate/.test(r.out))
+  // mark-reviewed Codex P2 (2026-11-06): label-gate's auto-label, written with the workflow token, starts no run, so a
+  // run that read the labels before it landed must not stay red. Label count is label-gate's check, not this one.
+  {
+    const none = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels: [] })))
+    ok('main: no depth label -> judged at standard (the lowest the bot applies), naming label-gate; passes on a correctness record', none.code === 0 && /no depth label.*standard/.test(none.out) && /label-gate/.test(none.out))
+    const two = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels: ['standard', 'subtle-correctness'] })))
+    ok('main: two depth labels -> judged at the higher one (fails here: no completeness record)', two.code === 1 && /subtle-correctness/.test(two.out) && /FAIL completeness/.test(two.out) && !/could not judge/.test(two.out))
+    const mixed = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels: ['mechanical', 'standard'] })))
+    ok('main: mechanical beside standard -> judged at standard (passes on a correctness record)', mixed.code === 0)
+    const noneBare = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...noRecords, labels: [] })))
+    ok('main: no depth label and no records -> FAIL naming correctness (judged at standard, not mechanical)', noneBare.code === 1 && /FAIL correctness/.test(noneBare.out) && !/could not judge/.test(noneBare.out))
+    const mech = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...noRecords, labels: ['mechanical'] })))
+    ok('main: one mechanical label on an ordinary path -> needs no record', mech.code === 0)
   }
   {
     const r = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, body: 'no fields here' })))
