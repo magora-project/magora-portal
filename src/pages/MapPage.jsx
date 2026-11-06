@@ -15,7 +15,7 @@ import ListenButton from '../components/ListenButton'
 import MobileDetectionCard from '../components/MobileDetectionCard'
 import { AMBER } from '../lib/listen'
 import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
-import { createMapSectionLoader, nextNodes, nodeInsightRequest } from '../lib/mapSections'
+import { createMapSectionLoader, nextNodes, nodeCountForTabs, nodeInsightRequest, showFeedTabs } from '../lib/mapSections'
 import { countSpecies, speciesKey } from '../lib/speciesKey'
 
 function MapController({ points }) {
@@ -44,6 +44,7 @@ export default function MapPage() {
   const [mobileDetections, setMobileDetections] = useState([])
   const [sessions, setSessions] = useState([])
   const [nodes, setNodes] = useState([])
+  const [tabsNodeCount, setTabsNodeCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [partialFeedError, setPartialFeedError] = useState(false)
@@ -99,6 +100,7 @@ export default function MapPage() {
   const [loadSections] = useState(() => createMapSectionLoader({
     apply(name, res) {
       if (name === 'nodes') {
+        setTabsNodeCount(prev => nodeCountForTabs(prev, res))
         if (res.error) console.warn('MapPage nodes query failed; keeping the last node list:', res.error)
         setNodes(prev => nextNodes(prev, res))
       } else if (name === 'today') {
@@ -225,10 +227,13 @@ export default function MapPage() {
   }
 
   // Following tab gates on the "empty room" problem: hidden until the network is
-  // big enough to follow, or the signed-in user already follows something.
-  const MIN_NODES_FOR_TABS = 4
-  const showTabs = nodes.length >= MIN_NODES_FOR_TABS ||
-    (!!user && (followedIds.length > 0 || followedHandles.length > 0))
+  // big enough to follow, or the signed-in user already follows something. Judged by
+  // the last successful node count, so a failed nodes refresh can't switch the feed (#59).
+  const showTabs = showFeedTabs({
+    nodeCount: tabsNodeCount,
+    signedIn: !!user,
+    followCount: followedIds.length + followedHandles.length,
+  })
   const activeTab = showTabs ? tab : 'global'
   const followedSet = new Set(followedIds)
   const followedHandleSet = new Set(followedHandles)

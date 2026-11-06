@@ -8,10 +8,10 @@ test('a raw_label-only row is keyed by its common-name part', () => {
   assert.equal(speciesKey({ species_name: null, raw_label: 'American Robin_Turdus migratorius' }), 'American Robin')
   assert.equal(speciesKey({ species_name: 'American Robin', raw_label: 'American Robin_Turdus migratorius' }), 'American Robin')
   assert.equal(speciesKey({ raw_label: 'Human vocal' }), 'Human vocal')
-  assert.equal(speciesKey({ species_name: null, raw_label: null }), null)
+  assert.equal(speciesKey({ species_name: null, raw_label: null }), '')
   assert.equal(speciesKey({ species_name: ' American Robin ', raw_label: null }), 'American Robin')
   assert.equal(speciesKey({ species_name: '  ', raw_label: 'American Robin_Turdus migratorius' }), 'American Robin')
-  assert.equal(speciesKey({ raw_label: '_Turdus migratorius' }), null)
+  assert.equal(speciesKey({ raw_label: '_Turdus migratorius' }), '')
 })
 
 test('rows with and without species_name count as one species', () => {

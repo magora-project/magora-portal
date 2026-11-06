@@ -82,3 +82,22 @@ export function createMapSectionLoader({ apply, onFeedSettled }) {
     return Promise.all(results).then(() => {})
   }
 }
+
+// speciesKey lives in speciesKey.js (one definition for counts, dedupe and insight requests, #59);
+// re-exported here for existing importers.
+export { speciesKey }
+
+// The Global/Following tabs stay hidden until the network has enough places to follow, or the
+// signed-in viewer already follows something.
+export const MIN_NODES_FOR_TABS = 4
+
+export function showFeedTabs({ nodeCount, signedIn, followCount }) {
+  return nodeCount >= MIN_NODES_FOR_TABS || (signedIn && followCount > 0)
+}
+
+// The node count the tabs are judged by (#59). A failed nodes refresh keeps the last good count,
+// so a transient map failure cannot hide the tabs and switch a viewer's Following feed to Global.
+export function nodeCountForTabs(previous, res) {
+  if (res.error) return previous
+  return (res.data || []).length
+}
