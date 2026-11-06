@@ -62,6 +62,8 @@ export const validateRecord = (r) => {
     if (!nonEmpty(f.summary)) p.push(`${n}.summary: must be a non-empty string`)
     if (f.file !== undefined && typeof f.file !== 'string') p.push(`${n}.file: must be a string when present`)
     if (f.line !== undefined && !Number.isInteger(f.line)) p.push(`${n}.line: must be an integer when present`)
+    // A finding the evidence writer computed itself (a conformance postcondition, plan Task 18), not a reviewer.
+    if (f.source !== undefined && f.source !== 'postcondition') p.push(`${n}.source: must be postcondition when present`)
     if (f.disposition !== undefined) {
       const d = f.disposition
       if (!isObj(d)) p.push(`${n}.disposition: must be an object when present`)
@@ -169,18 +171,23 @@ export const undisposedBlocking = (rec, { deviations = [] } = {}) =>
 
 // Findings to carry into a re-review. Ordinary IDs are prefixed with the old record's stem; a gate ID keeps
 // its ID and is always carried: one with an acceptable disposition (or a P3) is copied as is, so it stays verifiable at the chain head.
-// A justified-deviation on a conformance record is copied as is too (ID and disposition): whether it is
-// acceptable depends on the PR body's Deviations field, which only the review-evidence check reads, at the chain head.
+// A blocking justified-deviation on a conformance record is reopened like an undisposed finding (prefixed, disposition
+// dropped), whatever `deviations` says: the re-review reassesses it, so a deviation the author has since fixed can be
+// marked fixed and dropped from the Deviations field, and one still present comes back for the author to dispose again.
+// Copying it as is would leave a disposition that fails at the chain head once the Deviations field drops its ID.
 export const inherit = (old, { deviations = [] } = {}) => {
   const out = []
   const opts = { deviations, recordType: old.type }
   for (const f of old.findings || []) {
     const gate = isGateId(f.id)
     if (gate && dispositionOk(f, opts)) { out.push({ ...f }); continue } // every gate ID stays visible at the chain head
-    if (old.type === 'conformance' && isObj(f.disposition) && f.disposition.kind === 'justified-deviation') { out.push({ ...f }); continue }
-    if (!isBlockingByDefault(f) || dispositionOk(f, opts)) continue
+    const justified = old.type === 'conformance' && isObj(f.disposition) && f.disposition.kind === 'justified-deviation'
+    if (!isBlockingByDefault(f) || (!justified && dispositionOk(f, opts))) continue
     const { disposition: _d, ...rest } = f // eslint-disable-line no-unused-vars
     out.push({ ...rest, id: gate ? f.id : `${old.stem}#${f.id}` })
   }
   return out
 }
+
+// A conformance record's deviations (plan Task 18): the IDs of its findings without a `fixed` disposition.
+export const deviationIds = (findings) => (findings || []).filter((f) => !(isObj(f.disposition) && f.disposition.kind === 'fixed')).map((f) => f.id)

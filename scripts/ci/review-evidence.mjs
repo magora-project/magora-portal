@@ -172,9 +172,9 @@ export function evaluate({ records, required, identity, body, addedStems, author
     if (input.error) { fail(`FAIL ${label}: ${input.error}`); continue }
     const candidates = heads.filter((r) => r.slot === slot && r.input.kind === input.kind && (input.kind !== 'blob' || r.input.path === input.path))
     if (candidates.length === 0) {
-      // Conformance records come from `review.mjs conformance` (plan Task 18, PR C); `run --slot conformance` refuses.
+      // Conformance records come from `review.mjs conformance` (plan Task 18); `run --slot conformance` refuses.
       const how = slot === 'conformance'
-        ? 'conformance records come from npm run review -- conformance, which arrives with plan Task 18'
+        ? 'write one with npm run review -- conformance --plan <path> --tasks <ids> --author <vendor>'
         : `write one with npm run review -- run --slot ${slot}${input.kind === 'blob' ? ` --path ${input.path}` : ''}`
       fail(`FAIL ${label}: no record (${how})`)
       continue

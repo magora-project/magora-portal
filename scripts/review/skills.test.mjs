@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { SLOTS } from './records.mjs'
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
-const REQUIRED = ['brainstorming', 'writing-plans', 'push-readiness', 'codex-review']
+const REQUIRED = ['brainstorming', 'writing-plans', 'push-readiness', 'codex-review', 'conformance']
 
 let pass = 0, fail = 0
 // A thenable condition is a failure: a Promise is truthy even when it resolves to false.
@@ -69,8 +69,18 @@ ok('codex-review documents --author, --supersedes, dispose and the scan', (() =>
   return /--author/.test(b) && /--supersedes/.test(b) && /dispose/.test(b) && /semgrep-artifact\.mjs/.test(b)
 })())
 
-export const conformanceDeferred = (body) => /`review\.mjs conformance`[^\n]*Task 18/.test(body) && /run --slot conformance` refuses/.test(body)
-ok('codex-review does not present conformance as runnable before plan Task 18', conformanceDeferred(skills.find((x) => x.dir === 'codex-review')?.body ?? ''))
+// Plan Task 18 shipped `review.mjs conformance`: codex-review hands the stage to the conformance skill, which names
+// the command, the re-run and the Deviations field, and no skill still calls conformance unavailable.
+const bodyOf = (n) => skills.find((x) => x.dir === n)?.body ?? ''
+export const conformanceRunnable = (codexReview, conformance) => codexReview.includes('.claude/skills/conformance/SKILL.md')
+  && !/not runnable yet|arrives with plan Task 18|no local conformance review yet/.test(codexReview)
+  && /npm run review -- conformance --plan/.test(conformance) && /--supersedes/.test(conformance) && /Deviations:/.test(conformance)
+ok('codex-review points to the conformance skill, which documents the command, --supersedes and Deviations', conformanceRunnable(bodyOf('codex-review'), bodyOf('conformance')))
+ok('the conformance check fails on the old deferred wording', conformanceRunnable('see .claude/skills/conformance/SKILL.md; conformance is not runnable yet', bodyOf('conformance')) === false)
+ok('writing-plans has a Typed targets section naming the five types and checkExisting', (() => {
+  const b = bodyOf('writing-plans')
+  return /^## Typed targets$/m.test(b) && ['existing', 'create', 'modify', 'delete', 'command'].every((t) => b.includes(`\`${t}\``)) && /checkExisting/.test(b)
+})())
 
 // The checker itself: it must be able to fail.
 const fake = (dir, text) => parseSkill(dir, text)

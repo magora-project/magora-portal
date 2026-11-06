@@ -413,7 +413,7 @@ try {
   {
     freshRepo()
     const r = await runs(['run', '--slot', 'conformance', '--author', 'anthropic'])
-    ok('run --slot conformance is refused before spawning, naming review.mjs conformance and Task 18', r.code === 1 && r.sp.length === 0 && /review\.mjs conformance/.test(r.err) && /Task 18/.test(r.err))
+    ok('run --slot conformance is refused before spawning, naming the conformance command and the block it fills', r.code === 1 && r.sp.length === 0 && /review -- conformance --plan/.test(r.err) && /conformance block/.test(r.err) && /not available yet/.test(r.err) === false)
     ok('...and writes no record', readRecords({ cwd: repo }).length === 0)
   }
 

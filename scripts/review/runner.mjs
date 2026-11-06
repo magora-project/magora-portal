@@ -1,7 +1,9 @@
 // Local reviewer runner (spec §5.3, §5.5, §5.6): picks an independent reviewer, sends it the slot prompt and the
 // review input, classifies the outcome mechanically and writes a review record. CLI entry: scripts/review/review.mjs.
-// completeness (and, from PR C, conformance) prompts also carry the promise context: the plan task sections declared
-// in .review/local.json, the spec sections those tasks cite, and the commit messages since the merge base.
+// completeness and conformance prompts also carry the promise context: the plan task sections (declared in
+// .review/local.json, or for conformance by its --tasks), the spec sections those tasks cite, and the commit messages
+// since the merge base. Conformance runs through `review.mjs conformance` (scripts/review/conformance.mjs), which
+// calls runReview with its postconditions; `run --slot conformance` refuses.
 //
 //   run     --slot <slot> --author <openai|anthropic|google|none> [--reviewer codex|claude|gemini]
 //           [--path <spec-or-plan>] [--supersedes <stem>] [--base <ref>] [--model opus|fable] [--timeout-min <n>]
@@ -13,7 +15,7 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import { DIFF_ARGS, EVIDENCE_DIR, blobIdentity, geminiDiff, git, inputIdentity, mergeBase } from './identity.mjs'
-import { SLOTS, addedRecordStems, chainHeads, inherit, isBlockingByDefault, isGateId, readRecords, repoPath, slotFile, typeForSlot, undisposedBlocking, writeRecord } from './records.mjs'
+import { SLOTS, addedRecordStems, chainHeads, deviationIds, inherit, isBlockingByDefault, isGateId, readRecords, repoPath, slotFile, typeForSlot, undisposedBlocking, writeRecord } from './records.mjs'
 import { checkExisting, filesAtRev, gitFacts, resolveRev, resolveTasks } from './plan-targets.mjs'
 import * as codex from './adapters/codex.mjs'
 import * as claude from './adapters/claude.mjs'
@@ -208,17 +210,19 @@ const readLocal = (root) => {
 
 // The promise context for a PR input: [{ heading, text }] plus warnings. Read at HEAD (the reviewed commit), not the
 // work tree. Throws a usage error for a declared task the plan lacks, so a typo cannot drop a task's promises.
-const promiseContext = async ({ root, mb, head }) => {
+// `plan` ({ path, tasks }) replaces local.json's plan: conformance names its tasks on the command line.
+const promiseContext = async ({ root, mb, head, plan: declared }) => {
   const parts = [], warnings = []
   const at = async (path) => must(await git(['cat-file', 'blob', `${head}:${repoPath(path)}`], { cwd: root }), `reading ${path} at HEAD`)
   const local = readLocal(root)
-  if (local === null) warnings[warnings.length] = `no ${EVIDENCE_DIR}/local.json: the prompt has no plan task or spec sections (run npm run review -- init-local)`
+  if (local === null) warnings[warnings.length] = `no ${EVIDENCE_DIR}/local.json: the prompt has no ${declared ? '' : 'plan task or '}spec sections (run npm run review -- init-local)`
   let cited = []
-  if (local?.plan !== undefined) {
-    if (!isObj(local.plan) || typeof local.plan.path !== 'string' || !Array.isArray(local.plan.tasks)) usage(`${EVIDENCE_DIR}/local.json: plan must be { path, tasks }`)
-    const { sections, missing } = planTaskSections(await at(local.plan.path), local.plan.tasks)
-    if (missing.length) usage(`${local.plan.path} has no section for declared task(s) ${missing.join(', ')} (${EVIDENCE_DIR}/local.json)`)
-    for (const sct of sections) parts[parts.length] = { heading: `Plan ${repoPath(local.plan.path)}, ${sct.id}`, text: sct.text }
+  const plan = declared ?? local?.plan
+  if (plan !== undefined) {
+    if (!isObj(plan) || typeof plan.path !== 'string' || !Array.isArray(plan.tasks)) usage(`${EVIDENCE_DIR}/local.json: plan must be { path, tasks }`)
+    const { sections, missing } = planTaskSections(await at(plan.path), plan.tasks)
+    if (missing.length) usage(`${plan.path} has no section for declared task(s) ${missing.join(', ')}${declared ? '' : ` (${EVIDENCE_DIR}/local.json)`}`)
+    for (const sct of sections) parts[parts.length] = { heading: `Plan ${repoPath(plan.path)}, ${sct.id}`, text: sct.text }
     cited = citedSections(sections.map((x) => x.text).join('\n'))
   }
   if (typeof local?.spec === 'string' && cited.length) {
@@ -284,8 +288,8 @@ const USAGE = `usage:
                  [--tasks <T10,T12-T14|none>] [--rev <sha>]   (plan slot: --tasks is required when the plan is already at the revision)
   review.mjs dispose --record <stem> --finding <id> --kind ${DISPOSE_KINDS.join('|')} --reason <text> [--issue <url>]`
 
-class UsageError extends Error {}
-const usage = (msg) => { throw new UsageError(msg) }
+export class UsageError extends Error {}
+export const usage = (msg) => { throw new UsageError(msg) }
 
 const must = (r, what) => {
   if (r.code !== 0) throw new Error(`${what} failed (${r.code}): ${r.stderr.trim()}`)
@@ -351,11 +355,24 @@ const writeWithStem = (cwd, slot, identity, build) => {
 
 const cmdRun = async (argv, ctx) => {
   const { values: o } = parseArgs({ args: argv, options: RUN_OPTIONS, strict: true, allowPositionals: false })
-  const { cwd, io } = ctx
   if (!SLOTS.includes(o.slot)) usage(`--slot must be one of ${SLOTS.join('|')}`)
   // A conformance record needs its conformance block (tasks, deviations, commands), which only the conformance
   // writer fills; a record written here could never pass review-evidence.
-  if (o.slot === 'conformance') usage('conformance records come from `review.mjs conformance` (plan Task 18, PR C), which is not available yet; `run --slot conformance` would write a record without the conformance block that review-evidence requires')
+  if (o.slot === 'conformance') usage('conformance records come from `npm run review -- conformance --plan <path> --tasks <ids> --author <vendor>` (scripts/review/conformance.mjs), which runs the plan\'s postconditions and fills the conformance block that review-evidence requires; `run --slot conformance` would write a record without it')
+  return runReview(o, ctx)
+}
+
+// One review of o.slot (the parsed `run` flags), written as a record. `conf` is the conformance writer's part
+// (scripts/review/conformance.mjs), required for the conformance slot and refused for any other:
+//   { plan: { path, tasks }, check: async ({ root, mb, head }) -> { findings, commands, context } }
+// check() runs after every refusal and before the reviewer. Its findings (the failed postconditions, D1..Dn, each
+// with source 'postcondition') lead the record; the reviewer's findings are renumbered to follow them; inherited
+// postcondition findings are dropped, because check() recomputes them on every run. The record carries
+// conformance: { tasks, deviations (the IDs of findings without a `fixed` disposition), commands }.
+export const runReview = async (o, ctx, conf = null) => {
+  const { cwd, io } = ctx
+  if (!SLOTS.includes(o.slot)) usage(`--slot must be one of ${SLOTS.join('|')}`)
+  if ((o.slot === 'conformance') !== (conf !== null)) usage(o.slot === 'conformance' ? 'a conformance review needs the conformance writer: run npm run review -- conformance' : `slot ${o.slot} takes no conformance part`)
   if (!AUTHOR_VENDORS.includes(o.author)) usage(`--author must be one of ${AUTHOR_VENDORS.join('|')}`)
   if (o.reviewer !== undefined && !ORDER.includes(o.reviewer)) usage(`--reviewer must be one of ${ORDER.join('|')}`)
   if (isSubstitute(o.slot) && o.reviewer === undefined) usage(`slot ${o.slot} needs --reviewer codex|claude|gemini (substitute slots are not picked by author vendor)`)
@@ -444,8 +461,14 @@ const cmdRun = async (argv, ctx) => {
     if (old.slot !== o.slot) usage(`record ${old.stem} is slot ${old.slot}, not ${o.slot}`)
     if (old.input.kind !== input.kind || (blob && old.input.path !== input.path)) usage(`record ${old.stem} covers ${old.input.kind} ${old.input.path ?? ''}, not this input`)
     if (old.authorVendor !== o.author) usage(`record ${old.stem} has authorVendor ${old.authorVendor}, not ${o.author}: a re-review keeps the author`)
-    // The reference check is recomputed on every run, so the old record's findings from it are not inherited.
-    for (const f of inherit(old)) if (!(planRef && /#ref-\d+$/.test(f.id))) (f.disposition !== undefined ? carried : toAssess).push(f)
+    // The reference check and the conformance postconditions are recomputed on every run, so the old record's
+    // findings from them are not inherited. A conformance justified-deviation arrives here reopened (records.mjs
+    // inherit), so it goes to toAssess: the reviewer reassesses it rather than it being carried as is.
+    for (const f of inherit(old)) {
+      if ((planRef && /#ref-\d+$/.test(f.id)) || f.source === 'postcondition') continue
+      if (f.disposition !== undefined) carried.push(f)
+      else toAssess.push(f)
+    }
     // §5.3 scope: the delta between the two identities, or the two blobs for a spec or plan, and only after a
     // completed review; the full input too while an inherited blocking finding is open.
     if (blob && old.outcome === 'completed') {
@@ -478,10 +501,18 @@ const cmdRun = async (argv, ctx) => {
 
   let context = []
   if (!blob && CONTEXT_SLOTS.includes(o.slot)) {
-    const pc = await promiseContext({ root, mb: input.mergeBase, head })
+    const pc = await promiseContext({ root, mb: input.mergeBase, head, plan: conf?.plan })
     context = pc.parts
     for (const w of pc.warnings) io.err(`${w}\n`)
   }
+
+  // The conformance postconditions: after every refusal above, before the reviewer.
+  let checked = null
+  if (conf) {
+    checked = await conf.check({ root, mb: input.mergeBase, head })
+    context = [...context, ...checked.context]
+  }
+  const preFindings = [...(planRef?.findings ?? []), ...(checked?.findings ?? [])]
 
   const promptFor = ctx.promptFor ?? defaultPromptFor
   const slotPrompt = promptFor(o.slot, { root })
@@ -504,15 +535,18 @@ const cmdRun = async (argv, ctx) => {
     if (c.outcome === 'completed') {
       const status = new Map(c.inherited.map((e) => [e.id, e.status]))
       const assessed = toAssess.map((f) => (status.get(f.id) === 'resolved' ? { ...f, disposition: { kind: 'fixed', by: newStem } } : f))
-      findings = [...(planRef?.findings ?? []), ...c.findings, ...assessed, ...carried]
+      // Conformance deviation IDs: the postconditions' D1..Dn first, then the reviewer's findings in its order.
+      const fresh = conf ? c.findings.map((f, i) => ({ ...f, id: `D${preFindings.length + i + 1}` })) : c.findings
+      findings = [...preFindings, ...fresh, ...assessed, ...carried]
     } else {
-      findings = [...(planRef?.findings ?? []), ...toAssess, ...carried] // nobody reviewed: carry everything forward undisposed
+      findings = [...preFindings, ...toAssess, ...carried] // nobody reviewed: carry everything forward undisposed
     }
     return {
       schema: 1, type: recordType(o.slot), slot: o.slot, input,
       reviewer: { vendor: ADAPTER_VENDOR[reviewer], model }, authorVendor: o.author,
       outcome: c.outcome, verdict: c.verdict, findings, supersedes: old ? old.stem : null,
       ...(planRef ? { rev: planRef.rev, tasks: planRef.tasks } : {}),
+      ...(conf ? { conformance: { tasks: [...conf.plan.tasks], deviations: deviationIds(findings), commands: checked.commands } } : {}),
       createdAt: (ctx.now ?? (() => new Date()))().toISOString(),
     }
   })

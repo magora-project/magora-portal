@@ -83,7 +83,21 @@ Every plan starts with:
 - [ ] **Step 5: Commit** (`feat(scope): message`)
 ````
 
-Every Files line is typed (spec §5.4): `existing` (read, not changed), `create`, `modify`, `delete`, or `command` (a command whose exit status conformance records). A test file is a `create` or `modify` target like any other. Keep only the types a task uses.
+Every Files line is typed; see `## Typed targets` below.
+
+## Typed targets
+
+(spec §5.4) Every line of a task's Files block is `` - <type>: `<value>` ``, with one of five types:
+
+- `existing`: a file the task reads and does not change. A path starting `~/` is checked on this machine, not in CI.
+- `create`: a file the task adds.
+- `modify`: a file the task changes.
+- `delete`: a file the task removes.
+- `command`: a command the task runs, such as `npm test`; conformance runs it with no shell and records its exit status, so write one command per line, with no `&&`, `|` or `>`.
+
+The value is a repository path with `/` separators (or the command). Text after the closing backtick is allowed and ignored, so `` - modify: `scripts/review/plan-targets.mjs` (the parser only) `` is a `modify` target for `scripts/review/plan-targets.mjs`. An untyped line in a Files block is a plan-review finding. A test file is a `create` or `modify` target like any other. Keep only the types a task uses; an operator task (`### Task <n> (operator): <title>`) may have no Files block at all.
+
+The targets are checked twice. Plan review runs the reference check (`checkExisting` in `scripts/review/plan-targets.mjs`): walking the tasks in order from the revision they start from, each `existing` and `modify` target is a file there or is created by an earlier task, and is not deleted by one; no `create` target already exists or is created twice. Conformance (`.claude/skills/conformance/SKILL.md`) checks the declared tasks' postconditions after implementation: `create` and `modify` targets are files changed by the PR, `delete` targets are gone, and each `command` target exits 0.
 
 ## What a Step Contains
 
@@ -114,7 +128,7 @@ Saving the plan commits it; then review it. Plan review is three checks (`.claud
 
 `npm run review -- run --slot plan --path <plan> --author <vendor>`
 
-`<vendor>` is the vendor of the model that wrote the plan: `anthropic` for Claude Code, `openai` for Codex, `none` when a person wrote it by hand. If the plan is already on `main` (an amendment), it also takes `--tasks <the tasks not yet landed>`, or `--tasks none` when none remain; that flag arrives with the typed reference check (plan Task 17), and until then the command does not accept it. The typed reference check, once shipped, runs inside this command before the reviewer; until then do it by hand at the merge base (`git merge-base origin/main HEAD`, after `git fetch origin main`): each `existing` and `modify` target is a file there or is created by an earlier task, and is not deleted by one; no `create` target is already a file there or created by an earlier task; no Files line is untyped. Each problem is a P1 finding. Say in the PR which of the three checks ran by hand.
+`<vendor>` is the vendor of the model that wrote the plan: `anthropic` for Claude Code, `openai` for Codex, `none` when a person wrote it by hand. If the plan is already on `main` (an amendment), it also takes `--tasks <the tasks not yet landed>`, or `--tasks none` when none remain. The typed reference check (`checkExisting`, `## Typed targets` above) runs inside this command before the reviewer, at the merge base with `origin/main` unless `--rev <sha>` names another revision; each problem it reports is a P1 finding of the plan record, whatever the reviewer says.
 
 An empty reviewer reply is an unrun review, not a pass. Editing the plan changes its blob and voids the record, so review again after any fix. After two rounds where the new findings all sit in the previous round's fixes, apply `## Stop rule`. What blocks is in `## What blocks`.
 

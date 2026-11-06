@@ -157,6 +157,8 @@ try {
   ok('accepts an unknown string severity (it must stay representable)', validateRecord(mk({ findings: [{ id: 'F1', severity: 'high', summary: 's' }] })).length === 0)
   ok('rejects a non-string severity', bad({ findings: [{ id: 'F1', severity: 1, summary: 's' }] }, /findings\[0\]\.severity/))
   ok('rejects a non-integer finding line', bad({ findings: [{ id: 'F1', severity: 'P1', summary: 's', line: 'x' }] }, /findings\[0\]\.line/))
+  ok('accepts a finding whose source is postcondition', validateRecord(mk({ findings: [{ id: 'D1', severity: 'P1', summary: 's', source: 'postcondition' }] })).length === 0)
+  ok('rejects any other finding source', bad({ findings: [{ id: 'D1', severity: 'P1', summary: 's', source: 'reviewer' }] }, /findings\[0\]\.source/))
   ok('rejects an unknown disposition kind', bad({ findings: [{ id: 'F1', severity: 'P1', summary: 's', disposition: { kind: 'x' } }] }, /disposition\.kind/))
   ok('accepts a fully populated finding', validateRecord(mk({ findings: [{ id: 'F1', severity: 'P1', summary: 's', file: 'a/b.js', line: 3, disposition: { kind: 'fixed', by: 'z' } }] })).length === 0)
   ok('rejects a non-string, non-null supersedes', bad({ supersedes: 3 }, /supersedes/))
@@ -181,13 +183,14 @@ try {
   ok('type substitute with slot completeness is rejected', bad({ type: 'substitute', slot: 'completeness' }, /type/))
   ok('type prepush with slot substitute:codex is rejected', bad({ type: 'prepush', slot: 'substitute:codex' }, /type/))
 
-  // --- inherit keeps a conformance justified-deviation (judged at the chain head against the Deviations field) ---
+  // --- inherit reopens a conformance justified-deviation for the re-review to reassess (PR #77 Gemini P1) ---
   const confRec = { stem: 'conformance--abc--1', type: 'conformance', findings: [
     { id: 'D1', severity: 'P1', summary: 'dev', disposition: { kind: 'justified-deviation', reason: 'see Deviations' } },
     { id: 'D2', severity: 'P1', summary: 'open dev' },
   ] }
   const inhConf = inherit(confRec)
-  ok('inherit carries a conformance justified-deviation with its ID and disposition', (() => { const d = inhConf.find((x) => x.id === 'D1'); return d !== undefined && d.disposition?.kind === 'justified-deviation' })())
+  ok('inherit reopens a conformance justified-deviation: prefixed, disposition dropped, not copied as is', inhConf.some((x) => x.id === `${confRec.stem}#D1` && x.disposition === undefined) && inhConf.some((x) => x.id === 'D1') === false)
+  ok('inherit reopens it even when the Deviations field still lists it', inherit(confRec, { deviations: [{ id: 'D1', justification: 'j' }] }).map((x) => `${x.id}:${x.disposition === undefined}`).join() === `${confRec.stem}#D1:true,${confRec.stem}#D2:true`)
   ok('inherit still prefixes and reopens an undisposed conformance finding', inhConf.some((x) => x.id === `${confRec.stem}#D2` && x.disposition === undefined))
   const preRec = { stem: 'correctness--abc--9', type: 'prepush', findings: [{ id: 'D1', severity: 'P1', summary: 'dev', disposition: { kind: 'justified-deviation', reason: 'x' } }] }
   ok('inherit reopens a justified-deviation on a non-conformance record', inherit(preRec).map((x) => `${x.id}:${x.disposition === undefined}`).join() === `${preRec.stem}#D1:true`)

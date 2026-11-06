@@ -1,6 +1,6 @@
 ---
 name: codex-review
-description: Use to run a local independent review (spec, plan, correctness, completeness, or a bot substitute; conformance arrives with plan Task 18) and write its evidence record. Picks the slot and reviewer, falls back on failure, never reports an unrun review as a pass.
+description: Use to run a local independent review (spec, plan, correctness, completeness, or a bot substitute; conformance has its own skill) and write its evidence record. Picks the slot and reviewer, falls back on failure, never reports an unrun review as a pass.
 ---
 
 # Local Review
@@ -13,13 +13,13 @@ Runs one review slot through `scripts/review/review.mjs` and reads the record it
 |---|---|---|
 | Spec review (stage 3) | `spec` | the spec file |
 | Plan review (stage 5) | `plan` | the plan file |
-| Plan conformance (stage 8) | `conformance`: not runnable yet (see below) | the PR's diff |
+| Plan conformance (stage 8) | `conformance`, through its own command (see below) | the PR's diff and the declared plan tasks |
 | Pre-push, `standard` | `correctness` | the PR's diff |
 | Pre-push, `subtle-correctness` | `correctness`, then `completeness` | the PR's diff |
 | A bot did not or could not review (PR stage) | `substitute:coderabbit`, `substitute:codex` or `substitute:gemini` | the PR's diff |
 | `mechanical` | none | |
 
-Conformance records are written by `review.mjs conformance`, which arrives with plan Task 18 (PR C): it runs the plan's postconditions and fills the record's conformance block (tasks, deviations, commands), and review-evidence fails a conformance record without that block. Until then `run --slot conformance` refuses, so there is no local conformance review yet.
+Conformance records are written by `npm run review -- conformance`, which runs the plan's postconditions and fills the record's conformance block (tasks, deviations, commands); review-evidence fails a conformance record without that block, so `run --slot conformance` refuses. Follow `.claude/skills/conformance/SKILL.md` for that stage. Sections 4 and 5 below (reading the record, fallback, re-review) apply to it too.
 
 A review is of one input. `spec` and `plan` cover one file's blob at `HEAD` (commit it first); the rest cover the PR's own diff against its merge base at `HEAD`, so commit before you run. Any later edit voids the record.
 
@@ -39,7 +39,7 @@ Exit 0: it ran, no findings. Exit 1: it ran and found something; print lines are
 - `--path <doc>` is required for `spec` and `plan` and refused for the other slots.
 - A substitute slot is not picked by author: add `--reviewer codex|claude|gemini` naming a vendor not already counted on the PR.
 - `--base <ref>` sets the diff base (default `origin/main` when it exists, else `main`). `--timeout-min <n>` overrides the 20-minute default.
-- For a `plan` already on `main` (an amendment) the tasks not yet landed will be named with `--tasks <ids>` or `--tasks none`. That flag arrives with the typed reference check (plan Task 17); until then the CLI rejects it as an unknown flag, so do not pass it, and do the typed reference check by hand as `writing-plans` describes.
+- A `plan` run also runs the typed reference check (`writing-plans`, `## Typed targets`). For a plan already on `main` (an amendment), name the tasks not yet landed with `--tasks <ids>`, or `--tasks none`; `--rev <sha>` sets the revision they start from (default: the merge base with `origin/main`, after `git fetch origin main`).
 
 Exit 0 means the outcome was `completed`. Exit 1 is any other outcome or a usage error. The run prints `outcome:` and the record path under `.review/records/`; read that record. Its `outcome` and `verdict` fields are the answer, not your impression of the console output.
 
