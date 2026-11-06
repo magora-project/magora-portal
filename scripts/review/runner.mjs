@@ -172,7 +172,7 @@ export const planTaskSections = (text, tasks) => {
   const sections = [], missing = []
   for (const t of tasks) {
     const n = Number(String(t).replace(/^T/, ''))
-    const k = hs.findIndex((h) => new RegExp(`^Task\\s+${n}(?![0-9])`).test(h.text))
+    const k = hs.findIndex((h) => /^Task\s+(\d+)/.exec(h.text)?.[1] === String(n))
     if (k === -1) missing[missing.length] = t
     else sections[sections.length] = { id: t, text: sectionAt(lines, hs, k) }
   }

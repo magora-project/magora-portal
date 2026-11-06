@@ -33,10 +33,11 @@ export const resolveCommand = (name, { install, platform = process.platform, whe
 }
 
 // The environment for a CLI reviewer child: a copy of env (default process.env) with `extra` set and
-// GEMINI_API_KEY removed, so only the Gemini adapter, which calls the API itself, ever holds that key.
+// GEMINI_API_KEY removed in every letter case (Windows env names ignore case), so only the Gemini adapter, which
+// calls the API itself, ever holds that key.
 export const childEnv = (env, extra = {}) => {
   const e = { ...(env ?? process.env), ...extra }
-  delete e.GEMINI_API_KEY
+  for (const k of Object.keys(e)) if (k.toUpperCase() === 'GEMINI_API_KEY') delete e[k]
   return e
 }
 

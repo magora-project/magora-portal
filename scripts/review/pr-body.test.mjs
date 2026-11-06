@@ -57,7 +57,7 @@ ok('trailing spaces trimmed', parseBody('Lane: direct   \nDeviations: none  \r\n
 
 // The real template, filled in the way PR bodies in this repo fill it.
 const tpl = readFileSync(new URL('../../.github/pull_request_template.md', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
-const fill = (t, f, v) => t.replace(new RegExp(`^${f}:$`, 'm'), `${f}: ${v}`)
+const fill = (t, f, v) => t.split('\n').map((l) => (l === `${f}:` ? `${f}: ${v}` : l)).join('\n')
 const filled = fill(fill(fill(fill(tpl, 'Lane', 'docs-only'), 'Spec', 'none'), 'Plan', 'docs/superpowers/plans/x.md T19'), 'Deviations', 'none')
 ok('filled template parses with no problems', (() => {
   const r = parseBody(filled, A)

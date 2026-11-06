@@ -24,7 +24,7 @@ const ok = (n, c) => {
   if (c && typeof c.then === 'function') { fail++; console.log('  FAIL', n, '(unawaited Promise)'); c.catch(() => {}); return }
   if (c) { pass++ } else { fail++; console.log('  FAIL', n) }
 }
-const failsWith = (r, re) => r.ok === false && re.test(r.lines.join('\n')) // a negative check names the guard that fired
+const failsWith = (r, re) => r.ok === false && (typeof re === 'string' ? r.lines.join('\n').includes(re) : re.test(r.lines.join('\n'))) // a negative check names the guard that fired
 
 // ---------- scratch git ----------
 let seq = 0
@@ -223,7 +223,7 @@ try {
   ok('a P3 finding needs no disposition', evaluate(fx({ findings: [{ id: 'F1', severity: 'P3' }] })).ok)
   ok('an unparseable severity blocks', failsWith(evaluate(fx({ findings: [{ id: 'F1', severity: 'high' }] })), /F1/))
   ok('completed with a null verdict is not a recognized result', failsWith(evaluate(fx({ verdict: null })), /recognized/))
-  ok('refused / truncated / timeout outcomes fail by name', ['refused', 'truncated', 'timeout'].every((outcome) => failsWith(evaluate(fx({ outcome, verdict: null })), new RegExp(outcome))))
+  ok('refused / truncated / timeout outcomes fail by name', ['refused', 'truncated', 'timeout'].every((outcome) => failsWith(evaluate(fx({ outcome, verdict: null })), outcome)))
   ok('a fail verdict whose every finding is acceptably disposed passes ("whatever the verdict")', evaluate(fx({ verdict: 'fail', findings: [{ id: 'F1', severity: 'P1', disposition: { kind: 'reclassified-nit', reason: 'style only' } }] })).ok)
   {
     const withFixed = (by) => { const f = fx(); const c = f.records.find((r) => r.slot === 'correctness'); c.findings = [finding({ id: 'F1', severity: 'P1', disposition: { kind: 'fixed', by } })]; return f }

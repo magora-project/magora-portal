@@ -22,6 +22,10 @@ try {
   const mdPath = write('doc.md', md)
   ok('extracts fenced blocks with their language and line', extractBlocks(md).map((b) => `${b.lang}:${b.line}`).join() === 'js:3,yaml:9')
   ok('block code is the body without fences', extractBlocks(md)[0].code === 'const a = 1\n')
+  ok('a tilde line does not close a backtick fence', (() => {
+    const b = extractBlocks('```md\n~~~\nINSIDE\n```\n')
+    return b.length === 1 && b[0].code === '~~~\nINSIDE\n'
+  })())
   ok('a longer fence holds a shorter fence inside it', (() => {
     const b = extractBlocks('````md\n```js\nx\n```\n````\n')
     return b.length === 1 && b[0].lang === 'md' && b[0].code.includes('```js')

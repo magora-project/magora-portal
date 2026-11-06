@@ -16,7 +16,7 @@ process.env.GIT_CONFIG_NOSYSTEM = '1'
 
 const { DIFF_ARGS, geminiDiff, git, inputIdentity, mergeBase } = await import('./identity.mjs')
 const { readRecords, writeRecord } = await import('./records.mjs')
-const { classifyOutcome, defaultPromptFor, pickReviewer, runCli } = await import('./runner.mjs')
+const { classifyOutcome, defaultPromptFor, pickReviewer, planTaskSections, runCli } = await import('./runner.mjs')
 
 const mkOk = (counter, log = console.log) => (n, c) => {
   if (c && typeof c.then === 'function') { counter.fail++; log('  FAIL', n, '(unawaited Promise)'); c.catch(() => {}); return }
@@ -24,6 +24,13 @@ const mkOk = (counter, log = console.log) => (n, c) => {
 }
 const counter = { pass: 0, fail: 0 }
 const ok = mkOk(counter)
+
+// --- planTaskSections matches the whole task number: T1 is not Task 10 ---
+{
+  const r = planTaskSections(['## Task 10: Ten', '', 'TEN_BODY', '', '## Task 1: One', '', 'ONE_BODY', ''].join('\n'), ['T1'])
+  ok('T1 picks Task 1, not the earlier Task 10', r.missing.length === 0 && r.sections.length === 1 && r.sections[0].text.includes('ONE_BODY') && !r.sections[0].text.includes('TEN_BODY'))
+  ok('T2 with only Task 1 and Task 10 present is missing', planTaskSections('## Task 10: Ten\n\n## Task 1: One\n', ['T2']).missing[0] === 'T2')
+}
 
 // --- the helper itself: a Promise is a failure, never a pass ---
 {

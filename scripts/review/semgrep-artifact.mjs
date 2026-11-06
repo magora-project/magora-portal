@@ -30,10 +30,10 @@ export const extractBlocks = (markdown) => {
     const open = /^ {0,3}(`{3,}|~{3,})\s*([^\s`]*)[^`]*$/.exec(lines[i])
     if (!open) continue
     const ch = open[1][0], len = open[1].length
-    const close = new RegExp(`^ {0,3}\\${ch}{${len},}\\s*$`)
+    const closes = (line) => { const m = /^ {0,3}(`+|~+)\s*$/.exec(line); return m !== null && m[1][0] === ch && m[1].length >= len }
     const body = []
     let j = i + 1
-    while (j < lines.length && !close.test(lines[j])) body.push(lines[j++])
+    while (j < lines.length && !closes(lines[j])) body.push(lines[j++])
     blocks.push({ lang: open[2].toLowerCase(), code: body.length ? `${body.join('\n')}\n` : '', line: i + 1 })
     i = j
   }

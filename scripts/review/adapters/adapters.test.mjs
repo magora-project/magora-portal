@@ -102,7 +102,12 @@ ok('verdict.schema.json requires verdict, findings and inherited', ['verdict', '
   process.env.GEMINI_API_KEY = 'PROC-KEY'
   let ce2, xe2
   try { ce2 = await envOf(claude, undefined); xe2 = await envOf(codex, undefined) } finally { if (prev === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = prev }
-  ok('with no env given, the children get process.env minus GEMINI_API_KEY', ce2 !== undefined && xe2 !== undefined && !('GEMINI_API_KEY' in ce2) && !('GEMINI_API_KEY' in xe2) && ce2.PATH === process.env.PATH)
+  // Windows: process.env ignores case, a copy does not, so PATH may be spelled `Path` there. Compare by the real key.
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH')
+  ok('with no env given, the children get process.env minus GEMINI_API_KEY', ce2 !== undefined && xe2 !== undefined && !('GEMINI_API_KEY' in ce2) && !('GEMINI_API_KEY' in xe2) && pathKey !== undefined && ce2[pathKey] === process.env[pathKey])
+  // Windows env names ignore case, so a child would read `gemini_api_key` as GEMINI_API_KEY: strip every spelling.
+  const mixed = await envOf(codex, { PATH: '/b', gemini_api_key: 'k1', Gemini_Api_Key: 'k2' })
+  ok('a GEMINI_API_KEY in any letter case is removed', mixed !== undefined && !Object.keys(mixed).some((k) => k.toUpperCase() === 'GEMINI_API_KEY') && mixed.PATH === '/b')
   const hookSrc = readFileSync(new URL('../../../.claude/hooks/lane-threshold.mjs', import.meta.url), 'utf8')
   ok('the hook really honours LANE_THRESHOLD_DISABLE === \'1\'', hookSrc.includes("env.LANE_THRESHOLD_DISABLE === '1'"))
 }
