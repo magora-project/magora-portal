@@ -132,12 +132,12 @@ export const dispositionOk = (finding, { deviations = [], recordType } = {}) => 
 
 
 // Findings to carry into a re-review. Ordinary IDs are prefixed with the old record's stem; a gate ID keeps
-// its ID, and one already `fixed` is copied with its disposition so it stays verifiable at the chain head.
+// its ID and is always carried: one with an acceptable disposition (or a P3) is copied as is, so it stays verifiable at the chain head.
 export const inherit = (old) => {
   const out = []
   for (const f of old.findings || []) {
     const gate = isGateId(f.id)
-    if (gate && isObj(f.disposition) && f.disposition.kind === 'fixed' && dispositionOk(f)) { out.push({ ...f }); continue }
+    if (gate && dispositionOk(f)) { out.push({ ...f }); continue } // every gate ID stays visible at the chain head
     if (!isBlockingByDefault(f) || dispositionOk(f)) continue
     const { disposition: _d, ...rest } = f // eslint-disable-line no-unused-vars
     out.push({ ...rest, id: gate ? f.id : `${old.stem}#${f.id}` })

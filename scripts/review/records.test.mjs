@@ -122,6 +122,17 @@ try {
   ] }
   ok('inherit copies a fixed gate-ID finding with its disposition, and still drops a fixed ordinary one', (() => { const out = inherit(subFixed); const g = out.find((x) => x.id === 'thread:PRRT_fixed'); return g && g.disposition.kind === 'fixed' && g.disposition.by === subFixed.stem && !out.some((x) => x.id.endsWith('#F1')) })())
   ok('inherit also keeps an undisposed gate-ID finding, without a disposition', (() => { const g = inherit(subFixed).find((x) => x.id === 'thread:PRRT_open'); return g !== undefined && g.disposition === undefined })())
+  const gates = inherit({ stem: 'substitute-gemini--abc--1', findings: [
+    { id: 'gemini:pre', severity: 'P1', summary: 's', disposition: { kind: 'pre-existing', reason: 'r', issue: '#9' } },
+    { id: 'cr:nit', severity: 'P2', summary: 's', disposition: { kind: 'reclassified-nit', reason: 'style' } },
+    { id: 'thread:p3', severity: 'P3', summary: 's' },
+    { id: 'thread:bad', severity: 'P1', summary: 's', disposition: { kind: 'fixed' } },
+  ] })
+  ok('inherit carries a pre-existing gate finding with its disposition', gates.find((x) => x.id === 'gemini:pre')?.disposition?.issue === '#9')
+  ok('inherit carries a reclassified-nit gate finding with its disposition', gates.find((x) => x.id === 'cr:nit')?.disposition?.kind === 'reclassified-nit')
+  ok('inherit carries a P3 gate finding', gates.some((x) => x.id === 'thread:p3'))
+  ok('inherit carries an invalidly disposed gate finding without the disposition', (() => { const g = gates.find((x) => x.id === 'thread:bad'); return g !== undefined && g.disposition === undefined })())
+  ok('inherit drops a P3 ordinary finding but carries every gate finding', gates.length === 4 && inherit({ stem: 'o', findings: [{ id: 'F1', severity: 'P3', summary: 's' }] }).length === 0)
   ok('inherit does not mutate its input', subFixed.findings.length === 3 && subFixed.findings[0].id === 'thread:PRRT_fixed')
   ok('inherit of a record with no findings is []', inherit({ stem: 'e', findings: [] }).length === 0)
 
