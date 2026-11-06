@@ -128,3 +128,42 @@ test("the insight button needs the card's node; a stored insight always shows", 
   assert.equal(insightsAvailableFor({ node_id: 'n1' }, node), true, 'node loaded')
   assert.equal(insightsAvailableFor({ node_id: 'n1', insight: 'stored' }, undefined), true)
 })
+
+// #59 item 2: one key per species, whether a row carries species_name or only raw_label.
+test('speciesKey: raw_label "Common_Scientific" keys to its common name', async () => {
+  const { speciesKey } = await import('./mapSections.js')
+  assert.equal(speciesKey({ species_name: 'American Robin' }), 'American Robin')
+  assert.equal(speciesKey({ species_name: null, raw_label: 'American Robin_Turdus migratorius' }), 'American Robin')
+  assert.equal(speciesKey({ species_name: 'American Robin', raw_label: 'American Robin_Turdus migratorius' }), 'American Robin')
+  assert.equal(speciesKey({ raw_label: 'Engine' }), 'Engine', 'a raw label with no scientific part is its own key')
+  assert.equal(speciesKey({ species_name: '', raw_label: '' }), '')
+  assert.equal(speciesKey({}), '')
+})
+
+test('speciesKey merges a species split across species_name and raw_label rows', async () => {
+  const { speciesKey } = await import('./mapSections.js')
+  const rows = [
+    { species_name: 'American Robin' },
+    { species_name: null, raw_label: 'American Robin_Turdus migratorius' },
+    { species_name: 'Song Sparrow' },
+  ]
+  assert.equal(new Set(rows.map(speciesKey)).size, 2)
+})
+
+// #59 item 1: a failed nodes refresh must not hide the Global/Following tabs.
+test('nodeCountForTabs keeps the last good count when a nodes refresh fails', async () => {
+  const { nodeCountForTabs } = await import('./mapSections.js')
+  assert.equal(nodeCountForTabs(0, { data: [1, 2, 3, 4, 5], error: null }), 5)
+  assert.equal(nodeCountForTabs(5, { data: null, error: new Error('down') }), 5, 'failure keeps the previous count')
+  assert.equal(nodeCountForTabs(5, { data: [1], error: null }), 1, 'a successful smaller list still lowers it')
+  assert.equal(nodeCountForTabs(0, { data: null, error: null }), 0)
+})
+
+test('showFeedTabs: enough nodes, or a signed-in user who follows something', async () => {
+  const { showFeedTabs, MIN_NODES_FOR_TABS } = await import('./mapSections.js')
+  assert.equal(MIN_NODES_FOR_TABS, 4)
+  assert.equal(showFeedTabs({ nodeCount: 4, signedIn: false, followCount: 0 }), true)
+  assert.equal(showFeedTabs({ nodeCount: 3, signedIn: false, followCount: 0 }), false)
+  assert.equal(showFeedTabs({ nodeCount: 0, signedIn: true, followCount: 1 }), true)
+  assert.equal(showFeedTabs({ nodeCount: 0, signedIn: false, followCount: 1 }), false, 'follows only count when signed in')
+})

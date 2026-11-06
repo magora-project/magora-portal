@@ -15,7 +15,7 @@ import ListenButton from '../components/ListenButton'
 import MobileDetectionCard from '../components/MobileDetectionCard'
 import { AMBER } from '../lib/listen'
 import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
-import { createMapSectionLoader, insightsAvailableFor } from '../lib/mapSections'
+import { createMapSectionLoader, insightsAvailableFor, nodeCountForTabs, showFeedTabs, speciesKey } from '../lib/mapSections'
 
 function MapController({ points }) {
   const map = useMap()
@@ -44,6 +44,7 @@ export default function MapPage() {
   const [sessions, setSessions] = useState([])
   const [nodes, setNodes] = useState([])
   const [nodesAvailable, setNodesAvailable] = useState(null)
+  const [tabsNodeCount, setTabsNodeCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [partialFeedError, setPartialFeedError] = useState(false)
@@ -99,6 +100,7 @@ export default function MapPage() {
   const [loadSections] = useState(() => createMapSectionLoader({
     apply(name, res) {
       if (name === 'nodes') {
+        setTabsNodeCount(prev => nodeCountForTabs(prev, res))
         if (res.error) {
           console.warn('MapPage nodes query failed:', res.error)
           setNodes([])
@@ -118,7 +120,7 @@ export default function MapPage() {
         setTodayDetections(todayData || [])
         setTodaySpeciesCount(todayData == null
           ? null
-          : new Set(todayData.map(d => d.species_name || d.raw_label).filter(n => n && !isHiddenSpecies(n))).size)
+          : new Set(todayData.map(speciesKey).filter(n => n && !isHiddenSpecies(n))).size)
       } else {
         const rows = res.error ? [] : (res.data || [])
         if (name === 'detections') setDetections(rows)
@@ -253,15 +255,18 @@ export default function MapPage() {
   }
 
   const speciesCountToday = todaySpeciesCount == null ? null : (todayDetections || []).reduce((acc, d) => {
-    const name = d.species_name || d.raw_label
+    const name = speciesKey(d)
     if (name && !isHiddenSpecies(name)) acc[name] = (acc[name] || 0) + 1
     return acc
   }, {})
   // Following tab gates on the "empty room" problem: hidden until the network is
-  // big enough to follow, or the signed-in user already follows something.
-  const MIN_NODES_FOR_TABS = 4
-  const showTabs = nodes.length >= MIN_NODES_FOR_TABS ||
-    (!!user && (followedIds.length > 0 || followedHandles.length > 0))
+  // big enough to follow, or the signed-in user already follows something. Judged by
+  // the last successful node count, so a failed nodes refresh can't switch the feed (#59).
+  const showTabs = showFeedTabs({
+    nodeCount: tabsNodeCount,
+    signedIn: !!user,
+    followCount: followedIds.length + followedHandles.length,
+  })
   const activeTab = showTabs ? tab : 'global'
   const followedSet = new Set(followedIds)
   const followedHandleSet = new Set(followedHandles)
@@ -269,9 +274,9 @@ export default function MapPage() {
     ? detections.filter(d => followedSet.has(d.node_id))
     : detections
   const dedupedDetections = baseDetections.filter((d, idx) => {
-    const name = d.species_name || d.raw_label || ''
+    const name = speciesKey(d)
     if (isHiddenSpecies(name)) return false
-    return baseDetections.findIndex(x => (x.species_name || x.raw_label) === name) === idx
+    return baseDetections.findIndex(x => speciesKey(x) === name) === idx
   })
 
   // Mobile Listens with at least one confident, non-hidden ID (avoids empty cards).
@@ -538,7 +543,7 @@ export default function MapPage() {
                 ) : (
                   <DetectionCard
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
-                    count={speciesCountToday == null ? null : (speciesCountToday[item.d.species_name || item.d.raw_label] ?? 0)}
+                    count={speciesCountToday == null ? null : (speciesCountToday[speciesKey(item.d)] ?? 0)}
                     insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
                     insightsAvailable={insightsAvailableFor(item.d, nodeById[item.d.node_id])}
                   />
