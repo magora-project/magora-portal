@@ -540,7 +540,7 @@ export default function MapPage() {
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
                     count={speciesCountToday == null ? null : (speciesCountToday[item.d.species_name || item.d.raw_label] ?? 0)}
                     insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
-                    insightsAvailable={insightsAvailableFor(item.d, nodesAvailable)}
+                    insightsAvailable={insightsAvailableFor(item.d, nodeById[item.d.node_id])}
                   />
                 )
               ))}

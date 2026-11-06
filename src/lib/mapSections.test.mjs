@@ -80,8 +80,29 @@ test('an older refresh that settles after a newer one does not overwrite it', as
   await tick()
   const dets = applied.filter(([n]) => n === 'detections').map(([, r]) => r.data)
   assert.deepEqual(dets, [['new']], 'stale detections dropped')
-  assert.equal(feed.length, 1, 'stale feed status dropped too')
-  assert.deepEqual(feed[0][0].data, ['new'])
+  const callbacks = feed.length
+  assert.ok(callbacks > 0)
+  assert.deepEqual(feed.at(-1)[0].data, ['new'], 'status describes the applied detections')
+  resolveOld({ data: ['old'], error: null })
+  await tick()
+  assert.equal(feed.length, callbacks, 'a dropped result does not report a status')
+})
+
+test('feed status always describes the feed data on screen, across overlapping loads', async () => {
+  // Codex's interleaving: load 1 detections/mobile succeed, sessions pending; load 2 detections
+  // fail, its sessions pending; load 1's sessions then succeed.
+  const { applied, feed, loader } = recorder()
+  let resolveOldSessions
+  loader(allOk({ sessions: () => new Promise(r => { resolveOldSessions = r }) }))
+  await tick()
+  const boom = new Error('detections down')
+  loader(allOk({ detections: () => Promise.reject(boom), sessions: never }))
+  await tick()
+  resolveOldSessions({ data: ['sessions'], error: null })
+  await tick()
+  const shownDetections = applied.filter(([n]) => n === 'detections').at(-1)[1]
+  assert.equal(shownDetections.error, boom, 'load 2 detections failure is on screen')
+  assert.equal(feed.at(-1)[0].error, boom, 'status reports the detections failure on screen')
 })
 
 test('an older refresh may still apply a section the newer one has not reached', async () => {
@@ -101,10 +122,9 @@ test('the returned promise resolves once every query has settled', async () => {
   assert.equal(applied.length, MAP_SECTIONS.length)
 })
 
-test('the insight button waits for nodes to load; a stored insight always shows', () => {
-  assert.equal(insightsAvailableFor({}, null), false, 'nodes still pending')
-  assert.equal(insightsAvailableFor({}, false), false, 'nodes query failed')
-  assert.equal(insightsAvailableFor({}, true), true, 'nodes loaded')
-  assert.equal(insightsAvailableFor({ insight: 'stored' }, null), true)
-  assert.equal(insightsAvailableFor({ insight: 'stored' }, false), true)
+test("the insight button needs the card's node; a stored insight always shows", () => {
+  const node = { id: 'n1', name: 'Pond' }
+  assert.equal(insightsAvailableFor({ node_id: 'n1' }, undefined), false, 'node not loaded (pending, failed, or not yet in a refreshed list)')
+  assert.equal(insightsAvailableFor({ node_id: 'n1' }, node), true, 'node loaded')
+  assert.equal(insightsAvailableFor({ node_id: 'n1', insight: 'stored' }, undefined), true)
 })
