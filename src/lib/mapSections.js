@@ -55,3 +55,28 @@ export function createMapSectionLoader({ apply, onFeedSettled }) {
     return Promise.all(results).then(() => {})
   }
 }
+
+// One name per species for counting and de-duplicating the feed (#59). A row carries either
+// species_name or only raw_label ("CommonName_ScientificName"); both must key to the common
+// name, or one species counts twice and its per-card count splits between two keys.
+export function speciesKey(d) {
+  if (d.species_name) return d.species_name
+  const raw = d.raw_label || ''
+  const cut = raw.indexOf('_')
+  return cut > 0 ? raw.slice(0, cut) : raw
+}
+
+// The Global/Following tabs stay hidden until the network has enough places to follow, or the
+// signed-in viewer already follows something.
+export const MIN_NODES_FOR_TABS = 4
+
+export function showFeedTabs({ nodeCount, signedIn, followCount }) {
+  return nodeCount >= MIN_NODES_FOR_TABS || (signedIn && followCount > 0)
+}
+
+// The node count the tabs are judged by (#59). A failed nodes refresh keeps the last good count,
+// so a transient map failure cannot hide the tabs and switch a viewer's Following feed to Global.
+export function nodeCountForTabs(previous, res) {
+  if (res.error) return previous
+  return (res.data || []).length
+}
