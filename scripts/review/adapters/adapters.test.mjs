@@ -192,12 +192,62 @@ ok('gemini: a missing key fails before any request', noKey.exitCode !== 0 && /GE
   ok('gemini: the error output under test is non-empty and quotes the causes', typeof all === 'string' && all.length > 0 && /ECONNREFUSED/.test(all) && /400/.test(all) && /reset by/.test(all))
   ok('gemini: the API key never appears in stdout or stderr', !all.includes('KEY123'))
 }
+// undici's generic "fetch failed" hides the reason in e.cause: report its code and message (redacted)
+{
+  const cause = Object.assign(new Error(`Headers Timeout Error for ${KEY}`), { code: 'UND_ERR_HEADERS_TIMEOUT' })
+  const r = await gRun(async () => { throw new TypeError('fetch failed', { cause }) })
+  ok('gemini: a transport failure reports the cause code and message', r.exitCode === 1 && /fetch failed/.test(r.stderr) && /UND_ERR_HEADERS_TIMEOUT/.test(r.stderr) && /Headers Timeout Error/.test(r.stderr))
+  ok('gemini: the cause message is redacted too', typeof r.stderr === 'string' && r.stderr.length > 0 && r.stderr.includes(KEY) === false)
+  const dropped = await gRun(fetchWith(() => new Response(new ReadableStream({ start(c) { c.error(new TypeError('terminated', { cause: Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' }) })) } }))))
+  ok('gemini: a dropped stream reports the cause code', /stream dropped/.test(dropped.stderr) && /UND_ERR_SOCKET/.test(dropped.stderr))
+}
 // a timeout aborts the request
 {
   const r = await gemini.run({ prompt: 'p', timeoutMs: 30, env: { GEMINI_API_KEY: KEY }, fetchImpl: (url, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))) })
   ok('gemini: a timeout aborts and reports timedOut', r.timedOut === true && classifyOutcome(r).outcome === 'timeout')
 }
 ok('gemini: parseSse folds text and the last finish reason', (() => { const p = gemini.parseSse(streamStop); return p.text === innerJson && p.finish === 'STOP' })())
+
+// The default transport is node:http(s), not globalThis.fetch: undici's fetch gives up after 300 s with no
+// response headers (UND_ERR_HEADERS_TIMEOUT), and Gemini sends none until it has read a large diff. Measured
+// 2026-11-06 on PR B's 267 KB diff: two runs failed at exactly 300 s. Only the caller's timeoutMs bounds it.
+{
+  const { createServer } = await import('node:http')
+  const seen = []
+  const server = createServer((req, res) => {
+    let body = ''
+    req.on('data', (c) => { body += c })
+    req.on('end', () => {
+      seen.push({ method: req.method, key: req.headers['x-goog-api-key'], body })
+      if (req.url.startsWith('/slow')) setTimeout(() => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(streamStop) }, 300)
+      else if (req.url.startsWith('/err')) { res.writeHead(500); res.end('boom') }
+      else if (req.url.startsWith('/cut')) { res.writeHead(200); res.write('data: {"candidates":['); setTimeout(() => res.socket.destroy(), 20) }
+      else if (req.url.startsWith('/hang')) { /* never answers */ }
+    })
+  })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  const base = `http://127.0.0.1:${server.address().port}`
+  try {
+    ok('gemini: the default transport is nodeFetch, not globalThis.fetch', gemini.defaultFetch === gemini.nodeFetch && gemini.nodeFetch !== globalThis.fetch)
+    const r = await gemini.nodeFetch(`${base}/slow`, { method: 'POST', headers: { 'x-goog-api-key': 'K', 'Content-Type': 'application/json' }, body: '{"a":1}' })
+    const t = await r.text()
+    ok('gemini nodeFetch: headers that arrive late still yield status, ok and the full body', r.status === 200 && r.ok === true && t === streamStop)
+    ok('gemini nodeFetch: sends the method, the key header and the body', seen.length === 1 && seen[0].method === 'POST' && seen[0].key === 'K' && seen[0].body === '{"a":1}')
+    const e = await gemini.nodeFetch(`${base}/err`, { method: 'POST', headers: {}, body: '' })
+    ok('gemini nodeFetch: a 500 is ok:false with its body', e.ok === false && e.status === 500 && (await e.text()) === 'boom')
+    const cut = await gemini.nodeFetch(`${base}/cut`, { method: 'POST', headers: {}, body: '' })
+    ok('gemini nodeFetch: a body cut off mid-stream rejects text()', await cut.text().then(() => false, () => true))
+    const ac = new AbortController()
+    const hung = gemini.nodeFetch(`${base}/hang`, { method: 'POST', headers: {}, body: '', signal: ac.signal })
+    setTimeout(() => ac.abort(), 30)
+    ok('gemini nodeFetch: an abort rejects with an AbortError', await hung.then(() => false, (err) => err && err.name === 'AbortError'))
+    const through = await gemini.run({ prompt: 'p', timeoutMs: 40, env: { GEMINI_API_KEY: KEY }, fetchImpl: (url, init) => gemini.nodeFetch(`${base}/hang`, init) })
+    ok('gemini: run over nodeFetch times out through the caller timeout', through.timedOut === true && classifyOutcome(through).outcome === 'timeout')
+  } finally {
+    server.closeAllConnections()
+    await new Promise((r) => server.close(r))
+  }
+}
 
 console.log(`${counter.pass} passed, ${counter.fail} failed`)
 process.exit(counter.fail ? 1 : 0)
