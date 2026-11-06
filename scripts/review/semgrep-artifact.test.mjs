@@ -1,8 +1,10 @@
 // Self-test for scripts/review/semgrep-artifact.mjs. Never runs real semgrep: spawnImpl is injected.
 // Run: node scripts/review/semgrep-artifact.test.mjs
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { extractBlocks, main, scanArtifact } from './semgrep-artifact.mjs'
 
 let pass = 0, fail = 0
@@ -59,7 +61,16 @@ try {
   ok('unparseable JSON at exit 0 is not a pass', scanArtifact({ path: mdPath, spawnImpl: stub(0, 'not json') }).ran === false)
   ok('JSON without a results array is not a pass', scanArtifact({ path: mdPath, spawnImpl: stub(0, '{}') }).ran === false)
   ok('exit 1 with zero results is not a pass', scanArtifact({ path: mdPath, spawnImpl: stub(1, '{"results":[]}') }).ran === false)
-  ok('a missing file -> ran:false', scanArtifact({ path: join(scratch, 'nope.md'), spawnImpl: stub(0, '{"results":[]}') }).ran === false)
+  // Semgrep's `errors` array: a parse error or partial scan is never a clean scan
+  const errJson = (results) => JSON.stringify({ results, errors: [{ code: 3, level: 'error', type: 'Syntax error', message: 'Syntax error at line block-1.js:1' }] })
+  const e0 = scanArtifact({ path: mdPath, spawnImpl: stub(0, errJson([])) })
+  ok('exit 0, no results, a non-empty errors array -> ran:false', e0.ran === false)
+  ok('...with a reason that summarises the errors', /1 error/.test(e0.reason ?? '') && /Syntax error/.test(e0.reason ?? ''))
+  const e1 = scanArtifact({ path: mdPath, spawnImpl: stub(1, errJson([finding('block-1.js', 1)])) })
+  ok('results AND errors -> ran:false, the findings still attached', e1.ran === false && e1.findings.length === 1 && e1.findings[0].line === 4 && /error/.test(e1.reason ?? ''))
+  ok('a non-array errors field -> ran:false', scanArtifact({ path: mdPath, spawnImpl: stub(0, '{"results":[],"errors":{"x":1}}') }).ran === false)
+  ok('an empty errors array is still a clean scan', scanArtifact({ path: mdPath, spawnImpl: stub(0, '{"results":[],"errors":[]}') }).ran === true)
+  ok('a missing file -> ran:false',scanArtifact({ path: join(scratch, 'nope.md'), spawnImpl: stub(0, '{"results":[]}') }).ran === false)
 
   // CLI: exit 0 clean, 1 findings, 2 UNRUN
   const cap = () => { const o = { out: '', err: '' }; o.io = { out: (s) => { o.out += s }, err: (s) => { o.err += s } }; return o }
@@ -70,6 +81,26 @@ try {
   const u = run([noCode])
   ok('CLI: UNRUN exits 2 and says UNRUN', u.code === 2 && /UNRUN/.test(u.out + u.err))
   ok('CLI: no path is a usage error (exit 2 is reserved for UNRUN, so 64)', run([]).code === 64)
+  const pe = run([mdPath], stub(1, errJson([finding('block-1.js', 1)])))
+  ok('CLI: findings plus Semgrep errors exit 2 (UNRUN), print the findings and say UNRUN', pe.code === 2 && /rule\.x/.test(pe.out) && /UNRUN/.test(pe.out))
+  ok('CLI: errors with no results exit 2', run([mdPath], stub(0, errJson([]))).code === 2)
+
+  // The CLI entry must run when reached through a symlink or a non-canonical path (exit 2 UNRUN for a doc with no code).
+  {
+    const real = fileURLToPath(new URL('./semgrep-artifact.mjs', import.meta.url))
+    const viaNode = (script) => spawnSync(process.execPath, [script, noCode], { encoding: 'utf8', shell: false })
+    const direct = viaNode(real)
+    ok('CLI subprocess via the real path: prints UNRUN and exits 2', direct.status === 2 && /UNRUN/.test(direct.stdout))
+    const link = join(scratch, 'linked-semgrep-artifact.mjs')
+    let linked = true
+    try { symlinkSync(real, link) } catch (e) {
+      if (process.platform === 'win32' && e && e.code === 'EPERM') { linked = false; console.log('  SKIP CLI subprocess via a symlink: symlink creation needs privileges on this Windows host') } else throw e
+    }
+    if (linked) {
+      const vl = viaNode(link)
+      ok('CLI subprocess via a symlink: still runs, prints UNRUN and exits 2 (not a silent exit 0)', vl.status === 2 && /UNRUN/.test(vl.stdout))
+    }
+  }
 
 } finally {
   rmSync(scratch, { recursive: true, force: true })
