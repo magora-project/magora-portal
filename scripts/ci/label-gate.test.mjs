@@ -60,6 +60,13 @@ ok('infer: control dir glob -> subtle', inferLabel(['.github/workflows/ci.yml'],
 ok('infer: exact control file -> subtle', inferLabel(['package.json'], CF) === 'subtle-correctness')
 ok('infer: near-miss is not a control file', inferLabel(['src/package.json', 'scripts/cia/x.mjs', '.githubx'], CF) === 'standard')
 ok('infer: never mechanical', inferLabel([], CF) === 'standard')
+// Issue #61: the list is parsed from the PR's own AGENTS.md, so a PR that drops AGENTS.md (and
+// anything else) from that list must not be judged by the narrowed list.
+const NARROWED = parseControlFiles('# x\n\n## Control files\n\n`package.json`.\n')
+ok('infer: AGENTS.md -> subtle even when the parsed list omits it',
+  inferLabel(['AGENTS.md', '.github/workflows/ci.yml'], NARROWED) === 'subtle-correctness')
+ok('infer: AGENTS.md renamed away (previous_filename) -> subtle', inferLabel(['docs/AGENTS.md', 'AGENTS.md'], NARROWED) === 'subtle-correctness')
+ok('infer: a nested AGENTS.md is not the control file', inferLabel(['docs/AGENTS.md'], NARROWED) === 'standard')
 
 // A stateful stub for the GitHub API: POST adds a label, DELETE removes one (404 if absent), every
 // write is recorded, and `events` grows with each bot POST, as GitHub's would.
@@ -107,6 +114,11 @@ ok('auto: no label, src change -> applies standard and passes',
 const a2 = gh({ files: [{ filename: 'src/a.js' }, { filename: 'scripts/ci/x.mjs' }] })
 const r2 = await quiet(() => main({ env: auto, fetchImpl: a2.fetchImpl, readAgents }))
 ok('auto: no label, control file -> applies subtle-correctness', r2.code === 0 && W(a2.state) === W(['subtle-correctness']))
+// Issue #61, end to end: the PR's checkout of AGENTS.md has dropped itself and .github/** from the list.
+const a2b = gh({ files: [{ filename: 'AGENTS.md' }, { filename: '.github/workflows/ci.yml' }] })
+const r2b = await quiet(() => main({ env: auto, fetchImpl: a2b.fetchImpl, readAgents: () => '# x\n\n## Control files\n\n`package.json`.\n' }))
+ok('auto: a PR that removes AGENTS.md from its own control-file list -> still subtle-correctness',
+  r2b.code === 0 && W(a2b.state) === W(['subtle-correctness']))
 const a3 = gh({ files: [{ filename: 'src/b.js', previous_filename: 'scripts/ci/old.mjs' }] })
 await quiet(() => main({ env: auto, fetchImpl: a3.fetchImpl, readAgents }))
 ok('auto: a rename FROM a control file counts', W(a3.state) === W(['subtle-correctness']))
@@ -341,7 +353,12 @@ ok("gemini workflow: a dispatched run is gated on refs/heads/main",
 // The concurrency group is what keeps a skipping run from cancelling a dispatched review (#58).
 // Pinned whole: actionlint checks its types, not its logic, so any edit must be deliberate.
 ok('gemini workflow: concurrency group (noop for skipping runs) is exactly as reviewed',
-  gyml.includes("  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ ((github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')) && format('-noop-{0}', github.run_id) || '' }}\n  cancel-in-progress: true\n"))
+  gyml.includes("  group: gemini-review-${{ github.event.pull_request.number || inputs.pr_number }}${{ ((github.event_name == 'pull_request' && ((github.event.action == 'labeled' && github.event.label.name != 'subtle-correctness') || (github.event.action == 'edited' && !github.event.changes.base) || !contains(github.event.pull_request.labels.*.name, 'subtle-correctness'))) || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')) && format('-noop-{0}', github.run_id) || '' }}\n  cancel-in-progress: true\n"))
+// Issue #62: a retarget fires only `edited`. A title or body edit must skip, and (above) must take a
+// `-noop-` group, so it cannot cancel a review in flight.
+ok('gemini workflow: reruns on edited, and the job skips an edit that did not change the base',
+  /^ {4}types: \[opened, reopened, ready_for_review, synchronize, labeled, edited\]$/m.test(gyml) &&
+  gyml.includes("      (github.event.action != 'labeled' || github.event.label.name == 'subtle-correctness') &&\n      (github.event.action != 'edited' || github.event.changes.base))\n"))
 ok('gemini workflow: the PR title follows `--`, so a title like --help is never read as an option',
   gyml.includes('gemini_review.py --rules trusted/AGENTS.md -- "$PR_TITLE"') && !/gemini_review\.py "\$PR_TITLE"/.test(gyml))
 ok('gemini workflow: the PR number input is read through env, never expanded into a script',
@@ -353,6 +370,10 @@ ok('label-gate workflow: can dispatch, and only for same-repo non-Dependabot PRs
 
 // Labels belong to the PR, so runs for different heads must not overlap their writes (Codex review).
 const yml = readFileSync(new URL('../../.github/workflows/label-gate.yml', import.meta.url), 'utf8')
+// Issue #62: a retarget must re-judge. Every `edited` run judges in full, with no `if:`: a skipped
+// job reports success on this required check.
+ok('workflow: label-gate reruns on edited, with no job-level skip',
+  /^ {4}types: \[opened, synchronize, reopened, labeled, unlabeled, edited\]$/m.test(yml) && !/^ {4}if:/m.test(yml))
 ok('workflow: concurrency is per PR, not per head SHA, and queues',
   /^\s*group: label-gate-\$\{\{ github\.event\.pull_request\.number \}\}\s*$/m.test(yml) && /^\s*cancel-in-progress: false\s*$/m.test(yml))
 

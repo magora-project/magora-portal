@@ -5,9 +5,9 @@
 // Auto-label (AUTO_LABEL=true; the workflow sets it for same-repo PRs only, whose token can write):
 // - No depth label, or only ones this bot applied: keep exactly one, inferred from the changed paths
 //   on every run (so a later push that adds a migration raises it; it is never lowered).
-//   `subtle-correctness` if any path is a migration, under `api/`, or a control file listed in
-//   AGENTS.md; else `standard`. `mechanical` is never inferred. Labels added with the workflow token
-//   start no new run, so this run is the one that turns the check green.
+//   `subtle-correctness` if any path is a migration, under `api/`, `AGENTS.md` itself, or a control
+//   file listed in AGENTS.md; else `standard`. `mechanical` is never inferred. Labels added with the
+//   workflow token start no new run, so this run is the one that turns the check green.
 // - A person applied a depth label: remove the bot's, so a person's label always wins. A person's
 //   labels are never removed.
 // After any write the labels are re-read and that state is judged.
@@ -46,9 +46,15 @@ export function parseControlFiles(agentsMd) {
 const matches = (path, pattern) =>
   pattern.endsWith('/**') ? path.startsWith(pattern.slice(0, -2)) : path === pattern
 
+// `controlFiles` comes from the PR's own checkout of AGENTS.md, so a PR could narrow the list it is
+// judged by. AGENTS.md itself is therefore subtle whatever the parsed list says (issue #61): any PR
+// that edits the list changes AGENTS.md, and a PR that leaves it alone checks out its base's copy
+// (the workflow checks out the merge ref). Residual: this script and its workflow also run from the
+// merge ref, so a PR that edits them can still infer `standard`. Labels are discipline, not the
+// control (AGENTS.md § Depth labels); a person can apply `standard` by hand anyway.
 export function inferLabel(paths, controlFiles) {
   const subtle = paths.some((p) =>
-    p.startsWith('supabase/migrations/') || p.startsWith('api/') || controlFiles.some((c) => matches(p, c)))
+    p === 'AGENTS.md' || p.startsWith('supabase/migrations/') || p.startsWith('api/') || controlFiles.some((c) => matches(p, c)))
   return subtle ? 'subtle-correctness' : 'standard'
 }
 
