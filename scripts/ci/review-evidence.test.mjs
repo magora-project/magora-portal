@@ -130,13 +130,14 @@ const goodEnv = { GITHUB_TOKEN: 't', GITHUB_REPOSITORY: 'o/r', PR_NUMBER: '7' }
 const prCreatedAt = (createdAt, scen) => ({ ...scen, createdAt })
 // A fetch stub serving the PR and its labels from `scen`, and the activation file from `activation(url)`.
 const prFetch = (scen, activation, calls = []) => {
+  let prReads = 0
   const f = async (url) => {
     calls.push(url)
     const u = new URL(url)
     if (u.pathname === '/repos/o/r/pulls/7') {
       return res(200, {
         number: 7, body: scen.body ?? 'Lane: direct\nDeviations: none', user: { login: 'dev' }, created_at: scen.createdAt,
-        base: { sha: scen.base, ref: 'main' }, head: { sha: scen.head }, labels: (scen.labels ?? ['standard']).map((name) => ({ name })),
+        base: { sha: scen.base, ref: 'main' }, head: { sha: scen.head }, labels: (scen.labelsSeq ? scen.labelsSeq[Math.min(prReads++, scen.labelsSeq.length - 1)] : (scen.labels ?? ['standard'])).map((name) => ({ name })),
       })
     }
     if (u.pathname === '/repos/o/r/contents/.github/review-activation.json') return activation(url)
@@ -272,6 +273,16 @@ try {
     ok('an added completed head whose only finding is a P3 does not fail', evaluate({ ...p3, addedStems: all(p3) }).ok)
     const disposed = fx({ chain: [openHead({ findings: [finding({ id: 'F1', severity: 'P1', disposition: { kind: 'reclassified-nit', reason: 'r' } })] }), freshRoot] })
     ok('an added completed head whose finding is disposed does not fail', evaluate({ ...disposed, addedStems: all(disposed) }).ok)
+    // mark-reviewed Codex P1 (2026-11-06): lowering the depth must not drop an open finding a review this PR added
+    const openCompleteness = rec({ slot: 'completeness', stem: 'completeness--open--1', vendor: 'google', input: { kind: 'pr', identity: ID }, verdict: 'fail', findings: [finding({ id: 'F4', severity: 'P1' })] })
+    const lowered = fx({ depth: 'standard' })
+    lowered.records = [...lowered.records, openCompleteness]
+    ok('an added head with an open finding in a slot this depth does not require -> FAIL naming it', failsWith(evaluate({ ...lowered, addedStems: all(lowered) }), /completeness--open--1.*F4/))
+    const mechLowered = fx({ lane: 'direct', depth: 'mechanical', records: [openHead()] })
+    ok('mechanical depth with an added correctness head left open -> FAIL naming it', failsWith(evaluate({ ...mechLowered, addedStems: all(mechLowered) }), /correctness--open--1.*F1/))
+    const loweredBase = fx({ depth: 'standard' })
+    loweredBase.records = [...loweredBase.records, openCompleteness]
+    ok('the same open head only on the base (another PR\'s) does not fail', evaluate({ ...loweredBase, addedStems: new Set(loweredBase.records.filter((r) => r !== openCompleteness).map((r) => r.stem)) }).ok)
     const sup = fx({ chain: [openHead(), { ...freshRoot, supersedes: 'correctness--open--1' }] })
     ok('a superseded open record is not a head: the chain head is judged', evaluate({ ...sup, addedStems: all(sup) }).ok)
   }
@@ -299,13 +310,21 @@ try {
   // mark-reviewed Codex P2 (2026-11-06): label-gate's auto-label, written with the workflow token, starts no run, so a
   // run that read the labels before it landed must not stay red. Label count is label-gate's check, not this one.
   {
-    const none = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels: [] })))
+    const none = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels: [] })), { sleep: async () => {} })
     ok('main: no depth label -> judged at standard (the lowest the bot applies), naming label-gate; passes on a correctness record', none.code === 0 && /no depth label.*standard/.test(none.out) && /label-gate/.test(none.out))
-    const two = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels: ['standard', 'subtle-correctness'] })))
+    const two = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels: ['standard', 'subtle-correctness'] })), { sleep: async () => {} })
     ok('main: two depth labels -> judged at the higher one (fails here: no completeness record)', two.code === 1 && /subtle-correctness/.test(two.out) && /FAIL completeness/.test(two.out) && !/could not judge/.test(two.out))
-    const mixed = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels: ['mechanical', 'standard'] })))
+    const mixed = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...passingRecords, labels: ['mechanical', 'standard'] })), { sleep: async () => {} })
     ok('main: mechanical beside standard -> judged at standard (passes on a correctness record)', mixed.code === 0)
-    const noneBare = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...noRecords, labels: [] })))
+    const seq = (labelsSeq) => ({ ...noRecords, labelsSeq })
+    const settled = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', seq([['standard', 'mechanical'], ['mechanical']]))), { sleep: async () => {} })
+    ok('main: a person\'s mechanical beside the bot\'s standard, then the bot removes its own -> re-read, judged at mechanical, passes', settled.code === 0 && settled.calls.filter((u) => u.endsWith('/pulls/7')).length === 2)
+    const landed = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', seq([[], [], ['standard']]))), { sleep: async () => {} })
+    ok('main: no label, then the bot\'s standard lands -> re-read until one, judged at standard (fails: no records)', landed.code === 1 && /FAIL correctness/.test(landed.out) && !/no depth label/.test(landed.out))
+    let slept = 0
+    const never = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', seq([['standard', 'mechanical']]))), { sleep: async () => { slept++ } })
+    ok('main: labels that never settle -> bounded re-reads, then the highest', never.code === 1 && slept > 0 && slept < 10 && /several depth labels/.test(never.out))
+    const noneBare = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...noRecords, labels: [] })), { sleep: async () => {} })
     ok('main: no depth label and no records -> FAIL naming correctness (judged at standard, not mechanical)', noneBare.code === 1 && /FAIL correctness/.test(noneBare.out) && !/could not judge/.test(noneBare.out))
     const mech = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', { ...noRecords, labels: ['mechanical'] })))
     ok('main: one mechanical label on an ordinary path -> needs no record', mech.code === 0)

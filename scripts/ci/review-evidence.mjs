@@ -196,6 +196,16 @@ export function evaluate({ records, required, identity, body, addedStems, author
       fail(`FAIL ${label}: ${judgedText()}`)
     }
   }
+  // An open finding a review this PR added blocks whatever the depth: lowering the label (subtle-correctness to
+  // standard, or to mechanical) must not drop a completeness or correctness head left open. The required slots were
+  // checked above; this covers every other slot and input.
+  const requiredKey = new Set(required.map(({ slot, input }) => (input.kind === 'blob' ? `${slot} blob ${input.path}` : `${slot} pr`)))
+  for (const r of heads) {
+    if (added !== null && !added.has(r.stem)) continue
+    if (requiredKey.has(r.input.kind === 'blob' ? `${r.slot} blob ${r.input.path}` : `${r.slot} pr`)) continue
+    const ids = undisposedBlocking(r, { deviations: body?.deviations ?? [] }).map((f) => f.id)
+    if (ids.length) fail(`FAIL ${r.slot} (not required at this depth): ${r.stem} (a review this PR added) left ${ids.join(', ')} open: re-review with --supersedes ${r.stem}, or dispose ${ids.length === 1 ? 'it' : 'them'}`)
+  }
   return { ok, lines }
 }
 
@@ -309,20 +319,31 @@ export async function readActivation({ fetchImpl, token, repo, ref }) {
   return { since: v }
 }
 
-export async function main({ env = process.env, fetchImpl = fetch, gitImpl = defaultGit, cwd = process.cwd() } = {}) {
+// While the PR does not carry exactly one depth label, re-read it this many times, LABEL_WAIT_MS apart: label-gate's
+// reconcile (adding its label, or removing its own beside a person's) normally lands within seconds.
+const LABEL_READS = 6
+const LABEL_WAIT_MS = 10_000
+const depthLabelsOf = (pr) => pr.labels.map((l) => l?.name).filter((x) => DEPTH_LABELS.includes(x))
+
+export async function main({ env = process.env, fetchImpl = fetch, gitImpl = defaultGit, cwd = process.cwd(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   const cnj = (m) => { console.log(`review-evidence: FAIL (could not judge): ${m}`); return 1 }
   const { GITHUB_TOKEN: token, GITHUB_REPOSITORY: repo, PR_NUMBER: n } = env
   if (!token || !repo || !n) return cnj('GITHUB_TOKEN, GITHUB_REPOSITORY and PR_NUMBER are required')
 
   // 1. PR state, live. The PR object carries the current labels, so `pull-requests: read` is enough.
-  let pr
-  try {
-    const r = await getJson(fetchImpl, token, `https://api.github.com/repos/${repo}/pulls/${n}`)
-    if (!r.ok) return cnj(`GitHub API ${r.status} reading PR #${n}`)
-    pr = r.body
-  } catch (e) { return cnj(e.message) }
+  // Re-read (bounded) while the depth-label count is not one; see LABEL_READS. The last read is the one judged.
   const sha = (s) => typeof s === 'string' && /^[0-9a-f]{40}$/.test(s)
-  if (!isObj(pr) || !sha(pr.head?.sha) || !sha(pr.base?.sha) || typeof pr.base?.ref !== 'string' || !Array.isArray(pr.labels)) return cnj(`PR #${n}: the API reply lacks head, base or labels`)
+  let pr
+  for (let i = 1; ; i++) {
+    try {
+      const r = await getJson(fetchImpl, token, `https://api.github.com/repos/${repo}/pulls/${n}`)
+      if (!r.ok) return cnj(`GitHub API ${r.status} reading PR #${n}`)
+      pr = r.body
+    } catch (e) { return cnj(e.message) }
+    if (!isObj(pr) || !sha(pr.head?.sha) || !sha(pr.base?.sha) || typeof pr.base?.ref !== 'string' || !Array.isArray(pr.labels)) return cnj(`PR #${n}: the API reply lacks head, base or labels`)
+    if (depthLabelsOf(pr).length === 1 || i >= LABEL_READS) break
+    await sleep(LABEL_WAIT_MS)
+  }
 
   // 2. Grandfathering, from the BASE branch's file, only after every PR-state read succeeded.
   let act
@@ -334,11 +355,12 @@ export async function main({ env = process.env, fetchImpl = fetch, gitImpl = def
   }
 
   // 3. Depth and the body fields. label-gate is the check that enforces exactly one depth label; this one does not
-  // fail on the count, because it can read the labels before label-gate's auto-label lands, and a label written with
-  // the workflow token starts no new run, so a valid PR would stay red. With no depth label it judges at `standard`,
-  // the lowest the bot ever applies; with several, at the highest. The changed-path floor (requiredDepth) still
-  // applies. A person's later label change is a `labeled`/`unlabeled` event and so a new run.
-  const depths = pr.labels.map((l) => l?.name).filter((x) => DEPTH_LABELS.includes(x))
+  // fail on the count, because it can read the labels before label-gate's reconcile lands, and a label that reconcile
+  // writes or removes with the workflow token starts no new run, so a valid PR would stay red. It re-reads for up to
+  // LABEL_READS reads (above); if the count is still not one, it judges at `standard` with no depth label (the lowest
+  // the bot ever applies) and at the highest with several. The changed-path floor (requiredDepth) still applies.
+  // Residual: a reconcile slower than the re-reads leaves the run judged at that fallback until the next event.
+  const depths = depthLabelsOf(pr)
   const label = depths.length === 0 ? 'standard' : DEPTH_LABELS.filter((d) => depths.includes(d)).at(-1)
   if (depths.length !== 1) console.log(`depth: ${depths.length ? `several depth labels (${depths.join(', ')})` : 'no depth label'}; judging at ${label} (label-gate enforces exactly one)`)
   const body = parseBody(pr.body ?? '', { author: pr.user?.login })
