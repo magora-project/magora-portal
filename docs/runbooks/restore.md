@@ -171,7 +171,7 @@ guard_ref() {
   [ "${#1}" -eq 20 ] || { echo "REFUSED: scratch ref is not 20 characters" >&2; return 1; }
 }
 guard_tls() {
-  case "${PGSSLROOTCERT-}" in /*) ;; *) echo "REFUSED: PGSSLROOTCERT is not an absolute path" >&2; return 1;; esac
+  case "${PGSSLROOTCERT-}" in /*) ;; *) echo "REFUSED: PGSSLROOTCERT is unset or not an absolute path; export PGSSLROOTCERT=\"\$RESTORE_DIR/supabase-ca.crt\"" >&2; return 1;; esac
   [ -f "$PGSSLROOTCERT" ] || { echo "REFUSED: PGSSLROOTCERT is not a file; export PGSSLROOTCERT=\"\$RESTORE_DIR/supabase-ca.crt\"" >&2; return 1; }
   [ "$(grep -c -e '-----BEGIN' "$PGSSLROOTCERT")" = 1 ] || { echo "REFUSED: PGSSLROOTCERT must hold exactly one certificate" >&2; return 1; }
   _g_fp="$(openssl x509 -noout -fingerprint -sha256 -in "$PGSSLROOTCERT" | sed 's/.*=//' | tr -d ':' | tr 'ABCDEF' 'abcdef')"
