@@ -2,6 +2,9 @@
 -- exactly as 20260708_node_insight_batch.sql defined it (no range_status filter). Quarantined
 -- detections become claimable again. No data changes in either direction: the forward migration
 -- only replaces the function body.
+--
+-- APPLY WITH: supabase db query --linked -f <this file>
+-- WRITE-ONLY rollback: reviewed and applied manually. Do not auto-apply.
 
 create or replace function public.claim_node_insights(max_rows int default 20)
 returns setof uuid
