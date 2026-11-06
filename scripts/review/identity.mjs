@@ -1,6 +1,7 @@
 // Input identity: a hash of a PR's own diff, stable across machines and git configs.
 // Consumed by the review-evidence records store, runner and CI check.
 import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 export const EVIDENCE_DIR = '.review'
 
@@ -21,7 +22,16 @@ const run = (args, { cwd, input } = {}) => new Promise((resolve, reject) => {
   child.stdin.end(input)
 })
 
-export const git = (args, { cwd } = {}) => run(['-c', 'core.quotePath=true', '-c', 'core.autocrlf=false', ...args], { cwd })
+// User gitattributes can mark a text file `-diff` (binary) and turn its diff into a `GIT binary patch`, so the
+// identity would differ between a developer's machine and CI. core.attributesFile (and its default,
+// $XDG_CONFIG_HOME/git/attributes or ~/.config/git/attributes) is pointed at this committed, empty file.
+// `--text` is NOT a fix: patch-id stops reading a line at its first NUL, so two different binary edits get one ID.
+// Known gap: $GIT_DIR/info/attributes cannot be switched off from the command line (`--attr-source` only
+// replaces the work tree's .gitattributes, measured on git 2.54). A repo-local info/attributes entry that
+// changes the diff attribute still changes the local identity; CI's fresh checkout has none.
+export const EMPTY_ATTRIBUTES = fileURLToPath(new URL('./empty.gitattributes', import.meta.url))
+
+export const git = (args, { cwd } = {}) => run(['-c', 'core.quotePath=true', '-c', 'core.autocrlf=false', '-c', `core.attributesFile=${EMPTY_ATTRIBUTES}`, ...args], { cwd })
 
 const must = (r, what) => {
   if (r.code !== 0) throw new Error(`${what} failed (${r.code}): ${r.stderr.trim()}`)

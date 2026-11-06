@@ -13,7 +13,9 @@ writeFileSync(emptyConfig, '')
 process.env.GIT_CONFIG_GLOBAL = emptyConfig
 process.env.GIT_CONFIG_NOSYSTEM = '1'
 
-const { DIFF_ARGS, EVIDENCE_DIR, blobIdentity, geminiDiff, git, inputIdentity, mergeBase } = await import('./identity.mjs')
+const identityModule = await import('./identity.mjs')
+const { DIFF_ARGS, EVIDENCE_DIR, blobIdentity, geminiDiff, git, inputIdentity, mergeBase } = identityModule
+const EMPTY_ATTRIBUTES = identityModule.EMPTY_ATTRIBUTES ?? join(root, 'missing-export')
 
 let pass = 0, fail = 0
 const ok = (n, c) => {
@@ -215,6 +217,35 @@ try {
   const idCrlfCheckout = await id(clone, 'origin/main', 'origin/pr')
   ok('CRLF working tree with autocrlf=true does not change the identity', same(idMore, idCrlfCheckout))
   ok('the clone really has a CRLF working tree', readFileSync(join(clone, 'app.py'), 'utf8').includes('\r\n'))
+
+  // --- user gitattributes (core.attributesFile, and its XDG default) must not change the identity ---
+  {
+    const ra = mkrepo()
+    put(ra, 'f.txt', 'a\nb\n')
+    writeFileSync(join(ra, 'b.bin'), Buffer.from([0, 1, 2]))
+    commit(ra, 'base')
+    raw(ra, ['checkout', '-q', '-b', 'pr'])
+    put(ra, 'f.txt', 'a\nB\n')
+    writeFileSync(join(ra, 'b.bin'), Buffer.from([0, 1, 3]))
+    commit(ra, 'pr')
+    const idPlain = await id(ra, 'main', 'pr')
+    const attrs = join(root, 'user.gitattributes')
+    writeFileSync(attrs, '*.txt -diff\n')
+    raw(ra, ['config', 'core.attributesFile', attrs])
+    ok('fixture: the attributes file really turns the text diff binary', raw(ra, ['diff', '--binary', 'main', 'pr', '--', 'f.txt']).includes('GIT binary patch'))
+    const idAttrsFile = await id(ra, 'main', 'pr')
+    raw(ra, ['config', '--unset', 'core.attributesFile'])
+    ok('core.attributesFile marking *.txt -diff -> same identity', same(idPlain, idAttrsFile))
+    const xdg = join(root, 'xdg')
+    mkdirSync(join(xdg, 'git'), { recursive: true })
+    writeFileSync(join(xdg, 'git', 'attributes'), '*.txt -diff\n')
+    const prevXdg = process.env.XDG_CONFIG_HOME
+    process.env.XDG_CONFIG_HOME = xdg
+    let idXdg
+    try { idXdg = await id(ra, 'main', 'pr') } finally { if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = prevXdg }
+    ok('the default user attributes file ($XDG_CONFIG_HOME/git/attributes) marking *.txt -diff -> same identity', same(idPlain, idXdg))
+    ok('the empty attributes file the module points git at exists and is empty', (() => { try { return readFileSync(EMPTY_ATTRIBUTES, 'utf8') === '' } catch { return false } })())
+  }
 
   // --- geminiDiff and git() ---
   const gd = await geminiDiff({ cwd: r1, base: 'main', head: 'pr' })
