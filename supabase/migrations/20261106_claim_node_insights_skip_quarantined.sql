@@ -16,13 +16,16 @@
 -- Everything else is unchanged from 20260708_node_insight_batch.sql: signature, return type,
 -- SECURITY DEFINER, search_path, the other filters, the order and the grant.
 -- Rollback: rollbacks/20261106_claim_node_insights_skip_quarantined.rollback.sql restores the
--- 20260708 body. Before applying, capture production's live definition
--- (select pg_get_functiondef('public.claim_node_insights(int)'::regprocedure)) and confirm it
--- matches 20260708; if it doesn't, the rollback would not restore it.
+-- 20260708 body. Before applying, capture production's live definition and grants:
+--   select pg_get_functiondef('public.claim_node_insights(int)'::regprocedure);
+--   select proacl from pg_proc where oid = 'public.claim_node_insights(int)'::regprocedure;
+-- pg_get_functiondef normalizes the header (types, SET clause), so compare only the body between
+-- the dollar quotes with 20260708. If the body differs, the rollback would not restore it.
 --
--- Known gap (not fixed here): a claimed row whose prompt can't be built for another reason
--- (a node with no name or habitat, a transient fetch failure, an errored batch item) is still
--- re-claimed after 3 hours. Quarantine is the large, deterministic case.
+-- Known gap (not fixed here): a claimed row whose prompt can't be built for another reason is
+-- still re-claimed after 3 hours: a node with no name and no habitat notes, a transient fetch
+-- failure, an errored batch item, or a row the anon key can't read under the detections RLS policy
+-- (that policy is not in this repo; unverified). Quarantine is the large, deterministic case.
 --
 -- APPLY WITH: supabase db query --linked -f <this file>
 -- NOT via the Management API /database/query endpoint — that runs read-only and reports success
