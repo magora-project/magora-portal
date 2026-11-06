@@ -22,6 +22,9 @@ Production's project ref is `wqxmmuwrfltpaxnuddwk`. The scratch project has a di
   space in "Magora Project" (or use the vault ID instead).
 - Production is reached through the Supavisor pooler, session mode, port 5432, username `postgres.<ref>`.
   The scratch project is reached the same way with its own ref.
+- Both connections use `sslmode=verify-full` with Supabase's CA certificate, so the client checks the
+  server's certificate and hostname. `require` encrypts but accepts any certificate, so a
+  man-in-the-middle could read production data and the database password.
 - `pg_dump`, `pg_restore` and `psql` must be major version 17, matching the server.
 - The dumps hold production data. They live in a `mktemp -d` directory and are deleted at the end.
 - **On any stop or error, run "Clean up" step 2 now**, before anything else. Once anything has been restored
@@ -60,13 +63,14 @@ data restores, not that the app would run on it.
 
 ## Before you start
 
-1. Check the tool versions. The three Postgres tools must report 17; `node` must be installed (any current version):
+1. Check the tool versions. The three Postgres tools must report 17; `node` and `openssl` must be installed (any current version):
 
    ```sh
    pg_dump --version
    pg_restore --version
    psql --version
    node --version
+   openssl version
    ```
 
    If not, stop and install PostgreSQL 17 client tools.
@@ -76,6 +80,24 @@ data restores, not that the app would run on it.
    RESTORE_DIR="$(mktemp -d)"
    echo "$RESTORE_DIR"
    ```
+
+   Download Supabase's CA certificate from the production project's dashboard (Project Settings,
+   Database, SSL Configuration, "Download certificate"). Move it into the working directory, point
+   libpq at it, and check its fingerprint (adjust the download path if your browser saved it elsewhere):
+
+   ```sh
+   mv ~/Downloads/prod-ca-2021.crt "$RESTORE_DIR/supabase-ca.crt"
+   export PGSSLROOTCERT="$RESTORE_DIR/supabase-ca.crt"
+   openssl x509 -noout -subject -enddate -fingerprint -sha256 -in "$PGSSLROOTCERT"
+   ```
+
+   Expect a subject ending in `Supabase Root 2021 CA` (the spacing and leading `/` vary by OpenSSL
+   build), an end date of Apr 26 2031, and the SHA-256 fingerprint
+   `80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA`.
+   The guards (Before you start, step 4) refuse any other file, and refuse a `PGSSLROOTCERT` that is
+   not an absolute path. If the dashboard serves a different certificate, stop:
+   Supabase has rotated its CA, and this runbook's fingerprint must be updated in a reviewed PR first.
+   If the shell is restarted, export `PGSSLROOTCERT` again; the guards refuse while it is unset.
 
 3. Create the scratch project (step 1) and note its ref. Then write the references file. It holds
    `op://` references only. The vault items are created by the operator; the item and field names below
@@ -103,6 +125,11 @@ data restores, not that the app would run on it.
      > "$RESTORE_DIR/rclone.env"
    ```
 
+   Both database URLs in the vault must be the pooler (session mode) string ending in
+   `?sslmode=verify-full`. The dashboard's connection strings do not include it, so append it when
+   saving them. Keep them in items used only by this runbook: other clients (node-postgres, for
+   example) do not read `PGSSLROOTCERT` and would fail verification against Supabase's CA.
+
    Do not add a `RESTORE_TARGET_ENDPOINT` line; the endpoint is written on each command. Keep the
    `NO_CHECK_BUCKET` line: without it, `rclone copy` creates a destination bucket that does not exist, so
    a mistyped bucket name is created and filled instead of failing.
@@ -112,15 +139,26 @@ data restores, not that the app would run on it.
    target is production or is not the ref you pass. If any command prints `REFUSED`, stop and run
    "Clean up" step 2 (and step 1 if anything was restored).
 
+   Every command that reads production calls `guard_prod` first, which applies the same checks to
+   `PROD_DB_URL`, with production's ref.
+
    `guard` accepts only this shape of `SCRATCH_DB_URL`, and refuses everything else:
-   `postgresql://postgres.<scratch-ref>:<password>@<host>:5432/postgres`, optionally followed by
-   `?sslmode=require` (or `verify-ca`, `verify-full`) and nothing more; `:5432` is required. `<host>` is
-   `aws-<N>-<region>.pooler.supabase.com` or `db.<scratch-ref>.supabase.co`. The URL may contain exactly
+   `postgresql://postgres.<scratch-ref>:<password>@aws-<N>-<region>.pooler.supabase.com:5432/postgres?sslmode=verify-full`;
+   `:5432` and the `sslmode` are required. `guard_prod` accepts only
+   `postgresql://postgres.wqxmmuwrfltpaxnuddwk:<password>@aws-<N>-<region>.pooler.supabase.com:5432/postgres?sslmode=verify-full`.
+   Only the pooler is accepted because only the pooler has been checked against Supabase's CA with
+   `verify-full` (2026-11-06); the direct `db.<ref>.supabase.co` host is IPv6-only without the IPv4 add-on.
+   Both also require `PGSSLROOTCERT` to be an absolute path to a file holding exactly one certificate,
+   Supabase Root 2021 CA, checked by its SHA-256 fingerprint (Before you start, step 2). The URL may contain exactly
    one `@` and no `%`, `#`, space or other query parameter, because libpq decodes `%` escapes and
-   lets query parameters such as `user=` or `host=` override the parts before them. If the vault's
-   password needs percent-encoding, reset the scratch project's database password to one without
-   `@ / ? # %`. `guard` also refuses if any of `PGSERVICE`, `PGSERVICEFILE`, `PGOPTIONS`, `PGHOSTADDR`,
-   `PGHOST`, `PGPORT`, `PGUSER` or `PGDATABASE` is set, since libpq reads them; unset them first.
+   lets query parameters such as `user=` or `host=` override the parts before them (so the CA is given
+   by `PGSSLROOTCERT`, not by `sslrootcert=` in the URL). If the scratch password needs
+   percent-encoding, reset the scratch project's database password to one without `@ / ? # %`. If
+   `guard_prod` refuses because the production password has one of those characters, stop: resetting
+   production's database password changes what the app connects with, so it is a separate, approved
+   change, not a step of this rehearsal. Both guards also refuse if any of `PGSERVICE`, `PGSERVICEFILE`,
+   `PGOPTIONS`, `PGHOSTADDR`, `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGSSLMODE`, `PGREQUIRESSL`,
+   `PGSSLMAXPROTOCOLVERSION`, `PGGSSENCMODE` or `PGSYSCONFDIR` is set, since libpq reads them; unset them first.
    `guard_ep` accepts only the endpoint `https://<scratch-ref>.supabase.co/storage/v1/s3`.
 
 Paste at the shell, as is:
@@ -132,17 +170,35 @@ guard_ref() {
   case "$1" in *[!abcdefghijklmnopqrstuvwxyz0123456789]*) echo "REFUSED: scratch ref has a character other than a-z 0-9" >&2; return 1;; esac
   [ "${#1}" -eq 20 ] || { echo "REFUSED: scratch ref is not 20 characters" >&2; return 1; }
 }
+guard_tls() {
+  case "${PGSSLROOTCERT-}" in /*) ;; *) echo "REFUSED: PGSSLROOTCERT is unset or not an absolute path; export PGSSLROOTCERT=\"\$RESTORE_DIR/supabase-ca.crt\"" >&2; return 1;; esac
+  [ -f "$PGSSLROOTCERT" ] || { echo "REFUSED: PGSSLROOTCERT is not a file; export PGSSLROOTCERT=\"\$RESTORE_DIR/supabase-ca.crt\"" >&2; return 1; }
+  [ "$(grep -c -e '-----BEGIN' "$PGSSLROOTCERT")" = 1 ] || { echo "REFUSED: PGSSLROOTCERT must hold exactly one certificate" >&2; return 1; }
+  _g_fp="$(openssl x509 -noout -fingerprint -sha256 -in "$PGSSLROOTCERT" | sed 's/.*=//' | tr -d ':' | tr 'ABCDEF' 'abcdef')"
+  [ "$_g_fp" = 807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa ] || { echo "REFUSED: PGSSLROOTCERT is not Supabase Root 2021 CA" >&2; return 1; }
+}
+guard_url() {
+  for _g_n in PGSERVICE PGSERVICEFILE PGOPTIONS PGHOSTADDR PGHOST PGPORT PGUSER PGDATABASE \
+              PGSSLMODE PGREQUIRESSL PGSSLMAXPROTOCOLVERSION PGGSSENCMODE PGSYSCONFDIR; do
+    eval "_g_v=\${$_g_n-}"; [ -z "$_g_v" ] || { echo "REFUSED: $_g_n is set; unset it" >&2; return 1; }
+  done
+  case "$1" in *[![:graph:]]*) echo "REFUSED: $2 URL has a space or control character" >&2; return 1;; esac
+  case "$1" in *@*@*) echo "REFUSED: $2 URL has more than one @" >&2; return 1;; esac
+  case "$1" in *%*|*#*) echo "REFUSED: $2 URL has a % or #" >&2; return 1;; esac
+  printf '%s\n' "$1" | grep -Eq "$3" || { echo "REFUSED: $2 URL is not $4" >&2; return 1; }
+  guard_tls
+}
 guard() {
   case "$SCRATCH_DB_URL" in *wqxmmuwrfltpaxnuddwk*) echo "REFUSED: scratch URL names production" >&2; return 1;; esac
   guard_ref "$1" || return 1
-  for _g_n in PGSERVICE PGSERVICEFILE PGOPTIONS PGHOSTADDR PGHOST PGPORT PGUSER PGDATABASE; do
-    eval "_g_v=\${$_g_n-}"; [ -z "$_g_v" ] || { echo "REFUSED: $_g_n is set; unset it" >&2; return 1; }
-  done
-  case "$SCRATCH_DB_URL" in *[![:graph:]]*) echo "REFUSED: scratch URL has a space or control character" >&2; return 1;; esac
-  case "$SCRATCH_DB_URL" in *@*@*) echo "REFUSED: scratch URL has more than one @" >&2; return 1;; esac
-  case "$SCRATCH_DB_URL" in *%*|*#*) echo "REFUSED: scratch URL has a % or #" >&2; return 1;; esac
-  re='^postgres(ql)?://postgres\.'"$1"'(:[^@/?#%]+)?@(db\.'"$1"'\.supabase\.co|aws-[0-9]+-[a-z]+-[a-z]+-[0-9]+\.pooler\.supabase\.com):5432/postgres(\?sslmode=(require|verify-ca|verify-full))?$'
-  printf '%s\n' "$SCRATCH_DB_URL" | grep -Eq "$re" || { echo "REFUSED: scratch URL is not postgresql://postgres.$1:<password>@<scratch host>:5432/postgres[?sslmode=require]" >&2; return 1; }
+  guard_url "$SCRATCH_DB_URL" scratch \
+    '^postgres(ql)?://postgres\.'"$1"'(:[^@/?#%]+)?@aws-[0-9]+-[a-z]+-[a-z]+-[0-9]+\.pooler\.supabase\.com:5432/postgres\?sslmode=verify-full$' \
+    "postgresql://postgres.$1:<password>@aws-<N>-<region>.pooler.supabase.com:5432/postgres?sslmode=verify-full"
+}
+guard_prod() {
+  guard_url "$PROD_DB_URL" production \
+    '^postgres(ql)?://postgres\.wqxmmuwrfltpaxnuddwk(:[^@/?#%]+)?@aws-[0-9]+-[a-z]+-[a-z]+-[0-9]+\.pooler\.supabase\.com:5432/postgres\?sslmode=verify-full$' \
+    "postgresql://postgres.wqxmmuwrfltpaxnuddwk:<password>@aws-<N>-<region>.pooler.supabase.com:5432/postgres?sslmode=verify-full"
 }
 guard_ep() {
   case "$1" in *wqxmmuwrfltpaxnuddwk*) echo "REFUSED: endpoint names production" >&2; return 1;; esac
@@ -167,7 +223,8 @@ HEADS
 ## 1. Create the scratch project
 
 Create `magora-restore-scratch` in the same Supabase organization, same region and Postgres major version
-as production. Note its ref (below, `<scratch-ref>`). Put its pooler connection string, service role key and
+as production. Note its ref (below, `<scratch-ref>`). Put its pooler connection string (with
+`?sslmode=verify-full` appended), service role key and
 Storage S3 keys in the vault items referenced above.
 
 ## 2. Dump production
@@ -198,15 +255,15 @@ tables, then count again immediately after:
 
 ```sh
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
-  'psql "$PROD_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -f "$1/counts.sql"' _ "$RESTORE_DIR" > "$RESTORE_DIR/counts-before.txt"
+  '. "$1/guard.sh" && guard_prod && psql "$PROD_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -f "$1/counts.sql"' _ "$RESTORE_DIR" > "$RESTORE_DIR/counts-before.txt"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
-  'psql "$PROD_DB_URL" -X -At -v ON_ERROR_STOP=1 -f "$1/list-extensions.sql"' _ "$RESTORE_DIR" > "$RESTORE_DIR/extensions.sql"
+  '. "$1/guard.sh" && guard_prod && psql "$PROD_DB_URL" -X -At -v ON_ERROR_STOP=1 -f "$1/list-extensions.sql"' _ "$RESTORE_DIR" > "$RESTORE_DIR/extensions.sql"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
-  'pg_dump --format=custom --no-owner --no-privileges --schema=public --file="$1/public.dump" "$PROD_DB_URL"' _ "$RESTORE_DIR"
+  '. "$1/guard.sh" && guard_prod && pg_dump --format=custom --no-owner --no-privileges --schema=public --file="$1/public.dump" "$PROD_DB_URL"' _ "$RESTORE_DIR"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
-  'pg_dump --format=custom --data-only --table=auth.users --table=storage.buckets --table=storage.objects --file="$1/supabase-data.dump" "$PROD_DB_URL"' _ "$RESTORE_DIR"
+  '. "$1/guard.sh" && guard_prod && pg_dump --format=custom --data-only --table=auth.users --table=storage.buckets --table=storage.objects --file="$1/supabase-data.dump" "$PROD_DB_URL"' _ "$RESTORE_DIR"
 op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
-  'psql "$PROD_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -f "$1/counts.sql"' _ "$RESTORE_DIR" > "$RESTORE_DIR/counts-after.txt"
+  '. "$1/guard.sh" && guard_prod && psql "$PROD_DB_URL" -X -At -F "|" -v ON_ERROR_STOP=1 -f "$1/counts.sql"' _ "$RESTORE_DIR" > "$RESTORE_DIR/counts-after.txt"
 ls -l "$RESTORE_DIR"/*.dump
 cat "$RESTORE_DIR/counts-before.txt" "$RESTORE_DIR/counts-after.txt" "$RESTORE_DIR/extensions.sql"
 ```
@@ -542,7 +599,7 @@ The data restore brought back the `storage.buckets` and `storage.objects` rows, 
    ```sh
    IDS="$(cut -d'|' -f1 "$RESTORE_DIR/sample.txt" | sed "s/.*/'&'/" | paste -sd, -)"
    op run --env-file="$RESTORE_DIR/refs.env" -- sh -c \
-     'psql "$PROD_DB_URL" -X -At -c "select id, updated_at from storage.objects where id in ($1)"' _ "$IDS"
+     '. "$2/guard.sh" && guard_prod && psql "$PROD_DB_URL" -X -At -c "select id, updated_at from storage.objects where id in ($1)"' _ "$IDS" "$RESTORE_DIR"
    ```
 
    `<latest>` is a date, and the backup ran some time during that day, so compare with the time the
