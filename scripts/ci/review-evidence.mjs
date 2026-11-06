@@ -43,7 +43,7 @@ import { fileURLToPath } from 'node:url'
 import { EVIDENCE_DIR, blobIdentity, git, inputIdentity, mergeBase } from '../review/identity.mjs'
 import { addedRecordStems, chainHeads, dispositionOk, isBlockingByDefault, readRecords, repoPath, undisposedBlocking } from '../review/records.mjs'
 import { LANES, parseBody } from '../review/pr-body.mjs'
-import { DEPTH_LABELS } from './label-gate.mjs'
+import { DEPTH_LABELS, inferLabel, parseControlFiles } from './label-gate.mjs'
 
 export const ACTIVATION_PATH = '.github/review-activation.json'
 export const ACTIVATION_KEY = 'review-evidence'
@@ -76,6 +76,20 @@ export function requiredSlots({ lane, depth, changedDocs = [] }) {
     default: throw new Error(`unknown lane "${lane}" (one of ${LANES.join(', ')})`)
   }
 }
+
+// ---------- the depth judged (David's ruling, 2026-11-06) ----------
+
+// The PR's depth label is the floor, not the answer: the depth judged is the higher of the label and what
+// label-gate's inferLabel makes of the changed paths, so a person's `standard` on a control-file or migration
+// PR still needs a completeness record. inferLabel never infers `mechanical` and answers `standard` for any
+// ordinary path; that `standard` is no floor (it would make `mechanical` unreachable, against AGENTS.md
+// § Depth labels), so only an inferred `subtle-correctness` raises the label.
+export function requiredDepth({ label, paths, controlFiles }) {
+  return inferLabel(paths, controlFiles) === 'subtle-correctness' ? 'subtle-correctness' : label
+}
+
+// The paths that make inferLabel answer subtle-correctness, for the log line.
+const subtlePaths = (paths, controlFiles) => paths.filter((p) => inferLabel([p], controlFiles) === 'subtle-correctness')
 
 // ---------- the predicate ----------
 
@@ -202,6 +216,15 @@ const must = (r, what) => {
 export const defaultGit = {
   head: async ({ cwd }) => must(await git(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd }), 'git rev-parse HEAD').trim(),
   inputIdentity, blobIdentity, mergeBase, addedRecordStems,
+  // Every path the PR changes (both sides of a rename, as label-gate counts previous_filename), .review/ excluded.
+  changedPaths: async ({ cwd, base, head }) =>
+    must(await git(['diff', '--name-only', '-z', '--no-renames', base, head, '--', '.', `:(exclude)${EVIDENCE_DIR}`], { cwd }), 'git diff --name-only')
+      .split('\0').filter(Boolean),
+  // AGENTS.md at a commit, or null when that commit has none.
+  agentsAt: async ({ cwd, rev }) => {
+    const r = await git(['cat-file', 'blob', `${rev}:AGENTS.md`], { cwd })
+    return r.code === 0 ? r.stdout.toString() : null
+  },
   // Spec and plan paths the PR adds or changes. Deleted docs need no review; renames count as added.
   changedDocPaths: async ({ cwd, base, head }) =>
     must(await git(['diff', '--name-only', '-z', '--no-renames', '--diff-filter=d', base, head, '--', DOC_DIRS.spec, DOC_DIRS.plan], { cwd }), 'git diff --name-only')
@@ -226,15 +249,32 @@ async function docsFor({ cwd, lane, body, base, head, gitImpl }) {
   return []
 }
 
+// The control-file list from AGENTS.md at the head. A head that narrows the list it is judged by (issue #61)
+// changes AGENTS.md, which inferLabel always counts as subtle, so the head's copy cannot lower the depth; a
+// head that leaves AGENTS.md alone has the merge base's copy. No AGENTS.md, or no list in it: throws.
+async function controlFilesFor({ cwd, head, gitImpl }) {
+  const text = await gitImpl.agentsAt({ cwd, rev: head })
+  if (text === null) throw new Error('the head has no AGENTS.md, so the depth floor (its control-file list) cannot be computed')
+  return parseControlFiles(text)
+}
+
 // untracked: also count records not committed yet as added (localCheck).
-async function judgeCheckout({ cwd, lane, depth, body, base, head, gitImpl, untracked = false }) {
+async function judgeCheckout({ cwd, lane, depth: label, body, base, head, gitImpl, untracked = false }) {
   const identity = await gitImpl.inputIdentity({ cwd, base, head })
   const changedDocs = lane ? await docsFor({ cwd, lane, body, base, head, gitImpl }) : []
   const records = readRecords({ cwd })
-  const required = lane ? requiredSlots({ lane, depth, changedDocs }) : []
   const mb = await gitImpl.mergeBase({ cwd, base, head })
+  const paths = await gitImpl.changedPaths({ cwd, base: mb, head })
+  const controlFiles = await controlFilesFor({ cwd, head, gitImpl })
+  const depth = requiredDepth({ label, paths, controlFiles })
+  const required = lane ? requiredSlots({ lane, depth, changedDocs }) : []
   const addedStems = await (gitImpl.addedRecordStems ?? addedRecordStems)({ cwd, mergeBase: mb, head, untracked })
-  return evaluate({ records, required, identity, body, addedStems })
+  const result = evaluate({ records, required, identity, body, addedStems })
+  if (depth !== label && (lane === 'specced' || lane === 'direct')) {
+    const why = subtlePaths(paths, controlFiles)
+    result.lines.unshift(`depth: judged as ${depth}, not the ${label} label: ${why.slice(0, 5).join(', ')}${why.length > 5 ? ` and ${why.length - 5} more` : ''} (label-gate's inferLabel)`)
+  }
+  return result
 }
 
 // ---------- CI entry ----------

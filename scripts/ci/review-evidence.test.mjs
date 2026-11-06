@@ -13,7 +13,7 @@ writeFileSync(emptyConfig, '')
 process.env.GIT_CONFIG_GLOBAL = emptyConfig
 process.env.GIT_CONFIG_NOSYSTEM = '1'
 
-const { evaluate, isGrandfathered, localCheck, main, requiredSlots } = await import('./review-evidence.mjs')
+const { evaluate, isGrandfathered, localCheck, main, requiredDepth, requiredSlots } = await import('./review-evidence.mjs')
 const { reviewCli } = await import('../review/review.mjs')
 const { inputIdentity } = await import('../review/identity.mjs')
 const { expandTasks, parseBody } = await import('../review/pr-body.mjs')
@@ -46,8 +46,11 @@ const put = (cwd, file, text) => {
 const mkrepo = () => {
   const dir = join(root, `r${++seq}`)
   spawnSync('git', ['init', '-q', '-b', 'main', dir], { shell: false })
+  // review-evidence reads the control-file list from AGENTS.md (the depth floor); every scratch repo has one.
+  put(dir, 'AGENTS.md', AGENTS)
   return dir
 }
+const AGENTS = '# AGENTS\n\n## Control files\n\n`.github/**`, `scripts/ci/**`, `package.json`.\n\n## Next\n'
 const filler = (p) => Array.from({ length: 8 }, (_, i) => `${p}${i}`)
 const app = (b, ret) => [...filler('top'), 'def f(x):', '    a = 1', `    b = ${b}`, '    c = 3', `    ${ret}`, ...filler('bot')].join('\n') + '\n'
 // A repo with `main` (one commit) and branch `pr` (one change) checked out.
@@ -357,6 +360,52 @@ try {
     ok('localCheck: an untracked completed head with an open finding fails the slot, naming it', failsWith(lc, /correctness--untracked--1.*F8/))
     rmSync(join(dir, '.review/records/correctness--untracked--1.json'))
     ok('localCheck: without it the same checkout passes (the base-only open head is ignored)', (await localCheck({ cwd: dir })).ok)
+  }
+
+  // ---------- P1 (2026-11-06): the depth judged is max(label, label-gate inferLabel(changed paths)) ----------
+  {
+    const cf = ['.github/**', 'scripts/ci/**']
+    ok('requiredDepth: standard label + a control file -> subtle-correctness', requiredDepth({ label: 'standard', paths: ['scripts/ci/x.mjs'], controlFiles: cf }) === 'subtle-correctness')
+    ok('requiredDepth: standard label + AGENTS.md (whatever the list) -> subtle-correctness', requiredDepth({ label: 'standard', paths: ['AGENTS.md'], controlFiles: [] }) === 'subtle-correctness')
+    ok('requiredDepth: mechanical label + a migration -> subtle-correctness', requiredDepth({ label: 'mechanical', paths: ['supabase/migrations/1.sql'], controlFiles: cf }) === 'subtle-correctness')
+    ok('requiredDepth: a label is never lowered', requiredDepth({ label: 'subtle-correctness', paths: ['app.py'], controlFiles: cf }) === 'subtle-correctness')
+    ok('requiredDepth: mechanical stays mechanical on ordinary paths (inferLabel never infers mechanical; its standard is no floor)', requiredDepth({ label: 'mechanical', paths: ['README.md'], controlFiles: cf }) === 'mechanical')
+    ok('requiredDepth: standard stays standard on ordinary paths', requiredDepth({ label: 'standard', paths: ['app.py'], controlFiles: cf }) === 'standard')
+
+    // through localCheck: a PR labelled standard that edits a control file needs completeness too
+    const d = prRepo()
+    put(d.dir, 'scripts/ci/gate.mjs', 'export {}\n')
+    commit(d.dir, 'edit a control file')
+    const identity = await inputIdentity({ cwd: d.dir, base: d.base, head: 'HEAD' })
+    put(d.dir, '.review/records/correctness--f--1.json', JSON.stringify(rec({ slot: 'correctness', stem: undefined, input: { kind: 'pr', identity } })) + '\n')
+    commit(d.dir, 'evidence')
+    put(d.dir, '.review/local.json', JSON.stringify({ lane: 'direct', depth: 'standard' }) + '\n')
+    const lc = await localCheck({ cwd: d.dir })
+    ok('localCheck: standard label on a control-file change -> FAIL naming completeness', failsWith(lc, /FAIL completeness/))
+    ok('localCheck: the raised depth is reported with the path that raised it', /subtle-correctness.*scripts\/ci\/gate\.mjs/.test(lc.lines.join('\n')))
+    put(d.dir, '.review/records/completeness--f--1.json', JSON.stringify(rec({ slot: 'completeness', stem: undefined, vendor: 'google', input: { kind: 'pr', identity } })) + '\n')
+    ok('localCheck: with a completeness record from a third vendor it passes', (await localCheck({ cwd: d.dir })).ok)
+
+    // a PR that removes a path from the base's control list is still judged by the base's list
+    const n = prRepo()
+    put(n.dir, 'AGENTS.md', AGENTS.replace('`scripts/ci/**`, ', ''))
+    put(n.dir, 'scripts/ci/gate.mjs', 'export {}\n')
+    commit(n.dir, 'narrow the list and edit a formerly listed file')
+    put(n.dir, '.review/local.json', JSON.stringify({ lane: 'direct', depth: 'standard' }) + '\n')
+    ok('localCheck: a head that drops a path from the control list is still subtle (AGENTS.md itself changed)', /subtle-correctness.*AGENTS\.md/.test((await localCheck({ cwd: n.dir })).lines.join('\n')))
+    // a head whose AGENTS.md has no control-file list -> could not judge (fail closed)
+    const e = prRepo()
+    put(e.dir, 'AGENTS.md', '# AGENTS\n')
+    commit(e.dir, 'empty the list')
+    put(e.dir, '.review/local.json', JSON.stringify({ lane: 'direct', depth: 'standard' }) + '\n')
+    ok('localCheck: a head AGENTS.md with no control-file list -> could not judge', failsWith(await localCheck({ cwd: e.dir }), /could not judge.*Control files/))
+
+    // the head has no AGENTS.md -> could not judge (fail closed)
+    const z = prRepo()
+    raw(z.dir, ['rm', '-q', 'AGENTS.md'])
+    commit(z.dir, 'drop AGENTS.md')
+    put(z.dir, '.review/local.json', JSON.stringify({ lane: 'direct', depth: 'mechanical' }) + '\n')
+    ok('localCheck: no AGENTS.md at the head -> could not judge', failsWith(await localCheck({ cwd: z.dir }), /could not judge.*AGENTS\.md/))
   }
 
   // ---------- P3-7: Spec:/Plan: paths are normalised as the runner normalises --path ----------

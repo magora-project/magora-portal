@@ -52,6 +52,8 @@ Slots are fixed IDs, each with a canonical prompt file in `.claude/`: `spec`, `p
 - `standard`: a `correctness` record.
 - `subtle-correctness`: a `correctness` record and a `completeness` record, from different models. `completeness` asks: is anything promised missing, can the tests fail, what did the fixes break.
 
+The label is a floor: `review-evidence` judges a PR at `subtle-correctness` whenever `label-gate` would infer that from its changed paths (a migration, `api/`, `AGENTS.md`, or a control file), whatever depth label it carries.
+
 **Dispatch.** The reviewer's vendor must differ from the vendor that wrote the change.
 
 | Written by | Primary | Fallback |
