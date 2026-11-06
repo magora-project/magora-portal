@@ -491,6 +491,84 @@ try {
     const fg = await runs(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--supersedes', gone.stem])
     ok('plan --supersedes whose old blob is not in the repo falls back to the full document and says so on stderr', fg.code === 0 && fg.sent[0].includes('UNCHANGED_BODY_LINE_3') && /Delta since/.test(fg.sent[0]) === false && /0123456789ab/.test(fg.err))
   }
+  // --- P2 (David, 2026-11-06): completeness prompts carry the declared plan tasks, the spec sections they cite and
+  // the commit messages, and Gemini's 400 KB cap counts them ---
+  {
+    const putP = (cwd, file, text) => { mkdirSync(join(cwd, file, '..'), { recursive: true }); writeFileSync(join(cwd, file), text) }
+    const PLAN_TEXT = [
+      '# Plan', '', '## Phase 1', '',
+      '### Task 1: First', '', 'TASK_ONE_BODY per spec §5.3.', '', '```bash', '# not a heading inside a fence', 'TASK_ONE_FENCED', '```', '',
+      '#### Step 1', '', 'TASK_ONE_STEP', '',
+      '### Task 2: Second', '', 'TASK_TWO_BODY per §5.4.', '',
+      '### Task 3 (operator): Third', '', 'TASK_THREE_BODY, see §7 and §9.9.', '',
+      '## Phase 2', '', 'PHASE_TWO_PROSE', '',
+    ].join('\n')
+    const SPEC_TEXT = [
+      '# Spec', '', '## 5. The process', '', 'CHAPTER_FIVE_INTRO', '',
+      '### 5.3 Evidence', '', 'SPEC_FIVE_THREE', '', '#### 5.3.1 Detail', '', 'SPEC_FIVE_THREE_ONE', '',
+      '### 5.4 Conformance', '', 'SPEC_FIVE_FOUR', '',
+      '## 7. Left to the builder', '', 'SPEC_SEVEN', '', '## 8. Open', '', 'SPEC_EIGHT', '',
+    ].join('\n')
+    const mk = ({ local, plan = PLAN_TEXT, bigFile = 0 }) => {
+      const d = mkrepo()
+      putP(d, 'docs/superpowers/plans/p.md', plan)
+      putP(d, 'docs/superpowers/specs/s.md', SPEC_TEXT)
+      putP(d, 'a.txt', 'a\n'); commit(d, 'BASE_COMMIT_SUBJECT')
+      raw(d, ['checkout', '-q', '-b', 'pr'])
+      putP(d, 'a.txt', 'a\nb\n')
+      if (bigFile) putP(d, 'big.txt', 'x'.repeat(bigFile) + '\n')
+      raw(d, ['add', '-A'])
+      raw(d, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'PR_COMMIT_SUBJECT', '-m', 'PR_COMMIT_BODY_LINE'])
+      if (local) putP(d, '.review/local.json', JSON.stringify(local) + '\n')
+      return d
+    }
+    const LOCAL = { lane: 'specced', depth: 'subtle-correctness', spec: 'docs/superpowers/specs/s.md', plan: { path: 'docs/superpowers/plans/p.md', tasks: ['T1', 'T3'] } }
+    // a passing codex correctness head for the current identity, so completeness goes to claude (author none)
+    const withCorrectness = async (d) => {
+      const identity = await inputIdentity({ cwd: d, base: 'main', head: 'HEAD' })
+      writeRecord({ cwd: d, record: prRecord({ input: { kind: 'pr', identity, mergeBase: raw(d, ['merge-base', 'main', 'HEAD']), head: raw(d, ['rev-parse', 'HEAD']) }, authorVendor: 'none' }) })
+    }
+    const runIn = async (d, slot, opts = {}) => {
+      const sent = [], o = io()
+      const code = await runCli(['run', '--slot', slot, '--author', 'none', '--base', 'main', ...(opts.args ?? [])], { cwd: d, promptFor, env: opts.env ?? {}, io: o.io, spawnImpl: capturePrompt(sent, envelopeOk), ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}) })
+      return { code, sent, out: o.out, err: o.err }
+    }
+
+    const d = mk({ local: LOCAL })
+    await withCorrectness(d)
+    const r = await runIn(d, 'completeness')
+    const p = r.sent[0] ?? ''
+    ok('P2 completeness: runs and sends one prompt', r.code === 0 && r.sent.length === 1)
+    ok('P2 completeness: the declared plan tasks are in the prompt, with their sub-steps and fenced lines', p.includes('TASK_ONE_BODY') && p.includes('TASK_ONE_STEP') && p.includes('TASK_ONE_FENCED') && p.includes('TASK_THREE_BODY'))
+    ok('P2 completeness: an undeclared task is not', !p.includes('TASK_TWO_BODY'))
+    ok('P2 completeness: a task section ends at the next heading of its level or higher', !p.includes('PHASE_TWO_PROSE'))
+    ok('P2 completeness: the spec sections the declared tasks cite are in the prompt, with their subsections', p.includes('SPEC_FIVE_THREE') && p.includes('SPEC_FIVE_THREE_ONE') && p.includes('SPEC_SEVEN'))
+    ok('P2 completeness: a section cited only by an undeclared task, a sibling and the parent chapter are not', !p.includes('SPEC_FIVE_FOUR') && !p.includes('CHAPTER_FIVE_INTRO') && !p.includes('SPEC_EIGHT'))
+    ok('P2 completeness: a cited section the spec lacks is named, not silently dropped', /§9\.9/.test(p) && /§9\.9/.test(r.err))
+    ok('P2 completeness: the PR\'s commit messages (subject and body) are in the prompt, the base\'s are not', p.includes('PR_COMMIT_SUBJECT') && p.includes('PR_COMMIT_BODY_LINE') && !p.includes('BASE_COMMIT_SUBJECT'))
+
+    const rc = await runIn(d, 'correctness', { args: ['--reviewer', 'claude'] })
+    ok('P2: a correctness prompt carries no plan, spec or commit context', rc.code === 0 && !rc.sent[0].includes('TASK_ONE_BODY') && !rc.sent[0].includes('SPEC_FIVE_THREE') && !rc.sent[0].includes('PR_COMMIT_BODY_LINE'))
+
+    const missing = mk({ local: { ...LOCAL, plan: { ...LOCAL.plan, tasks: ['T1', 'T9'] } } })
+    await withCorrectness(missing)
+    const rm = await runIn(missing, 'completeness')
+    ok('P2: a declared task the plan lacks fails before any reviewer runs, naming it', rm.code === 1 && rm.sent.length === 0 && /T9/.test(rm.err))
+
+    const none = mk({})
+    await withCorrectness(none)
+    const rn = await runIn(none, 'completeness')
+    ok('P2: with no .review/local.json, completeness still runs with the commit messages and says what is missing', rn.code === 0 && rn.sent[0].includes('PR_COMMIT_BODY_LINE') && /local\.json/.test(rn.err))
+
+    // Gemini's cap counts the context: a diff under the cap plus a big declared task section is over it.
+    const bigPlan = PLAN_TEXT.replace('TASK_ONE_BODY', `TASK_ONE_BODY ${'y'.repeat(150_000)}`)
+    const big = mk({ local: LOCAL, plan: bigPlan, bigFile: 300_000 })
+    // the plan is on main too, so the diff is only big.txt + a.txt (about 300 KB, under the cap)
+    await withCorrectness(big)
+    const fetchCalls = []
+    const rg = await runIn(big, 'completeness', { args: ['--reviewer', 'gemini'], env: { GEMINI_API_KEY: 'KEY123' }, fetchImpl: async (u) => { fetchCalls.push(u); return new Response('') } })
+    ok('P2 gemini: diff plus context over 400,000 bytes makes no request and fails', fetchCalls.length === 0 && rg.code === 1 && /400000/.test(rg.err))
+  }
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

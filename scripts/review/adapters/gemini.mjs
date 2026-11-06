@@ -78,7 +78,7 @@ export const run = async ({ prompt, timeoutMs, fetchImpl = defaultFetch, env = p
   const result = (o) => ({ exitCode: 1, truncated: false, timedOut: false, ...o, stdout: redact(o.stdout ?? ''), stderr: redact(o.stderr ?? '') })
   if (!key) return result({ exitCode: 2, stderr: 'GEMINI_API_KEY is not set; export it (it is never logged)' })
   const size = diffBytes ?? Buffer.byteLength(prompt, 'utf8')
-  if (size > MAX_DIFF_BYTES) return result({ exitCode: 2, stderr: `diff is ${size} bytes, over the ${MAX_DIFF_BYTES} cap - review it in parts` })
+  if (size > MAX_DIFF_BYTES) return result({ exitCode: 2, stderr: `review input (diff plus any promise context) is ${size} bytes, over the ${MAX_DIFF_BYTES} cap - review it in parts` })
 
   const ac = new AbortController()
   let timedOut = false

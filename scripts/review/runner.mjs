@@ -1,5 +1,7 @@
 // Local reviewer runner (spec §5.3, §5.5, §5.6): picks an independent reviewer, sends it the slot prompt and the
 // review input, classifies the outcome mechanically and writes a review record. CLI entry: scripts/review/review.mjs.
+// completeness (and, from PR C, conformance) prompts also carry the promise context: the plan task sections declared
+// in .review/local.json, the spec sections those tasks cite, and the commit messages since the merge base.
 //
 //   run     --slot <slot> --author <openai|anthropic|google|none> [--reviewer codex|claude|gemini]
 //           [--path <spec-or-plan>] [--supersedes <stem>] [--base <ref>] [--model opus|fable] [--timeout-min <n>]
@@ -134,6 +136,103 @@ export const independenceProblem = ({ authorVendor, slot, reviewer, otherVendor 
   return null
 }
 
+// ---------- promise context (David, 2026-11-06) ----------
+
+// The slots whose prompts ask what the spec, plan and commit messages promised (completeness.md; conformance from
+// PR C). They get the declared plan task sections, the spec sections those tasks cite, and the commit messages.
+export const CONTEXT_SLOTS = ['completeness', 'conformance']
+
+// Markdown headings outside fenced code blocks: [{ line, level, text }]. A `# comment` in a ```bash block is not one.
+export const headings = (lines) => {
+  const out = []
+  let fenceOpen = null
+  lines.forEach((l, i) => {
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(l)
+    if (f) {
+      if (fenceOpen === null) fenceOpen = f[1]
+      else if (f[1][0] === fenceOpen[0] && f[1].length >= fenceOpen.length && l.trim() === f[1]) fenceOpen = null
+      return
+    }
+    if (fenceOpen !== null) return
+    const h = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(l)
+    if (h) out[out.length] = { line: i, level: h[1].length, text: h[2] }
+  })
+  return out
+}
+
+// The section a heading opens: through the line before the next heading of its level or higher.
+const sectionAt = (lines, hs, k) => {
+  const end = hs.slice(k + 1).find((h) => h.level <= hs[k].level)
+  return lines.slice(hs[k].line, end ? end.line : lines.length).join('\n').trimEnd()
+}
+
+// Plan task sections for task IDs ('T10'): the heading `Task 10` (any level, with or without a suffix).
+export const planTaskSections = (text, tasks) => {
+  const lines = String(text).split(/\r?\n/), hs = headings(lines)
+  const sections = [], missing = []
+  for (const t of tasks) {
+    const n = Number(String(t).replace(/^T/, ''))
+    const k = hs.findIndex((h) => new RegExp(`^Task\\s+${n}(?![0-9])`).test(h.text))
+    if (k === -1) missing[missing.length] = t
+    else sections[sections.length] = { id: t, text: sectionAt(lines, hs, k) }
+  }
+  return { sections, missing }
+}
+
+// `§5.3` citations in text, in order of first appearance.
+export const citedSections = (text) => [...new Set([...String(text).matchAll(/§\s?(\d+(?:\.\d+)*)/g)].map((m) => m[1]))]
+
+// Spec sections by number: the heading `5.3 Title` or `7. Title`, through its subsections.
+export const specSections = (text, ids) => {
+  const lines = String(text).split(/\r?\n/), hs = headings(lines)
+  const sections = [], missing = []
+  for (const id of ids) {
+    const k = hs.findIndex((h) => h.text.startsWith(id) && /^\.?(\s|$)/.test(h.text.slice(id.length)))
+    if (k === -1) missing[missing.length] = id
+    else sections[sections.length] = { id, text: sectionAt(lines, hs, k) }
+  }
+  return { sections, missing }
+}
+
+// .review/local.json's spec and plan (written by `review.mjs init-local`), or null when there is none.
+const readLocal = (root) => {
+  const file = join(root, EVIDENCE_DIR, 'local.json')
+  if (!existsSync(file)) return null
+  let local
+  try { local = JSON.parse(readFileSync(file, 'utf8')) } catch (e) { usage(`${EVIDENCE_DIR}/local.json is not JSON (${e.message}): rewrite it with init-local`) }
+  if (!isObj(local)) usage(`${EVIDENCE_DIR}/local.json is not a JSON object: rewrite it with init-local`)
+  return local
+}
+
+// The promise context for a PR input: [{ heading, text }] plus warnings. Read at HEAD (the reviewed commit), not the
+// work tree. Throws a usage error for a declared task the plan lacks, so a typo cannot drop a task's promises.
+const promiseContext = async ({ root, mb, head }) => {
+  const parts = [], warnings = []
+  const at = async (path) => must(await git(['cat-file', 'blob', `${head}:${repoPath(path)}`], { cwd: root }), `reading ${path} at HEAD`)
+  const local = readLocal(root)
+  if (local === null) warnings[warnings.length] = `no ${EVIDENCE_DIR}/local.json: the prompt has no plan task or spec sections (run npm run review -- init-local)`
+  let cited = []
+  if (local?.plan !== undefined) {
+    if (!isObj(local.plan) || typeof local.plan.path !== 'string' || !Array.isArray(local.plan.tasks)) usage(`${EVIDENCE_DIR}/local.json: plan must be { path, tasks }`)
+    const { sections, missing } = planTaskSections(await at(local.plan.path), local.plan.tasks)
+    if (missing.length) usage(`${local.plan.path} has no section for declared task(s) ${missing.join(', ')} (${EVIDENCE_DIR}/local.json)`)
+    for (const sct of sections) parts[parts.length] = { heading: `Plan ${repoPath(local.plan.path)}, ${sct.id}`, text: sct.text }
+    cited = citedSections(sections.map((x) => x.text).join('\n'))
+  }
+  if (typeof local?.spec === 'string' && cited.length) {
+    const { sections, missing } = specSections(await at(local.spec), cited)
+    for (const sct of sections) parts[parts.length] = { heading: `Spec ${repoPath(local.spec)}, §${sct.id}`, text: sct.text }
+    if (missing.length) {
+      const note = `the declared tasks cite ${missing.map((m) => `§${m}`).join(', ')}, which ${repoPath(local.spec)} has no heading for`
+      warnings[warnings.length] = note
+      parts[parts.length] = { heading: 'Cited spec sections not found', text: note }
+    }
+  }
+  const log = must(await git(['log', '--format=commit %H%n%B', `${mb}..${head}`], { cwd: root }), 'git log')
+  parts[parts.length] = { heading: `Commit messages (${mb.slice(0, 12)}..${head.slice(0, 12)})`, text: log.trim() || '(none)' }
+  return { parts, warnings }
+}
+
 // ---------- prompt ----------
 
 const fence = (text, lang = '') => {
@@ -142,7 +241,7 @@ const fence = (text, lang = '') => {
   return `${f}${lang}\n${text}${text.endsWith('\n') ? '' : '\n'}${f}`
 }
 
-export const buildPrompt = ({ slotPrompt, mode, full, fullLabel, delta, deltaLabel, inherited }) => {
+export const buildPrompt = ({ slotPrompt, mode, full, fullLabel, delta, deltaLabel, inherited, context = [] }) => {
   const parts = [slotPrompt.trimEnd(), '',
     '## Output contract', '',
     'Reply with exactly one JSON object matching this JSON Schema, and nothing else:', '', fence(SCHEMA_TEXT, 'json'), '',
@@ -160,6 +259,10 @@ export const buildPrompt = ({ slotPrompt, mode, full, fullLabel, delta, deltaLab
   if (full !== null) parts.push(`### ${fullLabel}`, '', fence(full, 'diff'), '')
   if (delta !== null) parts.push(`### ${deltaLabel}`, '', fence(delta, 'diff'), '')
   if (inherited.length) parts.push('### Inherited findings', '', fence(JSON.stringify(inherited, null, 2), 'json'), '')
+  if (context.length) {
+    parts.push('## What was promised', '', 'The declared plan tasks, the spec sections they cite, and the commit messages. Judge the diff against them.', '')
+    for (const c of context) parts.push(`### ${c.heading}`, '', fence(c.text, 'markdown'), '')
+  }
   return parts.join('\n')
 }
 
@@ -344,10 +447,19 @@ const cmdRun = async (argv, ctx) => {
   if (mode === 'delta') full = null
   const inheritedIds = toAssess.map((f) => f.id)
 
+  let context = []
+  if (!blob && CONTEXT_SLOTS.includes(o.slot)) {
+    const pc = await promiseContext({ root, mb: input.mergeBase, head })
+    context = pc.parts
+    for (const w of pc.warnings) io.err(`${w}\n`)
+  }
+
   const promptFor = ctx.promptFor ?? defaultPromptFor
   const slotPrompt = promptFor(o.slot, { root })
-  const prompt = buildPrompt({ slotPrompt, mode, full, fullLabel, delta, deltaLabel, inherited: toAssess })
+  const prompt = buildPrompt({ slotPrompt, mode, full, fullLabel, delta, deltaLabel, inherited: toAssess, context })
+  // Gemini's cap counts everything the reviewer must read: the diff(s) and the promise context.
   const diffBytes = Buffer.byteLength(full ?? '', 'utf8') + Buffer.byteLength(delta ?? '', 'utf8')
+    + context.reduce((n, c) => n + Buffer.byteLength(c.text, 'utf8'), 0)
 
   const adapter = ADAPTERS[reviewer]
   const model = reviewer === 'claude' ? (o.model ?? 'opus') : reviewer === 'gemini' ? gemini.DEFAULT_MODEL : codex.MODEL
