@@ -1,11 +1,12 @@
 import { isHiddenSpecies } from './hiddenSpecies.js'
 
-// The key a detection is counted under. A node's raw_label is "CommonName_ScientificName" (see
-// DetectionCard), and species_name holds that common name, so a row that only has raw_label is
-// keyed by raw_label's common-name part. Without this, the same species is counted under two keys
-// (#59). Returns null when the row has neither.
+// The key a detection is counted under. A node detection's raw_label is "CommonName_ScientificName"
+// (see DetectionCard), and its species_name holds that common name, so a detection that only has
+// raw_label is keyed by raw_label's common-name part. Without this, the same species is counted
+// under two keys (#59). Both paths are trimmed. Returns null when the detection has neither.
 export function speciesKey(d) {
-  if (d?.species_name) return d.species_name
+  const name = d?.species_name?.trim()
+  if (name) return name
   const common = d?.raw_label?.split('_')[0].trim()
   return common || null
 }

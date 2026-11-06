@@ -1,3 +1,5 @@
+import { speciesKey } from './speciesKey.js'
+
 // Map page data loading (#64). Each section's query applies its result as soon as that query
 // settles, so a slow query (say, nodes) delays only its own section instead of the whole page.
 
@@ -14,7 +16,8 @@ export const FEED_SECTIONS = ['detections', 'mobile', 'sessions']
 export function nodeInsightRequest(d, node) {
   const body = {
     detection_id:    d.id,
-    species_name:    d.species_name || d.raw_label,
+    // The common name, so the server's species lookup (by common_name) matches a raw_label-only row.
+    species_name:    speciesKey(d) || d.raw_label,
     scientific_name: d.raw_label?.split('_')[1] || '',
     confidence:      d.confidence,
     is_dawn_chorus:  d.is_dawn_chorus,

@@ -126,7 +126,7 @@ test('a feed card whose node is not in the nodes list still gets an insight requ
   const d = { id: 'd1', node_id: 'n-unlisted', species_name: null, raw_label: 'American Robin_Turdus migratorius', confidence: 0.8, is_dawn_chorus: false }
   const body = nodeInsightRequest(d, undefined)
   assert.equal(body.detection_id, 'd1', 'the server resolves the node from the detection')
-  assert.equal(body.species_name, 'American Robin_Turdus migratorius')
+  assert.equal(body.species_name, 'American Robin', 'common name, so the server species lookup matches')
   assert.equal(body.scientific_name, 'Turdus migratorius')
   assert.equal('location' in body, false, 'no location is invented for an unlisted node')
   assert.equal(nodeInsightRequest(d, { name: 'Pond' }).location, 'Pond')
@@ -138,5 +138,6 @@ test('a failed nodes refresh keeps the last list; a successful one replaces it (
   assert.equal(nextNodes(prev, { data: null, error: new Error('timeout') }), prev)
   assert.deepEqual(nextNodes(prev, { data: [{ id: 'n5', detections: [{ id: 'd' }] }], error: null }), [{ id: 'n5' }])
   assert.deepEqual(nextNodes(prev, { data: null, error: null }), [])
+  assert.deepEqual(nextNodes(prev, { data: [], error: null }), [], 'an empty successful result replaces the list')
   assert.deepEqual(nextNodes([], { data: null, error: new Error('first load failed') }), [])
 })
