@@ -326,6 +326,10 @@ const cmdRun = async (argv, ctx) => {
       } else {
         io.err(`cannot diff from blob ${old.input.identity} (${d ? d.stderr.trim() : 'not in this repository'}); sending the full document\n`)
       }
+    } else if (!blob && old.outcome === 'completed' && typeof old.input.head === 'string' && old.input.mergeBase !== input.mergeBase) {
+      // A merge from main (or a rebase) moved the merge base: old head .. head would carry main's changes into the
+      // "delta", mixing them with the PR's own. Send the full input instead; it is never less than the delta.
+      io.err(`the merge base moved since ${old.stem} (${old.input.mergeBase ?? 'none'} -> ${input.mergeBase}); sending the full input\n`)
     } else if (!blob && old.outcome === 'completed' && typeof old.input.head === 'string') {
       const d = await git([...DIFF_ARGS, old.input.head, head, '--', '.', `:(exclude)${EVIDENCE_DIR}`], { cwd: root })
       if (d.code === 0) {

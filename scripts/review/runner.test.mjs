@@ -261,6 +261,11 @@ try {
   ok('--supersedes of a completed record with an undisposed blocking finding sends the full current diff and the delta', await (async () => { const sent = []; await runCli(['run', '--slot', 'substitute:gemini', '--author', 'anthropic', '--reviewer', 'claude', '--supersedes', completedRootWithOpen.stem], { cwd: repo, promptFor, env: {}, io: io().io, spawnImpl: capturePrompt(sent, envelopeOk) }); return sent.length === 1 && sent[0].includes(fullCurrentDiff) && sent[0].includes(deltaOnly) && /Delta since/.test(sent[0]) })())
   ok('--supersedes of a completed record with no undisposed finding sends only the delta', await (async () => { const sent = []; await runCli(['run', '--slot', 'correctness', '--author', 'anthropic', '--supersedes', completedRoot.stem], { cwd: repo, promptFor, env: {}, io: io().io, spawnImpl: capturePrompt(sent, envelopeOk) }); return sent.length === 1 && sent[0].includes(deltaOnly) && sent[0].includes(fullCurrentDiff) === false && sent[0].includes('ORIGINAL_CHANGE_LINE') === false })())
 
+  // A merge from main between the two reviews moves the merge base, and old head .. head would then carry main's
+  // changes into the "delta". Only an unmoved merge base allows a delta; otherwise the full input is sent.
+  const movedBase = store(prRecord({ input: { ...pr1, mergeBase: '0'.repeat(40) }, findings: [] }))
+  ok('--supersedes of a clean completed record whose merge base has since moved sends the full input, not the delta, and says why', await (async () => { const sent = []; const o = io(); await runCli(['run', '--slot', 'correctness', '--author', 'anthropic', '--supersedes', movedBase.stem], { cwd: repo, promptFor, env: {}, io: o.io, spawnImpl: capturePrompt(sent, envelopeOk) }); return sent.length === 1 && sent[0].includes(fullCurrentDiff) && /Delta since/.test(sent[0]) === false && /merge base/.test(o.err) })())
+
   // inherit: the reviewer leaves it open
   const inheritedReply = (id, status) => envelope(JSON.stringify({ verdict: status === 'open' ? 'fail' : 'pass', findings: [], inherited: [{ id, status, note: 'checked' }] }))
   {
