@@ -1,3 +1,5 @@
+import { speciesKey } from './speciesKey.js'
+
 // Map page data loading (#64). Each section's query applies its result as soon as that query
 // settles, so a slow query (say, nodes) delays only its own section instead of the whole page.
 
@@ -5,12 +7,37 @@ export const MAP_SECTIONS = ['nodes', 'detections', 'aci', 'today', 'mobile', 's
 // The three sources behind the live feed. Their combined outcome decides the feed's error banner.
 export const FEED_SECTIONS = ['detections', 'mobile', 'sessions']
 
-// Whether a feed card offers the insight button. Generating an insight needs the card's node, so
-// the button shows only when that node is loaded: feed cards can arrive before the nodes list (on
-// the first load, or a refresh where a new node's detection lands first), and a click without the
-// node would do nothing. A stored insight is always shown.
-export function insightsAvailableFor(detection, node) {
-  return Boolean(detection.insight) || Boolean(node)
+// The /api/insight body for a feed card. The server loads the detection, and its node, by
+// detection_id (api/insight.js buildNodeInsightPrompt), so a card can ask for an insight even when
+// its node is not in the map's nodes list (#60). The nodes list holds only nodes with a plausible
+// detection, while the feed also shows unchecked ones, and cards can arrive before the list. The
+// node's habitat or name goes in `location` only when the card has it; the server prefers the
+// node it loads anyway, and uses `location` only when that node has no name or habitat notes.
+export function nodeInsightRequest(d, node) {
+  const body = {
+    detection_id:    d.id,
+    // The common name, so the server's species lookup (by common_name) matches a raw_label-only row.
+    species_name:    speciesKey(d) || d.raw_label,
+    scientific_name: d.raw_label?.split('_')[1] || '',
+    confidence:      d.confidence,
+    is_dawn_chorus:  d.is_dawn_chorus,
+  }
+  const location = node?.habitat_type || node?.name
+  if (location) body.location = location
+  return body
+}
+
+// The nodes list after a nodes query settles. A failed refresh keeps the last list that loaded, so
+// a transient error does not empty the map, and does not hide the Global/Following tabs and switch
+// a viewer on Following back to Global (#59). The embedded `detections` existence probe is dropped,
+// so a node keeps the shape the rest of the page (and NodePage) expects.
+export function nextNodes(prev, res) {
+  if (res.error) return prev
+  return (res.data || []).map(row => {
+    const node = { ...row }
+    delete node.detections
+    return node
+  })
 }
 
 // Turns any outcome into a { data, error } result: a rejection, a synchronous throw, or a value
@@ -56,15 +83,9 @@ export function createMapSectionLoader({ apply, onFeedSettled }) {
   }
 }
 
-// One name per species for counting and de-duplicating the feed (#59). A row carries either
-// species_name or only raw_label ("CommonName_ScientificName"); both must key to the common
-// name, or one species counts twice and its per-card count splits between two keys.
-export function speciesKey(d) {
-  if (d.species_name) return d.species_name
-  const raw = d.raw_label || ''
-  const cut = raw.indexOf('_')
-  return cut > 0 ? raw.slice(0, cut) : raw
-}
+// speciesKey lives in speciesKey.js (one definition for counts, dedupe and insight requests, #59);
+// re-exported here for existing importers.
+export { speciesKey }
 
 // The Global/Following tabs stay hidden until the network has enough places to follow, or the
 // signed-in viewer already follows something.
