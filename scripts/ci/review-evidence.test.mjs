@@ -316,8 +316,11 @@ try {
     ok('main: an invalid record file fails the run by name', r.code === 1 && /records\/zz\.json/.test(r.out))
   }
   {
-    // docs-only: the changed spec is found by the diff and judged by its blob at head.
-    const d = prRepo()
+    // docs-only: the changed spec is found by the diff and judged by its blob at head. The PR changes only the spec.
+    const dd = mkrepo()
+    put(dd, 'app.py', app(2, 'return a + b + c'))
+    const d = { dir: dd, base: commit(dd, 'base') }
+    raw(dd, ['checkout', '-q', '-b', 'pr'])
     put(d.dir, 'docs/superpowers/specs/new.md', '# spec\n')
     commit(d.dir, 'add spec')
     const blob = raw(d.dir, ['rev-parse', 'HEAD:docs/superpowers/specs/new.md'])
@@ -406,6 +409,31 @@ try {
     commit(z.dir, 'drop AGENTS.md')
     put(z.dir, '.review/local.json', JSON.stringify({ lane: 'direct', depth: 'mechanical' }) + '\n')
     ok('localCheck: no AGENTS.md at the head -> could not judge', failsWith(await localCheck({ cwd: z.dir }), /could not judge.*AGENTS\.md/))
+  }
+
+  // ---------- correctness--4b14a1806037--1 F1: docs-only means only a spec or plan changes (spec §5.2) ----------
+  {
+    // prRepo's PR already changes app.py; add a spec with a passing record, so only the lane rule can fail it
+    const d = prRepo()
+    put(d.dir, 'docs/superpowers/specs/new.md', '# spec\n')
+    commit(d.dir, 'add spec')
+    const blob = raw(d.dir, ['rev-parse', 'HEAD:docs/superpowers/specs/new.md'])
+    put(d.dir, '.review/records/spec--d--1.json', JSON.stringify(rec({ slot: 'spec', stem: undefined, input: { kind: 'blob', path: 'docs/superpowers/specs/new.md', identity: blob } })) + '\n')
+    put(d.dir, '.review/local.json', JSON.stringify({ lane: 'docs-only', depth: 'mechanical' }) + '\n')
+    const lc = await localCheck({ cwd: d.dir })
+    ok('docs-only lane with a non-doc path changed -> FAIL naming the path', failsWith(lc, /docs-only.*app\.py/))
+    // the same spec on a PR that changes nothing else passes
+    const c = mkrepo()
+    put(c, 'a.txt', 'a\n')
+    const base = commit(c, 'base')
+    raw(c, ['checkout', '-q', '-b', 'pr'])
+    put(c, 'docs/superpowers/specs/new.md', '# spec\n')
+    commit(c, 'add spec')
+    const cb = raw(c, ['rev-parse', 'HEAD:docs/superpowers/specs/new.md'])
+    put(c, '.review/records/spec--d--1.json', JSON.stringify(rec({ slot: 'spec', stem: undefined, input: { kind: 'blob', path: 'docs/superpowers/specs/new.md', identity: cb } })) + '\n')
+    put(c, '.review/local.json', JSON.stringify({ lane: 'docs-only', depth: 'mechanical' }) + '\n')
+    raw(c, ['branch', '-f', 'main', base])
+    ok('docs-only lane changing only a spec (records aside) passes', (await localCheck({ cwd: c })).ok)
   }
 
   // ---------- P3-7: Spec:/Plan: paths are normalised as the runner normalises --path ----------

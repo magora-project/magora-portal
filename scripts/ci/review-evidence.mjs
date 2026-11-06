@@ -270,6 +270,15 @@ async function judgeCheckout({ cwd, lane, depth: label, body, base, head, gitImp
   const required = lane ? requiredSlots({ lane, depth, changedDocs }) : []
   const addedStems = await (gitImpl.addedRecordStems ?? addedRecordStems)({ cwd, mergeBase: mb, head, untracked })
   const result = evaluate({ records, required, identity, body, addedStems })
+  // docs-only "only adds or changes a spec or plan" (spec §5.2), and needs only their records: any other path
+  // would skip the pre-push records its depth requires.
+  if (lane === 'docs-only') {
+    const other = paths.filter((p) => !p.startsWith(DOC_DIRS.spec) && !p.startsWith(DOC_DIRS.plan))
+    if (other.length) {
+      result.ok = false
+      result.lines.unshift(`FAIL docs-only lane, but the PR changes ${other.slice(0, 5).join(', ')}${other.length > 5 ? ` and ${other.length - 5} more` : ''} outside ${DOC_DIRS.spec} and ${DOC_DIRS.plan}: use the specced or direct lane`)
+    }
+  }
   if (depth !== label && (lane === 'specced' || lane === 'direct')) {
     const why = subtlePaths(paths, controlFiles)
     result.lines.unshift(`depth: judged as ${depth}, not the ${label} label: ${why.slice(0, 5).join(', ')}${why.length > 5 ? ` and ${why.length - 5} more` : ''} (label-gate's inferLabel)`)
