@@ -2,9 +2,10 @@
 // Scratch git repos live in mkdtemp and are deleted afterwards; no real network (fetchImpl is stubbed).
 // Run: node scripts/ci/review-evidence.test.mjs
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const root = mkdtempSync(join(tmpdir(), 'review-evidence-test-'))
 const emptyConfig = join(root, 'empty.gitconfig')
@@ -244,7 +245,32 @@ try {
   ok('requiredSlots: unknown depth throws', (() => { try { requiredSlots({ lane: 'direct', depth: 'deep' }); return false } catch { return true } })())
   ok('isGrandfathered: an unparseable requiredSince exempts nothing', isGrandfathered({ prCreatedAt: '2020-01-01T00:00:00Z', requiredSince: 'soon' }) === false)
   ok('isGrandfathered: an unparseable prCreatedAt is judged', isGrandfathered({ prCreatedAt: 'yesterday', requiredSince: '2026-11-05T00:00:00Z' }) === false)
-  ok('isGrandfathered: created exactly at requiredSince is judged', isGrandfathered({ prCreatedAt: '2026-11-05T00:00:00Z', requiredSince: '2026-11-05T00:00:00Z' }) === false)
+  // ---------- O-P2-1: a passing head does not excuse an open blocking finding left by a completed head this PR added ----------
+  {
+    const openHead = (over = {}) => rec({ slot: 'correctness', stem: 'correctness--open--1', input: { kind: 'pr', identity: ID }, verdict: 'fail', findings: [finding({ id: 'F1', severity: 'P1' })], ...over })
+    const freshRoot = rec({ slot: 'correctness', stem: 'correctness--fresh--1', input: { kind: 'pr', identity: ID } })
+    const withAdded = (chain, added) => ({ ...fx({ chain }), addedStems: added })
+    const all = (f) => new Set(f.records.map((r) => r.stem))
+    const a = fx({ chain: [openHead(), freshRoot] })
+    ok('scenario A (same identity: open completed head + a passing fresh root, both added) -> FAIL naming the record and the finding', failsWith(evaluate({ ...a, addedStems: all(a) }), /correctness--open--1.*F1/))
+    const b = fx({ chain: [openHead({ input: { kind: 'pr', identity: 'a'.repeat(40) } }), freshRoot] })
+    ok('scenario B (forgotten --supersedes: the open head is stale) -> FAIL naming it', failsWith(evaluate({ ...b, addedStems: all(b) }), /correctness--open--1.*F1/))
+    ok('with no addedStems given every record counts as added (fail closed)', failsWith(evaluate(fx({ chain: [openHead(), freshRoot] })), /correctness--open--1/))
+    const baseOnly = withAdded([openHead(), freshRoot], new Set(['spec--x--1', 'plan--x--1', 'conformance--x--1', 'correctness--fresh--1']))
+    ok('an open completed head that is only on the base (another PR\'s) does not fail the slot', evaluate(baseOnly).ok)
+    const base2 = withAdded([openHead({ verdict: 'pass', findings: [] })], new Set(['spec--x--1', 'plan--x--1', 'conformance--x--1']))
+    ok('a passing record that is only on the base still counts as passing evidence', evaluate(base2).ok)
+    const nc = fx({ chain: [openHead({ outcome: 'timeout', verdict: null }), freshRoot] })
+    ok('a non-completed added head with an undisposed finding, plus a passing fallback chain -> passes', evaluate({ ...nc, addedStems: all(nc) }).ok)
+    const p3 = fx({ chain: [openHead({ findings: [finding({ id: 'F1', severity: 'P3' })] }), freshRoot] })
+    ok('an added completed head whose only finding is a P3 does not fail', evaluate({ ...p3, addedStems: all(p3) }).ok)
+    const disposed = fx({ chain: [openHead({ findings: [finding({ id: 'F1', severity: 'P1', disposition: { kind: 'reclassified-nit', reason: 'r' } })] }), freshRoot] })
+    ok('an added completed head whose finding is disposed does not fail', evaluate({ ...disposed, addedStems: all(disposed) }).ok)
+    const sup = fx({ chain: [openHead(), { ...freshRoot, supersedes: 'correctness--open--1' }] })
+    ok('a superseded open record is not a head: the chain head is judged', evaluate({ ...sup, addedStems: all(sup) }).ok)
+  }
+
+  ok('isGrandfathered: created exactly at requiredSince is judged',isGrandfathered({ prCreatedAt: '2026-11-05T00:00:00Z', requiredSince: '2026-11-05T00:00:00Z' }) === false)
 
   {
     const r = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', passingRecords)))
@@ -296,6 +322,73 @@ try {
     scen.head = commit(d.dir, 'evidence')
     const r2 = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', scen)))
     ok('main docs-only: a record for the current blob passes', r2.code === 0 && /^ok spec /m.test(r2.out))
+  }
+
+  // ---------- O-P2-1 through main() and localCheck: "added by this PR" comes from git ----------
+  {
+    // main has a record with an open finding (another PR's); the PR adds a passing one.
+    const dir = mkrepo()
+    put(dir, 'app.py', app(2, 'return a + b + c'))
+    put(dir, '.review/records/correctness--base--1.json', JSON.stringify(rec({ slot: 'correctness', stem: undefined, input: { kind: 'pr', identity: 'a'.repeat(40) }, verdict: 'fail', findings: [finding({ id: 'F1', severity: 'P1' })] })) + '\n')
+    const base = commit(dir, 'base with an old record')
+    raw(dir, ['checkout', '-q', '-b', 'pr'])
+    put(dir, 'app.py', app(20, 'return a + b + c'))
+    commit(dir, 'pr change')
+    const identity = await inputIdentity({ cwd: dir, base, head: 'HEAD' })
+    put(dir, '.review/records/correctness--pr--1.json', JSON.stringify(rec({ slot: 'correctness', stem: undefined, input: { kind: 'pr', identity } })) + '\n')
+    const head = commit(dir, 'evidence')
+    const scen = { dir, base, head }
+    const r1 = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', scen)))
+    ok('main: an open completed head that is only on the base does not fail the PR', r1.code === 0 && /^ok correctness /m.test(r1.out))
+    // the PR now also adds a completed record with an open finding on a stale identity (a forgotten --supersedes)
+    put(dir, '.review/records/correctness--stale--1.json', JSON.stringify(rec({ slot: 'correctness', stem: undefined, input: { kind: 'pr', identity: 'c'.repeat(40) }, verdict: 'fail', findings: [finding({ id: 'F7', severity: 'P1' })] })) + '\n')
+    scen.head = commit(dir, 'evidence 2')
+    const r2 = await runMain(activationFile404(prCreatedAt('2020-01-01T00:00:00Z', scen)))
+    ok('main: a completed head this PR added with an open finding fails the slot, naming it, despite a passing head', r2.code === 1 && /correctness--stale--1.*F7/.test(r2.out))
+    // localCheck: the same open head as an untracked file
+    raw(dir, ['reset', '-q', '--hard', head])
+    put(dir, '.review/records/correctness--untracked--1.json', JSON.stringify(rec({ slot: 'correctness', stem: undefined, input: { kind: 'pr', identity }, verdict: 'fail', findings: [finding({ id: 'F8', severity: 'P1' })] })) + '\n')
+    writeFileSync(join(dir, '.review/local.json'), JSON.stringify({ lane: 'direct', depth: 'standard' }) + '\n')
+    raw(dir, ['branch', '-f', 'main', base])
+    const lc = await localCheck({ cwd: dir })
+    ok('localCheck: an untracked completed head with an open finding fails the slot, naming it', failsWith(lc, /correctness--untracked--1.*F8/))
+    rmSync(join(dir, '.review/records/correctness--untracked--1.json'))
+    ok('localCheck: without it the same checkout passes (the base-only open head is ignored)', (await localCheck({ cwd: dir })).ok)
+  }
+
+  // ---------- P3-7: Spec:/Plan: paths are normalised as the runner normalises --path ----------
+  {
+    const d = prRepo()
+    put(d.dir, 'docs/superpowers/specs/s.md', '# spec\n')
+    put(d.dir, 'docs/superpowers/plans/p.md', '# plan\n')
+    commit(d.dir, 'docs')
+    const sBlob = raw(d.dir, ['rev-parse', 'HEAD:docs/superpowers/specs/s.md'])
+    const pBlob = raw(d.dir, ['rev-parse', 'HEAD:docs/superpowers/plans/p.md'])
+    put(d.dir, '.review/records/spec--n--1.json', JSON.stringify(rec({ slot: 'spec', stem: undefined, input: { kind: 'blob', path: 'docs/superpowers/specs/s.md', identity: sBlob } })) + '\n')
+    put(d.dir, '.review/records/plan--n--1.json', JSON.stringify(rec({ slot: 'plan', stem: undefined, input: { kind: 'blob', path: 'docs/superpowers/plans/p.md', identity: pBlob } })) + '\n')
+    writeFileSync(join(d.dir, '.review/local.json'), JSON.stringify({ lane: 'specced', depth: 'mechanical', spec: './docs/superpowers/specs/s.md', plan: { path: 'docs\\superpowers\\plans\\p.md', tasks: ['T1'] } }) + '\n')
+    const lc = await localCheck({ cwd: d.dir })
+    const text = lc.lines.join('\n')
+    ok('a Spec: path with a leading ./ matches the record for the normalised path', /^ok spec docs\/superpowers\/specs\/s\.md@/m.test(text))
+    ok('a Plan: path with backslashes matches the record for the normalised path', /^ok plan docs\/superpowers\/plans\/p\.md@/m.test(text))
+  }
+
+  // ---------- the CLI entry runs when reached through a symlink (else it would exit 0 silently) ----------
+  {
+    const target = fileURLToPath(new URL('./review-evidence.mjs', import.meta.url))
+    const env = { PATH: process.env.PATH ?? '', SYSTEMROOT: process.env.SYSTEMROOT ?? '', GIT_CONFIG_GLOBAL: emptyConfig, GIT_CONFIG_NOSYSTEM: '1' }
+    const viaNode = (script) => spawnSync(process.execPath, [script], { encoding: 'utf8', shell: false, env, cwd: root })
+    const direct = viaNode(target)
+    ok('CLI via the real path with no env: exit 1 "could not judge"', direct.status === 1 && /could not judge/.test(direct.stdout))
+    const link = join(root, 'linked-review-evidence.mjs')
+    let linked = true
+    try { symlinkSync(target, link) } catch (e) {
+      if (process.platform === 'win32' && e && e.code === 'EPERM') { linked = false; console.log('  SKIP CLI via a symlink: symlink creation needs privileges on this Windows host') } else throw e
+    }
+    if (linked) {
+      const vl = viaNode(link)
+      ok('CLI via a symlink: still runs (exit 1 "could not judge"), not a silent exit 0', vl.status === 1 && /could not judge/.test(vl.stdout))
+    }
   }
 
   // ---------- localCheck and the review.mjs subcommands ----------

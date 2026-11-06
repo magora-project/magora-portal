@@ -24,7 +24,12 @@
 //   4. Every finding passes dispositionOk (P3 needs none; justified-deviation only on a conformance record
 //      and only for an ID in the Deviations field), and a `fixed` finding's `by` names a record in the same
 //      supersedes chain. The verdict is not consulted: a `fail` whose findings are all disposed passes.
-// A slot passes when ANY of its chain heads passes (independent chains on one input are allowed).
+// A slot passes when ANY of its chain heads passes (independent chains on one input are allowed), with one
+// exception (§5.3 "inherits every finding the old record left undisposed"; §2: no check may pass while a review
+// left a blocking finding open): a slot FAILS while any of its chain heads that THIS PR ADDED, on any identity,
+// completed with a finding that fails part 4. That head must be superseded (its findings are then inherited)
+// or its findings disposed. Heads that never completed may still be bypassed by another chain (reviewer
+// fallback), and records already on the base belong to other PRs: they count as evidence, not against it.
 //
 // Grandfathering (§5.3): a PR created before the `review-evidence` time in .github/review-activation.json,
 // read from the BASE branch through the API (never from the PR's tree), is exempt. A missing file or key
@@ -32,11 +37,11 @@
 //
 // Run (CI): GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo PR_NUMBER=n node scripts/ci/review-evidence.mjs
 // Locally: npm run review -- check --local (localCheck below), after npm run review -- init-local ….
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { EVIDENCE_DIR, blobIdentity, git, inputIdentity, mergeBase } from '../review/identity.mjs'
-import { chainHeads, dispositionOk, isBlockingByDefault, readRecords } from '../review/records.mjs'
+import { addedRecordStems, chainHeads, dispositionOk, isBlockingByDefault, readRecords, repoPath, undisposedBlocking } from '../review/records.mjs'
 import { LANES, parseBody } from '../review/pr-body.mjs'
 import { DEPTH_LABELS } from './label-gate.mjs'
 
@@ -83,8 +88,10 @@ export function authorVendorFromRecords(recs) {
   return { problem: `records on this input disagree on authorVendor: ${recs.map((r) => `${r.stem}=${r.authorVendor}`).join(', ')}` }
 }
 
-export function evaluate({ records, required, identity, body, authorVendorOf = authorVendorFromRecords }) {
+// addedStems: the stems of the records this PR adds (see the header). Omitted, every record counts as added.
+export function evaluate({ records, required, identity, body, addedStems, authorVendorOf = authorVendorFromRecords }) {
   const lines = []
+  const added = addedStems === undefined ? null : new Set(addedStems)
   let ok = true
   const fail = (line) => { ok = false; lines.push(line) }
   for (const p of body?.problems ?? []) fail(`FAIL PR body: ${p}`)
@@ -153,11 +160,16 @@ export function evaluate({ records, required, identity, body, authorVendorOf = a
     if (candidates.length === 0) { fail(`FAIL ${label}: no record (write one with npm run review -- run --slot ${slot}${input.kind === 'blob' ? ` --path ${input.path}` : ''})`); continue }
     const judged = candidates.map((r) => ({ r, reasons: judge(r, want) }))
     const passing = judged.filter((j) => j.reasons.length === 0)
-    if (passing.length) {
+    const judgedText = () => judged.map((j) => `${j.r.stem}: ${j.reasons.join('; ')}`).join(' | ')
+    const open = candidates.filter((r) => (added === null || added.has(r.stem)) && r.outcome === 'completed')
+      .map((r) => ({ r, ids: undisposedBlocking(r, { deviations: body?.deviations ?? [] }).map((f) => f.id) })).filter((x) => x.ids.length)
+    if (open.length) {
+      fail(`FAIL ${label}: ${open.map(({ r, ids }) => `${r.stem} (a completed review this PR added) left ${ids.join(', ')} open: re-review with --supersedes ${r.stem}, or dispose ${ids.length === 1 ? 'it' : 'them'}`).join(' | ')}${passing.length ? '' : ` | ${judgedText()}`}`)
+    } else if (passing.length) {
       if (slot === 'correctness') passingCorrectness.set(inputKey(want), passing.map((j) => j.r.reviewer.vendor))
       lines.push(`ok ${label} (${passing.map((j) => j.r.stem).join(', ')})`)
     } else {
-      fail(`FAIL ${label}: ${judged.map((j) => `${j.r.stem}: ${j.reasons.join('; ')}`).join(' | ')}`)
+      fail(`FAIL ${label}: ${judgedText()}`)
     }
   }
   return { ok, lines }
@@ -179,7 +191,7 @@ const must = (r, what) => {
 
 export const defaultGit = {
   head: async ({ cwd }) => must(await git(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd }), 'git rev-parse HEAD').trim(),
-  inputIdentity, blobIdentity, mergeBase,
+  inputIdentity, blobIdentity, mergeBase, addedRecordStems,
   // Spec and plan paths the PR adds or changes. Deleted docs need no review; renames count as added.
   changedDocPaths: async ({ cwd, base, head }) =>
     must(await git(['diff', '--name-only', '-z', '--no-renames', '--diff-filter=d', base, head, '--', DOC_DIRS.spec, DOC_DIRS.plan], { cwd }), 'git diff --name-only')
@@ -193,7 +205,8 @@ async function docsFor({ cwd, lane, body, base, head, gitImpl }) {
     }
   }
   if (lane === 'specced') {
-    return [...(body.spec ? [await one('spec', body.spec)] : []), ...(body.plan?.path ? [await one('plan', body.plan.path)] : [])]
+    // Normalised as the runner normalises --path, so `./docs/x.md` or `docs\x.md` finds the record for `docs/x.md`.
+    return [...(body.spec ? [await one('spec', repoPath(body.spec))] : []), ...(body.plan?.path ? [await one('plan', repoPath(body.plan.path))] : [])]
   }
   if (lane === 'docs-only') {
     const mb = await gitImpl.mergeBase({ cwd, base, head })
@@ -203,12 +216,15 @@ async function docsFor({ cwd, lane, body, base, head, gitImpl }) {
   return []
 }
 
-async function judgeCheckout({ cwd, lane, depth, body, base, head, gitImpl }) {
+// untracked: also count records not committed yet as added (localCheck).
+async function judgeCheckout({ cwd, lane, depth, body, base, head, gitImpl, untracked = false }) {
   const identity = await gitImpl.inputIdentity({ cwd, base, head })
   const changedDocs = lane ? await docsFor({ cwd, lane, body, base, head, gitImpl }) : []
   const records = readRecords({ cwd })
   const required = lane ? requiredSlots({ lane, depth, changedDocs }) : []
-  return evaluate({ records, required, identity, body })
+  const mb = await gitImpl.mergeBase({ cwd, base, head })
+  const addedStems = await (gitImpl.addedRecordStems ?? addedRecordStems)({ cwd, mergeBase: mb, head, untracked })
+  return evaluate({ records, required, identity, body, addedStems })
 }
 
 // ---------- CI entry ----------
@@ -314,7 +330,7 @@ export async function localCheck({ cwd = process.cwd(), gitImpl = defaultGit } =
     const problems = validateLocal(local)
     if (problems.length) return { ok: false, lines: [...problems.map((x) => `FAIL ${EVIDENCE_DIR}/local.json: ${x}`), `rewrite it with ${INIT_LOCAL}`] }
     const head = await gitImpl.head({ cwd: root })
-    return await judgeCheckout({ cwd: root, lane: local.lane, depth: local.depth, body: localBody(local), base: await localBase(root), head, gitImpl })
+    return await judgeCheckout({ cwd: root, lane: local.lane, depth: local.depth, body: localBody(local), base: await localBase(root), head, gitImpl, untracked: true })
   } catch (e) {
     return { ok: false, lines: [`FAIL (could not judge): ${e.message}`] }
   }
@@ -348,4 +364,13 @@ export async function initLocal({ cwd = process.cwd(), lane, depth, spec, plan, 
   return file
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(await main())
+// Node realpaths the main module's import.meta.url but not argv[1]: compare both through realpathSync, so a
+// symlinked path still runs the check instead of exiting 0 with no output; Windows compares case-insensitively.
+const isMain = () => {
+  if (process.argv[1] === undefined) return false
+  try {
+    const [a, b] = [realpathSync(process.argv[1]), realpathSync(fileURLToPath(import.meta.url))]
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+  } catch { return false }
+}
+if (isMain()) process.exit(await main())
