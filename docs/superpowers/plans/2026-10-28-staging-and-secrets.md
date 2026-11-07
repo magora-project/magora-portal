@@ -473,7 +473,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - `apply-setup.mjs --target staging|production|scratch [--ref <ref>] --file <name>`, the operator-setup class (Global Constraints).
     - **Allowed pairs**, from a fixed table. `--file` is a name in that table, never a path.
       - staging: `roles.sql`, `staging-ops.sql`
-      - production: `roles.sql`, `20261029_refresh_login_grants.sql`, and Task 15b's `<date>_revoke_public_writer_functions.sql` (its name, once Task 15b fixes the date)
+      - production: `roles.sql`, `20261029_refresh_login_grants.sql`, and, on Task 15b's route A only, `<date>_revoke_public_writer_functions.sql` (its name, once Task 15b fixes the date)
       - scratch: `roles.sql`, `rehearsal-fixture.sql`, and each file `listMigrationFiles` returns in the current checkout, the baseline included (Task 26's rehearsal source)
     - **URL variable per target:** `STAGING_DB_URL`, `PROD_SETUP_DB_URL` or `SCRATCH_SETUP_DB_URL`.
     - **Ref checks:** the ref read from the URL must equal the target's ref. For scratch, it must equal `--ref`, which must be neither production's nor staging's.
@@ -482,7 +482,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 
 - [ ] **Step 1: Write the files.** Then write `apply-setup.test.mjs`:
   - (`staging-ops.sql`, production) is refused.
-  - The revoke migration on production is allowed, and on staging is refused (the rebuild applies it there).
+  - On Task 15b's route A: the revoke migration on production is allowed, and on staging is refused (the rebuild applies it there).
   - A `--file ../x.sql` is refused.
   - A production URL with `--target staging` is refused before connecting.
   - A wrong typed-back ref aborts.
@@ -496,7 +496,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - (c) a SECURITY DEFINER export function owned by `postgres`, which the privilege check's `executeAllowlist` would then have to name
 - [ ] **Step 3 (operator, David approves each of the three production writes):**
   - Run `apply-setup.mjs --target production --file roles.sql`, then `--file 20261029_refresh_login_grants.sql`, then `--file <date>_revoke_public_writer_functions.sql`, from the production vault, after PR D merges. Before the second, David has approved Task 15b's exception and confirmed that day's daily backup; before the third, David has approved the revoke (Task 15b Step 4).
-  - If the revoke migration raises because `PUBLIC` still holds `EXECUTE` (the expected obstacle in Task 15b Step 4), it has changed nothing. Take Task 15b's fallback: David asks Supabase support, and the privilege check below stays red until support has revoked; then re-run the migration, which now passes without changing anything.
+  - The third write exists only on Task 15b's route A. On route B there is no revoke migration, and the privilege check below stays red until Supabase support has revoked on production.
   - Set the login's password with `op run` from a new "Magora Project" item `supabase-refresh-login`.
   - Run `privilege-check.mjs` as that login against production. Expected: 0 violations. Run the positive part with counts David took as `postgres` the same hour. This is criterion 7. It must pass before Task 20 hands the login to the workflow.
 - [ ] **Step 4 (operator):** `apply-setup.mjs --target staging --file staging-ops.sql`. The refresh's rebuild applies the grants migration to staging along with every other migration.
@@ -571,7 +571,7 @@ This is a spec exception, for David to approve. The migration changes production
 **Files:**
 - Create:
   - `supabase/migrations/20261029_refresh_login_grants.sql`, `supabase/migrations/rollbacks/20261029_refresh_login_grants.rollback.sql`
-  - `supabase/migrations/<date>_revoke_public_writer_functions.sql`, `supabase/migrations/rollbacks/<date>_revoke_public_writer_functions.rollback.sql` and `scripts/db/revoke-writers.test.mjs` (Step 4)
+  - On Step 4's route A only: `supabase/migrations/<date>_revoke_public_writer_functions.sql`, `supabase/migrations/rollbacks/<date>_revoke_public_writer_functions.rollback.sql` and `scripts/db/revoke-writers.test.mjs`
 - Modify:
   - `supabase/migrations/checks/refresh-execute-allowlist.txt`
   - `AGENTS.md` (Migrations: "A migration that creates a table classified *copied* or *transformed* in `supabase/staging/table-manifest.json` grants `SELECT` on it to `magora_refresh`.")
@@ -587,14 +587,19 @@ This is a spec exception, for David to approve. The migration changes production
   - For each `EXECUTE` violation, read the function. Allowlist it, with its reason, only if it cannot write.
   - A writing `SECURITY DEFINER` function callable through `PUBLIC` is **not** allowlisted. It goes to the private advisory (Task 7), and production's privilege check (Task 13 Step 3) stays red until that fix is applied.
   - A `WRITES_WITHOUT_TABLE_PRIVILEGE` violation (Task 11) cannot be allowlisted either. It goes to the advisory, and production's check stays red until it is fixed.
-  - **How that fix ships** (#47 item 1; route chosen by David, 2026-11-06; the production change itself still needs his approval before it is applied):
+  - **How that fix ships** (#47 item 1; route chosen by David, 2026-11-06; the production change itself still needs his approval before it is applied). A local test decides between two routes, and only one ships:
+    - **The deciding test**, run once on the local Supabase stack before anything is written: as `postgres`, `revoke execute on function pg_catalog.lo_create(oid) from public`, then check `PUBLIC`'s `EXECUTE` on it through `aclexplode(proacl)`. Then put the privilege back with `grant … to public` (as `supabase_admin` if `postgres` cannot), so the stack is as it was. Record the result in the PR. **Expected**, from reading Supabase's image source (`supabase/postgres` at `c6226c6`, not yet run): `postgres` is demoted to `NOSUPERUSER` (`10000000000000_demote-postgres.sql`) and does not own the `pg_catalog` functions, so the revoke only warns and changes nothing.
+    - **Route A, if `postgres` can revoke:** the migration below.
+    - **Route B, if it cannot:** no migration. A migration that could only pass where Supabase had already revoked would fail on every fresh Supabase database: the local stack, the rehearsal's scratch project, and staging on each refresh. Instead:
+      - David asks Supabase support to revoke `EXECUTE` from `PUBLIC` on the listed signatures for **production and staging**. Production's privilege check (Task 13 Step 3) stays red until production is done; if support declines, David decides again.
+      - The local stack and a rehearsal scratch project keep the privilege. The itest's recorded baseline (Task 11 Step 5) already carries these violations, and Task 26's scratch privilege check expects exactly them, listed, instead of a clean pass.
+      - Meanwhile, the refresh (Task 18) fails if `pg_largeobject_metadata` has any row in production. Nothing comparable watches `pg_logical_emit_message`, whose writes go only to the WAL; that gap is recorded with the advisory (Task 7).
+      - Task 13's `apply-setup.mjs` table and Step 3 drop the revoke migration, and this task's Files list drops it and its test.
+  - **Route A, the migration:**
     - Its own migration, `<date>_revoke_public_writer_functions.sql`, with its rollback, so the grants migration keeps its contract (its rollback revokes exactly its `GRANT SELECT`s).
     - It names a fixed list: the `WRITES_WITHOUT_TABLE_PRIVILEGE` signatures that Task 11 Step 5 observed callable through `PUBLIC` on the local Supabase stack. It is idempotent, because `pg_catalog` privileges survive a refresh's rebuild and every refresh replays the migrations: for each signature it revokes `EXECUTE` from `PUBLIC` only if `PUBLIC` holds it, then raises an exception if `PUBLIC` still holds `EXECUTE` on any listed signature. `REVOKE` without the right to change a function's privileges only warns, so that final check is what turns a silent no-op into a failure. On a database where the privilege is already gone (a replay, or after Supabase support revoked it) the migration changes nothing and passes.
-    - Its rollback grants `EXECUTE` to `PUBLIC` on exactly the same list, so applying migration, rollback and migration on staging (§5.5) returns to the reviewed state; the session's closing refresh replays the migration, which revokes again. A unit test, `scripts/db/revoke-writers.test.mjs`, parses both files and requires the same signatures. Where only Supabase can change these privileges, the rollback's `GRANT` also only warns and restores nothing; that is accepted, since the revoked state is the safe one.
+    - Its rollback grants `EXECUTE` to `PUBLIC` on exactly the same list, so applying migration, rollback and migration on staging (§5.5) returns to the reviewed state; the session's closing refresh replays the migration, which revokes again. A unit test, `scripts/db/revoke-writers.test.mjs`, parses both files and requires the same signatures.
     - Re-run Step 2's local cycle with this migration in place, and compare the state after the rollback with the state before the migration, not only after the re-apply.
-    - **Expected obstacle**, from reading Supabase's image source (`supabase/postgres` at `c6226c6`, not yet run): `postgres` is demoted to `NOSUPERUSER` (`10000000000000_demote-postgres.sql`) and does not own the `pg_catalog` functions, so the migration will probably raise on the local stack. If it does:
-      - David asks Supabase support to revoke `EXECUTE` from `PUBLIC` on the listed signatures. Production's privilege check (Task 13 Step 3) stays red until it is done; if support declines, David decides again.
-      - Meanwhile, the refresh (Task 18) fails if `pg_largeobject_metadata` has any row. Nothing comparable watches `pg_logical_emit_message`, whose writes go only to the WAL; that gap is recorded with the advisory (Task 7).
   - Non-`EXECUTE` privileges reached through `PUBLIC` (`USAGE`/`CREATE` on schemas, `TEMP` on the database) are handled the same way: `USAGE` is not in §5.10's forbidden list. `CREATE` on `public` is revoked from `PUBLIC` by Supabase's defaults; if it is present, it goes to the advisory. `TEMP` is not a write to production data, and is recorded in the allowlist file's header as accepted, for David to confirm.
   - Expected after this step: the check passes locally.
 - [ ] **Step 5: Commit** with PR D. The production application is Task 13 Step 3.
@@ -1077,7 +1082,7 @@ The source check confirms that all three name the scratch ref. Only the cleanup 
      - With `apply-setup.mjs --target scratch --ref <scratch-ref>`, apply `roles.sql`, then each file `listMigrationFiles` returns on `main`, once each, in order. That list starts with the baseline and includes the grants migration. Every scratch command in this step passes `--ref <scratch-ref>`.
      - Set the scratch login's password.
      - Apply `supabase/setup/rehearsal-fixture.sql` the same way. It is a fixed file (written in this task) that inserts one auth user, the steward, and two nodes, so the refresh has something to copy and remap. The simulated node is not used against scratch, because it refuses every ref but staging's.
-     - Run the privilege check against `SCRATCH_DB_URL`. Expected: pass.
+     - Run the privilege check against `SCRATCH_DB_URL`. Expected: pass on Task 15b's route A. On route B, exactly the `WRITES_WITHOUT_TABLE_PRIVILEGE` violations Task 15b Step 4 listed, and nothing else.
   2. **Pre-merge state.**
      - On a local branch `rehearsal/probe` (never pushed), add `create table public.rehearsal_probe(id int)`, its rollback, and a manifest entry `"rehearsal_probe": {"class": "excluded", "reason": "rehearsal"}`. An excluded table needs no grant.
      - Refresh from a `main` checkout. Expected: green, including the drift check, which proves the scratch source equals the rebuilt staging.
