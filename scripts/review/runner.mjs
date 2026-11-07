@@ -376,11 +376,11 @@ const cmdRun = async (argv, ctx) => {
 
 // One review of o.slot (the parsed `run` flags), written as a record. `conf` is the conformance writer's part
 // (scripts/review/conformance.mjs), required for the conformance slot and refused for any other:
-//   { plan: { path, tasks }, check: async ({ root, mb, head }) -> { findings, commands, context } }
+//   { plan: { path, tasks, blob }, check: async ({ root, mb, head }) -> { findings, commands, context } }
 // check() runs after every refusal and before the reviewer. Its findings (the failed postconditions, D1..Dn, each
 // with source 'postcondition') lead the record; the reviewer's findings are renumbered to follow them; inherited
 // postcondition findings are dropped, because check() recomputes them on every run. The record carries
-// conformance: { tasks, deviations (the IDs of findings without a `fixed` disposition), commands }.
+// conformance: { tasks, deviations (the IDs of findings without a `fixed` disposition), commands, plan: { path, blob } }.
 export const runReview = async (o, ctx, conf = null) => {
   const { cwd, io } = ctx
   if (!SLOTS.includes(o.slot)) usage(`--slot must be one of ${SLOTS.join('|')}`)
@@ -564,7 +564,7 @@ export const runReview = async (o, ctx, conf = null) => {
       reviewer: { vendor: ADAPTER_VENDOR[reviewer], model }, authorVendor: o.author,
       outcome: c.outcome, verdict: c.verdict, findings, supersedes: old ? old.stem : null,
       ...(planRef ? { rev: planRef.rev, tasks: planRef.tasks } : {}),
-      ...(conf ? { conformance: { tasks: [...conf.plan.tasks], deviations: deviationIds(findings), commands: checked.commands } } : {}),
+      ...(conf ? { conformance: { tasks: [...conf.plan.tasks], deviations: deviationIds(findings), commands: checked.commands, plan: { path: conf.plan.path, blob: conf.plan.blob } } } : {}),
       createdAt: (ctx.now ?? (() => new Date()))().toISOString(),
     }
   })

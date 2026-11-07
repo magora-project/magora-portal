@@ -12,11 +12,12 @@
 //     strings run once and the result counts for each task. A command that cannot run (it needs a shell, or does
 //     not start, or is killed) is recorded with exit -1.
 // Each failed postcondition is a P1 deviation finding D1..Dn (source 'postcondition'), numbered before the
-// reviewer's findings. The record is written by runner.mjs runReview; see there for the conformance block.
+// reviewer's findings. The record is written by runner.mjs runReview; see there for the conformance block, which
+// also names the plan checked (its repo path and blob at HEAD; the plan must be committed).
 import { spawn as nodeSpawn } from 'node:child_process'
 import { win32 } from 'node:path'
 import { parseArgs } from 'node:util'
-import { EVIDENCE_DIR, git } from './identity.mjs'
+import { EVIDENCE_DIR, blobIdentity, git } from './identity.mjs'
 import { deviationIds, repoPath } from './records.mjs'
 import { filesAtRev, parsePlan, resolveTasks } from './plan-targets.mjs'
 import { UsageError, runReview, usage } from './runner.mjs'
@@ -173,6 +174,11 @@ export async function conformanceCli(argv, ctx) {
     const blob = await git(['cat-file', 'blob', `HEAD:${planPath}`], { cwd: root })
     if (blob.code !== 0) usage(`${planPath} is not a file at HEAD: commit the plan first (conformance reads it at the reviewed commit)`)
     const planText = blob.stdout.toString()
+    // The record is bound to this plan: its path and its blob at HEAD, which must be what the work tree holds.
+    const planDirty = await git(['diff', '--quiet', 'HEAD', '--', planPath], { cwd: root })
+    if (planDirty.code === 1) usage(`${planPath} has uncommitted changes: commit them first, so the record names the plan it checked`)
+    if (planDirty.code !== 0) throw new Error(`git diff --quiet HEAD failed (${planDirty.code}): ${planDirty.stderr.trim()}`)
+    const planBlob = await blobIdentity({ cwd: root, rev: 'HEAD', path: planPath })
     const sel = resolveTasks({ tasks: o.tasks, planExistsAtRev: true, plan: planText })
     if (sel.error) usage(sel.error)
     if (sel.tasks.length === 0) usage('conformance needs at least one task: --tasks none would check nothing')
@@ -186,7 +192,7 @@ export async function conformanceCli(argv, ctx) {
       if (d.code !== 0) throw new Error(`git diff --quiet HEAD failed (${d.code}): ${d.stderr.trim()}`)
     }
     const run = { slot: 'conformance', author: o.author, reviewer: o.reviewer, supersedes: o.supersedes, base: o.base, model: o.model, 'timeout-min': o['timeout-min'] }
-    return await runReview(run, ctx, { plan: { path: planPath, tasks: sel.tasks }, check: conformanceCheck({ planPath, tasks, planProblems, ctx }) })
+    return await runReview(run, ctx, { plan: { path: planPath, tasks: sel.tasks, blob: planBlob }, check: conformanceCheck({ planPath, tasks, planProblems, ctx }) })
   } catch (e) {
     if (e instanceof UsageError || (e && typeof e.code === 'string' && e.code.startsWith('ERR_PARSE_ARGS'))) io.err(`${e.message}\n${USAGE}\n`)
     else io.err(`review: ${e && e.message}\n`)

@@ -86,6 +86,8 @@ export const validateRecord = (r) => {
       if (!strs(c.tasks)) p.push('conformance.tasks: must be an array of strings')
       if (!strs(c.deviations)) p.push('conformance.deviations: must be an array of strings')
       if (!Array.isArray(c.commands) || !c.commands.every((x) => isObj(x) && typeof x.cmd === 'string' && Number.isInteger(x.exit))) p.push('conformance.commands: must be an array of { cmd: string, exit: integer }')
+      // The plan it checked: its repo path and blob at the reviewed HEAD (review-evidence binds the record to them).
+      if (!isObj(c.plan) || !nonEmpty(c.plan.path) || !nonEmpty(c.plan.blob)) p.push('conformance.plan: must be { path: string, blob: string }, the plan checked and its blob')
     }
   }
   return p

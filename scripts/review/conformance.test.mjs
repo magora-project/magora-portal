@@ -198,6 +198,7 @@ try {
     ok('a command target that exits 1 is recorded with exit 1', rec.conformance.commands[0].exit === 1)
     ok('the identical command is run once and recorded once', r.commandSpawns.length === 1 && JSON.stringify(rec.conformance.commands) === '[{"cmd":"npm test","exit":1}]')
     ok('conformance.tasks is the declared tasks', rec.conformance.tasks.join() === 'T1,T2')
+    ok('the record names the plan it checked: its repo path and its blob at HEAD', rec.conformance.plan?.path === PLAN && rec.conformance.plan?.blob === raw(repo, ['rev-parse', `HEAD:${PLAN}`]))
     ok('failed postconditions are P1 deviations D1..D5, numbered before the reviewer finding, which becomes D6', rec.findings.map((f) => `${f.id}:${f.severity}`).join() === 'D1:P1,D2:P1,D3:P1,D4:P1,D5:P1,D6:P2' && rec.findings[5].summary === 'reviewer deviation')
     ok('a postcondition deviation names its task and target, at the plan line', /T1/.test(rec.findings[0].summary) && /new\.mjs/.test(rec.findings[0].summary) && rec.findings[0].file === PLAN && Number.isInteger(rec.findings[0].line))
     ok('no undeclared task is checked', rec.findings.every((f) => !/T3|t3\.mjs/.test(f.summary)))
@@ -233,6 +234,10 @@ try {
     ok('an unknown --author is refused', badAuthor.code === 1 && badAuthor.spawns.length === 0)
     const indep = await cli(repo, conformance('T4', ['--reviewer', 'claude']))
     ok('a reviewer of the author vendor is refused before any postcondition runs', indep.code === 1 && indep.spawns.length === 0 && /independence/.test(indep.err))
+    put(repo, PLAN, `${planText}\nan uncommitted edit\n`)
+    const dirtyPlan = await cli(repo, conformance('T4'))
+    ok('an uncommitted change to the plan refuses the run (even with no command targets)', dirtyPlan.code === 1 && dirtyPlan.spawns.length === 0 && new RegExp(PLAN).test(dirtyPlan.err) && /commit/.test(dirtyPlan.err))
+    raw(repo, ['checkout', '--', PLAN])
     put(repo, 'edited.mjs', 'uncommitted\n')
     const dirty = await cli(repo, conformance('T1'))
     ok('uncommitted changes to tracked files refuse a run with command targets', dirty.code === 1 && dirty.spawns.length === 0 && /commit/.test(dirty.err))
@@ -272,7 +277,7 @@ try {
     ok('the new chain head lists no deviation', head.conformance.deviations.length === 0)
     const identity = await inputIdentity({ cwd: repo, base: 'main', head: 'HEAD' })
     const body = parseBody(`Lane: specced\nSpec: docs/spec.md\nPlan: ${PLAN} T3\nDeviations: none`)
-    const verdict = evaluate({ records: readRecords({ cwd: repo }), required: [{ slot: 'conformance', input: { kind: 'pr' } }], identity, body })
+    const verdict = evaluate({ records: readRecords({ cwd: repo }), required: [{ slot: 'conformance', input: { kind: 'pr' } }], identity, body, planDoc: { path: PLAN, identity: raw(repo, ['rev-parse', `HEAD:${PLAN}`]) } })
     ok('the new chain head passes review-evidence with a PR body whose Deviations no longer lists D2', verdict.ok === true && verdict.lines.some((l) => l.startsWith('ok conformance')))
   }
 
@@ -335,9 +340,9 @@ try {
     ok('chained: the disposed head lists the same deviation ID set as the body', disp.code === 0 && head.supersedes === second.stem && head.conformance.deviations.join() === chainedId)
     ok('chained: dispositionOk accepts the justified chained finding', dispositionOk(head.findings.find((f) => f.id === chainedId), { deviations: body.deviations, recordType: head.type }) === true)
     const identity = await inputIdentity({ cwd: repo, base: 'main', head: 'HEAD' })
-    const verdict = evaluate({ records: readRecords({ cwd: repo }), required: [{ slot: 'conformance', input: { kind: 'pr' } }], identity, body })
+    const verdict = evaluate({ records: readRecords({ cwd: repo }), required: [{ slot: 'conformance', input: { kind: 'pr' } }], identity, body, planDoc: { path: PLAN, identity: raw(repo, ['rev-parse', `HEAD:${PLAN}`]) } })
     ok('chained: the chain head passes review-evidence with the chained ID in Deviations', verdict.ok === true && verdict.lines.some((l) => l.startsWith('ok conformance')))
-    const without = evaluate({ records: readRecords({ cwd: repo }), required: [{ slot: 'conformance', input: { kind: 'pr' } }], identity, body: parseBody(`Lane: specced\nSpec: docs/spec.md\nPlan: ${PLAN} T4\nDeviations: none`) })
+    const without = evaluate({ records: readRecords({ cwd: repo }), required: [{ slot: 'conformance', input: { kind: 'pr' } }], identity, planDoc: { path: PLAN, identity: raw(repo, ['rev-parse', `HEAD:${PLAN}`]) }, body: parseBody(`Lane: specced\nSpec: docs/spec.md\nPlan: ${PLAN} T4\nDeviations: none`) })
     ok('chained: the same head fails when the body does not list the chained ID', without.ok === false)
   }
 } finally {

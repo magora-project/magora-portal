@@ -416,7 +416,7 @@ try {
     ok('run --slot conformance is refused before spawning, naming the conformance command and the block it fills', r.code === 1 && r.sp.length === 0 && /review -- conformance --plan/.test(r.err) && /conformance block/.test(r.err) && /not available yet/.test(r.err) === false)
     ok('...and writes no record', readRecords({ cwd: repo }).length === 0)
     // I1 (a): a conformance deviation is fixed or justified (§5.4), never pre-existing or reclassified-nit
-    const conf = store(prRecord({ slot: 'conformance', type: 'conformance', verdict: 'fail', findings: [{ id: 'D1', severity: 'P1', summary: 'dev' }], conformance: { tasks: ['T1'], deviations: ['D1'], commands: [] } }))
+    const conf = store(prRecord({ slot: 'conformance', type: 'conformance', verdict: 'fail', findings: [{ id: 'D1', severity: 'P1', summary: 'dev' }], conformance: { tasks: ['T1'], deviations: ['D1'], commands: [], plan: { path: 'docs/p.md', blob: 'e'.repeat(40) } } }))
     const pe = await errOfCli(['dispose', '--record', conf.stem, '--finding', 'D1', '--kind', 'pre-existing', '--reason', 'old', '--issue', 'https://example.test/1'])
     const rn = await errOfCli(['dispose', '--record', conf.stem, '--finding', 'D1', '--kind', 'reclassified-nit', '--reason', 'small'])
     ok('dispose pre-existing on a conformance record is refused, naming fixed and justified-deviation', /§5\.4/.test(pe) && /conformance/.test(pe) && /justified-deviation/.test(pe) && /re-review/.test(pe))

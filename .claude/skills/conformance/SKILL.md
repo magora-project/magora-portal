@@ -12,7 +12,7 @@ Only the Specced lane has this stage. A Direct, docs-only or dependency PR skips
 ## 1. Before you run
 
 - The plan is committed, and the PR's `Plan:` field names it with the task IDs this PR implements (`Plan: docs/superpowers/plans/<plan>.md T17-T18`). A multi-PR plan is checked against the tasks each PR declares.
-- Every change is committed. The record covers the diff at `HEAD`; a run with uncommitted changes to tracked files is refused when a task has a `command` target.
+- Every change is committed. The record covers the diff at `HEAD` and the plan's blob at `HEAD`; a run is refused while the plan has uncommitted changes, or while any tracked file does when a task has a `command` target.
 - Local checks pass (`npm test`, `npm run lint:ratchet`). A failing `command` target becomes a deviation.
 
 ## 2. Run it
@@ -28,7 +28,7 @@ What it does, in order:
 1. Reads the plan at `HEAD` and the declared tasks' typed Files lines (`writing-plans`, `## Typed targets`).
 2. Checks each target: a `create` or `modify` target is a file at `HEAD` and changed by the PR; a `delete` target is not a file at `HEAD`; a `command` target is run now from the repository root, with no shell, and its exit status recorded. A command string that needs a shell (`&&`, `|`, `>`, `$`) is not run and fails. An `existing` target is plan review's, not checked here.
 3. Sends the conformance reviewer (`.claude/review/slots/conformance.md`) the declared tasks' text, the spec sections they cite, the commit messages, the postcondition results, and the PR's own diff.
-4. Writes one `conformance` record under `.review/records/`. Each failed postcondition is a P1 deviation `D1`, `D2`, ...; the reviewer's deviations follow them. The record lists the tasks, the deviation IDs (every finding not marked fixed) and each command with its exit status.
+4. Writes one `conformance` record under `.review/records/`. Each failed postcondition is a P1 deviation `D1`, `D2`, ...; the reviewer's deviations follow them. The record lists the tasks, the deviation IDs (every finding not marked fixed), each command with its exit status, and the plan it checked (its path and its blob at `HEAD`).
 
 Exit 0 means the review completed; read the record. Any other outcome is UNRUN, never a pass: fall back to the next reviewer as `codex-review` describes.
 
@@ -52,7 +52,7 @@ For every deviation ID in the record, do one of two things (D-3):
 
   Then record the disposition with the same ID: `npm run review -- dispose --record <stem> --finding <id> --kind justified-deviation --reason "see Deviations"`. Write `Deviations: none` when there is none.
 
-review-evidence passes the conformance record only when its task IDs equal the `Plan:` field's and its deviation IDs equal the `Deviations:` field's exactly. Once a re-review marks a justified deviation fixed, take it out of the `Deviations:` field. A P3 deviation is a deviation too: fix it or list it, and a re-review reassesses it like any other. There is no third way: `dispose` refuses `pre-existing` and `reclassified-nit` on a conformance record.
+review-evidence passes the conformance record only when its plan is the `Plan:` field's path at that path's blob in the PR head, its task IDs equal the `Plan:` field's, and its deviation IDs equal the `Deviations:` field's exactly. Changing the plan (an amendment, or a merge from `main` that changes it) or pointing `Plan:` at another plan voids the record: run conformance again. Once a re-review marks a justified deviation fixed, take it out of the `Deviations:` field. A P3 deviation is a deviation too: fix it or list it, and a re-review reassesses it like any other. There is no third way: `dispose` refuses `pre-existing` and `reclassified-nit` on a conformance record.
 
 Locally, `npm run review -- init-local` with `--plan "<plan> <ids>"` and one `--deviation "<id>: why"` per justified ID (the ID as the record lists it), then `npm run review -- check --local`, judges the records as CI will.
 

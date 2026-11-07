@@ -16,7 +16,8 @@
 //   1. outcome === 'completed' and verdict is 'pass' or 'fail' (a null verdict is not a recognized result).
 //   2. input.identity equals the current PR identity (or, for spec/plan, the doc's blob at head, same path).
 //      Conformance: conformance.tasks equals the Plan field's expanded tasks as a set; conformance.deviations
-//      equals the Deviations field's IDs as a set.
+//      equals the Deviations field's IDs as a set; conformance.plan names the Plan field's path and that path's
+//      blob at the head (so a changed plan, or a Plan field pointed at another plan, voids the record).
 //   3. Only records whose slot is the required one are candidates. reviewer.vendor differs from the
 //      author's vendor (every record on one input must agree on authorVendor); for `completeness` it also
 //      differs from the vendor of a passing `correctness` head (spec: "whichever of the three vendors is
@@ -103,7 +104,9 @@ export function authorVendorFromRecords(recs) {
 }
 
 // addedStems: the stems of the records this PR adds (see the header). Omitted, every record counts as added.
-export function evaluate({ records, required, identity, body, addedStems, authorVendorOf = authorVendorFromRecords }) {
+// planDoc ({ path, identity, error? }): the Plan field's plan blob at the head. Omitted, it is the specced lane's
+// required plan entry for that path (docsFor reads it at the head, as for the plan slot).
+export function evaluate({ records, required, identity, body, addedStems, planDoc, authorVendorOf = authorVendorFromRecords }) {
   const lines = []
   const added = addedStems === undefined ? null : new Set(addedStems)
   let ok = true
@@ -125,6 +128,8 @@ export function evaluate({ records, required, identity, body, addedStems, author
   }
   const devIds = (body?.deviations ?? []).map((d) => d.id)
   const planTasks = body?.plan?.tasks ?? []
+  const planPath = body?.plan?.path ? repoPath(body.plan.path) : null
+  const planAtHead = planDoc ?? required.find((r) => r.slot === 'plan' && r.input.kind === 'blob' && r.input.path === planPath)?.input
   const passingCorrectness = new Map() // input key -> vendors of passing correctness heads
 
   const judge = (rec, want) => {
@@ -142,6 +147,12 @@ export function evaluate({ records, required, identity, body, addedStems, author
         if (missing.length || extra.length) reasons.push(`tasks differ from the Plan field (${[missing.length ? `not covered: ${missing.join(',')}` : '', extra.length ? `not in the Plan field: ${extra.join(',')}` : ''].filter(Boolean).join('; ')})`)
         const unlisted = setDiff(c.deviations, devIds), unknown = setDiff(devIds, c.deviations)
         if (unlisted.length || unknown.length) reasons.push(`unfixed deviations differ from the Deviations field (${[unlisted.length ? `not in the Deviations field: ${unlisted.join(',')}` : '', unknown.length ? `not in the record: ${unknown.join(',')}` : ''].filter(Boolean).join('; ')})`)
+        // The plan it checked must be the Plan field's, at its blob at the head: a changed path or plan voids it.
+        if (!isObj(c.plan)) reasons.push('conformance record names no plan it checked')
+        else if (planPath === null) reasons.push('the PR has no Plan field to bind the conformance record to')
+        else if (c.plan.path !== planPath) reasons.push(`checked plan ${c.plan.path}, but the Plan field names ${planPath}`)
+        else if (!planAtHead || planAtHead.path !== planPath || typeof planAtHead.identity !== 'string') reasons.push(`${planPath}: ${planAtHead?.error ?? 'its blob at the head is unknown'}`)
+        else if (c.plan.blob !== planAtHead.identity) reasons.push(`checked ${c.plan.path} at blob ${short(c.plan.blob)}, but the plan at the head is blob ${short(planAtHead.identity)}`)
       }
     }
     // 3

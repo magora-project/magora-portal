@@ -112,7 +112,7 @@ function fx(o = {}) {
       }
       if (slot === 'conformance') {
         const devs = o.deviations ?? []
-        r.conformance = { tasks: o.conformanceTasks ?? expandTasks(bodyTasks), deviations: devs, commands: o.commands ?? [] }
+        r.conformance = { tasks: o.conformanceTasks ?? expandTasks(bodyTasks), deviations: devs, commands: o.commands ?? [], plan: o.conformancePlan ?? { path: PLAN.path, blob: PLAN.identity } }
         if (devs.includes('D1')) r.findings = [finding({ id: 'D1', severity: 'P1', ...(o.d1Disposition ? { disposition: { kind: o.d1Disposition, reason: 'see Deviations' } } : {}) })]
       }
       return r
@@ -235,6 +235,12 @@ try {
   ok('justified-deviation on a non-conformance record -> FAIL', failsWith(evaluate(fx({ findings: [{ id: 'D1', severity: 'P1', disposition: { kind: 'justified-deviation', reason: 'x' } }], bodyDeviations: ['D1'], deviations: ['D1'], d1Disposition: 'justified-deviation' })), /D1/))
   ok('an unfixed deviation with no disposition -> FAIL', failsWith(evaluate(fx({ deviations: ['D1'], bodyDeviations: ['D1'] })), /D1/))
   ok('a Deviations entry with no conformance deviation -> FAIL naming it', failsWith(evaluate(fx({ deviations: [], bodyDeviations: ['D3'] })), /D3/))
+  // a conformance record is bound to the plan it checked (path and blob)
+  ok('conformance on the Plan field\'s path and its blob at the head -> ok', evaluate(fx()).ok === true)
+  ok('conformance that checked another plan path -> FAIL naming both paths', failsWith(evaluate(fx({ conformancePlan: { path: 'docs/superpowers/plans/other.md', blob: PLAN.identity } })), /conformance.*other\.md.*p\.md/))
+  ok('conformance that checked an older blob of the plan -> FAIL naming the blobs', failsWith(evaluate(fx({ conformancePlan: { path: PLAN.path, blob: 'f'.repeat(40) } })), /conformance.*ffffffffffff.*dddddddddddd/))
+  ok('conformance whose Plan field path is not in the head -> FAIL', (() => { const f = fx(); f.required = f.required.map((r) => (r.slot === 'plan' ? { ...r, input: { ...r.input, identity: null, error: 'x is not in the PR head' } } : r)); return failsWith(evaluate(f), /conformance.*not in the PR head/) })())
+  ok('an explicit planDoc overrides the required plan entry', failsWith(evaluate({ ...fx(), planDoc: { path: PLAN.path, identity: 'a'.repeat(40) } }), /conformance.*aaaaaaaaaaaa/))
   ok('conformance tasks are order-insensitive', evaluate(fx({ conformanceTasks: ['T3', 'T1', 'T2'] })).ok)
   ok('a conformance record covering extra tasks -> FAIL naming them', failsWith(evaluate(fx({ conformanceTasks: ['T1', 'T2', 'T3', 'T5'] })), /T5/))
   ok('body problems fail the check, one line each', (() => { const f = fx(); f.body = parseBody('Lane: specced\nSpec: s.md\nDeviations: none'); return failsWith(evaluate(f), /Plan: required/) })())
