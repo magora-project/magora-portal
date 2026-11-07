@@ -247,6 +247,12 @@ export async function conformanceCli(argv, ctx) {
       const d = await git(['diff', '--quiet', 'HEAD', '--', '.', `:(exclude)${EVIDENCE_DIR}`], { cwd: root })
       if (d.code === 1) usage('tracked files have uncommitted changes: commit them first, so each command target runs against the commit the record covers')
       if (d.code !== 0) throw new Error(`git diff --quiet HEAD failed (${d.code}): ${d.stderr.trim()}`)
+      // An untracked file is on disk but not in the commit: a test runner or an import can pick it up, so a command
+      // could pass here and fail at the recorded HEAD. Gitignored files (node_modules, build output) are allowed.
+      const u = await git(['ls-files', '-z', '--others', '--exclude-standard', '--', '.', `:(exclude)${EVIDENCE_DIR}`], { cwd: root })
+      if (u.code !== 0) throw new Error(`git ls-files --others failed (${u.code}): ${u.stderr.trim()}`)
+      const untracked = u.stdout.toString().split('\0').filter(Boolean)
+      if (untracked.length) usage(`untracked files are not in the commit the record covers, and a command target could use them: commit, remove or gitignore them first (${untracked.slice(0, 5).join(', ')}${untracked.length > 5 ? `, and ${untracked.length - 5} more` : ''})`)
     }
     // Each command target gets the run's --timeout-min (the reviewer's default when unset) as its own deadline.
     const timeoutMin = o['timeout-min'] === undefined ? DEFAULT_TIMEOUT_MIN : Number(o['timeout-min'])

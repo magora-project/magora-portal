@@ -244,6 +244,19 @@ try {
     const dirty = await cli(repo, conformance('T1'))
     ok('uncommitted changes to tracked files refuse a run with command targets', dirty.code === 1 && dirty.spawns.length === 0 && /commit/.test(dirty.err))
     raw(repo, ['checkout', '--', 'edited.mjs'])
+    // push-gate P2: an untracked helper a committed test could import would make the command pass only here
+    put(repo, 'helper.mjs', 'export const h = 1\n')
+    const untracked = await cli(repo, conformance('T1'))
+    ok('an untracked file refuses a run with command targets, naming it, before any command runs', untracked.code === 1 && untracked.spawns.length === 0 && /untracked/.test(untracked.err) && /helper\.mjs/.test(untracked.err))
+    {
+      const r2 = mkrepo()
+      put(r2, '.gitignore', 'helper.mjs\n')
+      commit(r2, 'ignore the helper')
+      put(r2, 'helper.mjs', 'export const h = 1\n')
+      const ignored = await cli(r2, conformance('T1'))
+      ok('...a gitignored file (node_modules, build output) does not', ignored.code === 0 && ignored.commandSpawns.length > 0)
+    }
+    raw(repo, ['clean', '-q', '-f', '--', 'helper.mjs'])
     const moved = io()
     const movedErr = await runReview({ slot: 'conformance', author: 'anthropic' }, { cwd: repo, promptFor, env: {}, io: moved.io, spawnImpl: reviewerSpawn([], () => ({ verdict: 'pass', findings: [], inherited: [] })) }, { head: '0'.repeat(40), plan: { path: PLAN, tasks: ['T4'], blob: 'e'.repeat(40) }, check: async () => { throw new Error('check ran') } }).then(() => '', (e) => e.message)
     ok('a conformance run whose plan was read at another HEAD is refused before the check runs', /HEAD moved/.test(movedErr))
