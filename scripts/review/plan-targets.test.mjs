@@ -56,6 +56,16 @@ try {
   ok('the trailing text is not part of the value (T2)', parsedThis.tasks.find((t) => t.id === 'T2').targets[0].value === '~/code/claude-config/hooks/spec_plan_threshold.sh')
   ok('this plan parses T1 to T25, once each', parsedThis.tasks.length === 25 && new Set(parsedThis.tasks.map((t) => t.id)).size === 25)
   ok('an untyped "- Create: x" line is a problem with its line number', /line \d+/.test(parsePlan('### Task 1: X\n\n**Files:**\n- Create: `x`\n').problems.join()))
+  // conformance D1: a list item that is not a "- " bullet is an untyped line, not the end of the Files block
+  {
+    const star = parsePlan('### Task 1: X\n\n**Files:**\n- create: `a.mjs`\n* `missing.mjs`\n- create: `b.mjs`\n')
+    ok('a "* " bullet in a Files block is an untyped-line problem naming it', star.problems.some((x) => /T1 line 5: untyped Files line .*missing\.mjs/.test(x)))
+    ok('...and the block goes on: the target after it is still read', star.tasks[0].targets.map((t) => t.value).join() === 'a.mjs,b.mjs')
+    ok('a numbered bullet in a Files block is an untyped-line problem', parsePlan('### Task 1: X\n\n**Files:**\n1. `x.mjs`\n').problems.some((x) => /untyped Files line .*x\.mjs/.test(x)))
+    ok('an indented "- " bullet in a Files block is an untyped-line problem, not a continuation', parsePlan('### Task 1: X\n\n**Files:**\n- create:\n  - `x.mjs`\n').problems.some((x) => /line 5: untyped Files line .*x\.mjs/.test(x)))
+    ok('a wrapped continuation line is still not a problem', parsePlan('### Task 1: X\n\n**Files:**\n- create: `x.mjs` (a long note\n  that wraps)\n').problems.length === 0)
+    ok('a "**Files**:" heading is a problem, not a task with no targets', parsePlan('### Task 1: X\n\n**Files**:\n- create: `x.mjs`\n').problems.some((x) => /T1 line 3: Files heading/.test(x)))
+  }
   ok('the untyped line number is the line of the bullet', /line 4:/.test(parsePlan('### Task 1: X\n\n**Files:**\n- Create: `x`\n').problems[0]))
   ok('a typed line without a backticked value is a problem', parsePlan('### Task 1: X\n\n**Files:**\n- create: x\n').problems.length === 1)
   ok('duplicate task IDs are a problem', /duplicate T2/.test(parsePlan(dupPlan).problems.join()))

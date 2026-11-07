@@ -55,9 +55,18 @@ const parse = (markdown) => {
       return
     }
     if (l.trim() === '**Files:**') { inFiles = cur !== null || dup; return }
+    // A Files heading written another way would leave the task with no targets and no problem: report it.
+    if (cur !== null && !dup && /^\s*(\*\*Files\*\*\s*:|\*\*Files\s*:\*\*|Files\s*:)\s*$/i.test(l)) {
+      inFiles = false
+      problems[problems.length] = { task: cur.id, text: `${cur.id} line ${n}: Files heading ${JSON.stringify(l.trim())} is not "**Files:**"; its lines are not read as targets` }
+      return
+    }
     if (!inFiles) return
-    if (/^\s+\S/.test(l)) return // a wrapped continuation of the bullet above
-    if (!l.startsWith('- ')) { inFiles = false; return }
+    // Any other list item in the block (a "* " or "+ " or numbered bullet, or an indented one) is an untyped Files
+    // line (plan Task 17), not the end of the block: ending there would drop it and every target after it unreported.
+    const otherItem = !l.startsWith('- ') && /^\s*([-*+]|\d+[.)])\s+\S/.test(l)
+    if (!otherItem && /^\s+\S/.test(l)) return // a wrapped continuation of the bullet above
+    if (!otherItem && !l.startsWith('- ')) { inFiles = false; return }
     if (dup) return
     const m = TARGET.exec(l)
     if (m && m[2].trim() !== '') cur.targets[cur.targets.length] = { type: m[1], value: m[2], line: n }
