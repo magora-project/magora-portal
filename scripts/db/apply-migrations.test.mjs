@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { listMigrationFiles, applyFiles, managesOwnTransaction, lineColumn, parseArgs } from './apply-migrations.mjs'
-import { connect, localProblem, targetLabel } from './pg.mjs'
+import { connect, localProblem, targetLabel, withRootCert } from './pg.mjs'
 
 let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
@@ -93,7 +93,15 @@ ok('local: no ports given refused', localProblem('postgresql://postgres:pw@local
   ok('connect error names the ref and code only', msg === 'connect failed: mujiqtvwtsbaakfcsjkp: 28P01')
 }
 ok('missing env var', (await rejects(connect('NOPE', { readOnly: true, env: {} }))) === 'NOPE is required')
-ok('targetLabel local', targetLabel('postgresql://postgres:pw@localhost:54322/postgres') === 'local')
+{
+  const prod = 'postgresql://postgres.wqxmmuwrfltpaxnuddwk:pw@aws-0-us-west-1.pooler.supabase.com:5432/postgres?sslmode=verify-full'
+  const out = withRootCert(prod, { PGSSLROOTCERT: '/abs/prod-ca.crt' })
+  ok('withRootCert adds sslrootcert to a verify-full URL', new URL(out).searchParams.get('sslrootcert') === '/abs/prod-ca.crt' && new URL(out).searchParams.get('sslmode') === 'verify-full')
+  ok('withRootCert leaves a URL with no sslmode alone', withRootCert('postgresql://postgres:pw@127.0.0.1:54322/postgres', { PGSSLROOTCERT: '/abs/x' }) === 'postgresql://postgres:pw@127.0.0.1:54322/postgres')
+  ok('withRootCert without PGSSLROOTCERT is the identity', withRootCert(prod, {}) === prod)
+  ok('withRootCert refuses a relative path', (() => { try { withRootCert(prod, { PGSSLROOTCERT: 'ca.crt' }); return false } catch { return true } })())
+}
+ok('targetLabel local',targetLabel('postgresql://postgres:pw@localhost:54322/postgres') === 'local')
 ok('targetLabel ambiguous -> unknown', targetLabel('postgresql://postgres.mujiqtvwtsbaakfcsjkp:pw@db.wqxmmuwrfltpaxnuddwk.supabase.co/postgres') === 'unknown')
 
 console.log(`apply-migrations: ${pass} passed, ${fail} failed`)
