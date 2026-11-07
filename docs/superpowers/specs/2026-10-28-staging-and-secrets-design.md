@@ -426,7 +426,8 @@ alternatives to David.
 
 **Privilege check (success criterion 7).** Connects as the refresh login and reads the catalog,
 attempting no write. It shows: no `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES` or
-`TRIGGER` on any table, at table **or column** level; no `UPDATE` or `USAGE` on any sequence; no
+`TRIGGER` on any table, at table **or column** level (except `UPDATE` on `pg_catalog.pg_settings`,
+which PostgreSQL grants to `PUBLIC` and which only sets session settings; David, 2026-11-07); no `UPDATE` or `USAGE` on any sequence; no
 `EXECUTE` on any function in **any** schema outside a reviewed allowlist (a SQL login is not
 limited to the schemas PostgREST exposes); no `CREATE` on any schema or on the database; owns no
 object; no role memberships; no role attributes beyond `LOGIN` and `BYPASSRLS`. A positive part

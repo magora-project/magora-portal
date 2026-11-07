@@ -391,7 +391,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   Facts come from `has_table_privilege`, `has_column_privilege`, `has_sequence_privilege`, `has_function_privilege`, `has_schema_privilege` and `has_database_privilege`, evaluated for `current_user` across every schema; plus `pg_roles` attributes, `pg_auth_members`, and ownership in `pg_class`, `pg_proc`, `pg_namespace` and `pg_type`.
 
   `judge` reports, exactly per §5.10:
-  - any INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES or TRIGGER on any table, at table or column level
+  - any INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES or TRIGGER on any table, at table or column level. The one exception is table-level `UPDATE` on `pg_catalog.pg_settings` (David, 2026-11-07). PostgreSQL grants it to `PUBLIC` on every database, and `postgres` cannot revoke it. An `UPDATE` there only calls `set_config`, a session setting that writes no data and that `SET` already allows.
   - UPDATE or USAGE on any sequence
   - EXECUTE on any function outside `executeAllowlist`
   - CREATE on any schema or on the database
@@ -410,7 +410,8 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   The fixture is self-contained, so this task does not wait for the baseline:
   - Start a bare local stack, apply `roles.sql`, then run `create table public.t(id int primary key, owner uuid)` and `grant select on public.t to magora_refresh`.
   - Run the check once. Its `EXECUTE` violations on this bare stack (extension functions callable through `PUBLIC`) become the fixture's allowlist, except `WRITES_WITHOUT_TABLE_PRIVILEGE` functions, which no allowlist can hold: they stay in a recorded baseline of violations instead. Every further step must add **exactly one** new violation beyond that baseline.
-  - Record whether that first run reports any `WRITES_WITHOUT_TABLE_PRIVILEGE` function (stock PostgreSQL grants `EXECUTE` on most large-object functions to `PUBLIC`; whether Supabase revokes them is not yet observed). Then, as `magora_refresh`, run `select lo_create(0)`: if it succeeds, the check must have reported `lo_create`; if it is refused, record the error. Either way, the bare-stack allowlist must not have absorbed it.
+  - Record whether that first run reports any `WRITES_WITHOUT_TABLE_PRIVILEGE` function (stock PostgreSQL grants `EXECUTE` on most large-object functions to `PUBLIC`; whether Supabase revokes them is not yet observed).
+    - **Observed, 2026-11-07** (local stack, PostgreSQL 17.6, Supabase CLI 2.118.0): Supabase does not revoke them. 11 signatures are callable through `PUBLIC`: `lo_creat(integer)`, `lo_create(oid)`, `lo_from_bytea(oid, bytea)`, `lo_open(oid, integer)`, `lo_put(oid, bigint, bytea)`, `lo_truncate(integer, integer)`, `lo_truncate64(integer, bigint)`, `lo_unlink(oid)`, `lowrite(integer, bytea)`, and both `pg_logical_emit_message(boolean, text, text|bytea, boolean)` overloads. `lo_export` and both `lo_import` forms are `supabase_admin` only. As `magora_refresh`, `lo_create(0)` succeeded in a read-write transaction (rolled back), and the check reported it. Then, as `magora_refresh`, run `select lo_create(0)`: if it succeeds, the check must have reported `lo_create`; if it is refused, record the error. Either way, the bare-stack allowlist must not have absorbed it.
   - `GRANT INSERT ON public.t TO magora_refresh`: it fails naming that grant. Revoke it.
   - `GRANT UPDATE (one column) …`: it fails. Revoke it.
   - `GRANT authenticated TO magora_refresh`: it fails on membership. Revoke it.

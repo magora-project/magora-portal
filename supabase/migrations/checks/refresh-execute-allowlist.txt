@@ -1,0 +1,7 @@
+# Functions the refresh login (magora_refresh) may EXECUTE. Read by scripts/db/privilege-check.mjs.
+# Each line: <schema>.<function>(<argtypes>)  # <reason>
+# A wildcard (<schema>.*) is allowed for pg_catalog and information_schema only. No line, wildcard
+# or exact, admits a function in the check's WRITES_WITHOUT_TABLE_PRIVILEGE list.
+# The remaining lines are derived in Spec 2 plan Task 15b Step 4, once the full schema and grants exist.
+pg_catalog.*  # built-in functions; the writers among them are refused by WRITES_WITHOUT_TABLE_PRIVILEGE
+information_schema.*  # catalog views' helper functions; read-only
