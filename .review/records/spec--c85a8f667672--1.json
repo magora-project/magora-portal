@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "c85a8f667672466f30db702c5e4cf9a3a5200fa1",
+    "path": "docs/superpowers/specs/2026-11-06-staging-lease-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "Two concurrent releases can both read A's value, then one deletes A, B claims, and the second deletes B, violating the repeated-release guarantee without the live-lease break required by the residual-risk justification.",
+      "file": "docs/superpowers/specs/2026-11-06-staging-lease-design.md",
+      "line": 72
+    },
+    {
+      "id": "F2",
+      "severity": "P1",
+      "summary": "A refresh can pass admission while the lease is absent and continue after a claim succeeds, because claiming and workflow execution share no synchronization, allowing staging to refresh during a migration test session.",
+      "file": "docs/superpowers/specs/2026-11-06-staging-lease-design.md",
+      "line": 91
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-07T03:11:54.019Z"
+}
