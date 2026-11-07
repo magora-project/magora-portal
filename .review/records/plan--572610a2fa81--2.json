@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "572610a2fa81402fb917e1683f4185bde5999acf",
+    "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "Conformance records store task IDs but no plan path or blob identity, so changing the PR body's Plan path to another already-reviewed plan with identical task IDs can reuse unrelated conformance evidence and pass without checking the newly declared tasks.",
+      "file": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "line": 392,
+      "disposition": {
+        "kind": "pre-existing",
+        "reason": "Present in the plan on main; conformance binding is fixed in code in PR C and the plan text is amended in PR D",
+        "issue": "https://github.com/magora-project/magora-portal/issues/81"
+      }
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "The typed Files blocks omit required modifications: Task 17 introduces review.mjs CLI enforcement without listing that file, and Task 20 Step 5 changes the PR template without listing it, leaving both tasks' declared targets incomplete.",
+      "file": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "line": 641
+    }
+  ],
+  "supersedes": "plan--572610a2fa81--1",
+  "rev": "c2b1b1c0c766adb0f36835319706d96157c306c2",
+  "tasks": [
+    "T17",
+    "T18",
+    "T19",
+    "T20",
+    "T21",
+    "T22",
+    "T23",
+    "T24",
+    "T25"
+  ],
+  "createdAt": "2026-11-07T03:08:48.555Z"
+}
