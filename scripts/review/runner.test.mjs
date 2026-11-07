@@ -123,6 +123,8 @@ const passJsonNoInherited = '{"verdict":"pass","findings":[]}'
 
 try {
   // --- classifyOutcome ---
+  ok('a fail naming nothing is refused when nothing was recorded before the reviewer', classifyOutcome({ exitCode: 0, stdout: JSON.stringify({ verdict: 'fail', findings: [], inherited: [] }), truncated: false, timedOut: false }).outcome === 'refused')
+  ok('a fail naming nothing is completed when the writer recorded findings first (a failed postcondition)', classifyOutcome({ exitCode: 0, stdout: JSON.stringify({ verdict: 'fail', findings: [], inherited: [] }), truncated: false, timedOut: false, preFindings: 1 }).outcome === 'completed')
   ok('timed out -> timeout, whatever stdout says', classifyOutcome({ exitCode: 0, stdout: passJson, truncated: false, timedOut: true }).outcome === 'timeout')
   ok('exit 0 with prose and no JSON -> refused', classifyOutcome({ exitCode: 0, stdout: 'I cannot review this', truncated: false, timedOut: false }).outcome === 'refused')
   ok('exit 1 with zero findings -> failed, not pass', classifyOutcome({ exitCode: 1, stdout: '{"verdict":"pass","findings":[]}', truncated: false, timedOut: false }).outcome === 'failed')

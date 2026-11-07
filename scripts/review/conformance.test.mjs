@@ -272,14 +272,15 @@ try {
     put(repo, 'later.mjs', 'export const later = 1\n')
     commit(repo, 'a later change')
     const same = await cli(repo, conformance('T4', ['--supersedes', first.stem]))
-    ok('a re-review with the same plan and tasks sends the delta', same.code === 0 && /Delta since/.test(same.reviewerCalls[0].prompt) && !/scope changed/.test(same.err))
+    ok('a re-review with the same plan and tasks sends the delta', same.code === 0 && /Delta since/.test(same.reviewerCalls[0].prompt) && !/Full current diff/.test(same.reviewerCalls[0].prompt) && !/scope changed/.test(same.err))
     const sameHead = heads(repo)[0]
-    const wider = await cli(repo, conformance('T3,T4', ['--supersedes', sameHead.stem]))
-    ok('a re-review that adds a task sends the full input and says why', wider.reviewerCalls.length === 1 && !/Delta since/.test(wider.reviewerCalls[0].prompt) && /conformance scope changed.*tasks T4 -> T3,T4/.test(wider.err))
+    const wider = await cli(repo, conformance('T3,T4', ['--supersedes', sameHead.stem]), { verdictFor: () => ({ verdict: 'fail', findings: [], inherited: [] }) })
+    ok('a re-review that adds a task sends the full input and says why', wider.reviewerCalls.length === 1 && !/Delta since/.test(wider.reviewerCalls[0].prompt) && /Full current diff/.test(wider.reviewerCalls[0].prompt) && wider.reviewerCalls[0].prompt.includes('export const later = 1') && /conformance scope changed.*tasks T4 -> T3,T4/.test(wider.err))
+    ok('...and its failed postcondition with a reviewer fail naming nothing new is a completed record, not UNRUN', wider.code === 0 && heads(repo)[0].outcome === 'completed' && heads(repo)[0].findings.some((f) => f.source === 'postcondition'))
     put(repo, PLAN, `${planText}\nan amendment\n`)
     commit(repo, 'amend the plan')
     const amended = await cli(repo, conformance('T3,T4', ['--supersedes', heads(repo)[0].stem]))
-    ok('a re-review after the plan changed sends the full input and says why', amended.reviewerCalls.length === 1 && !/Delta since/.test(amended.reviewerCalls[0].prompt) && /conformance scope changed.*plan blob/.test(amended.err))
+    ok('a re-review after the plan changed sends the full input and says why', amended.reviewerCalls.length === 1 && !/Delta since/.test(amended.reviewerCalls[0].prompt) && /Full current diff/.test(amended.reviewerCalls[0].prompt) && /conformance scope changed.*plan blob/.test(amended.err))
   }
 
   // --- PR #77 Gemini P1: a justified deviation the author then fixes and drops from the Deviations field ---

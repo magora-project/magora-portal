@@ -47,7 +47,7 @@ Exit 0 means the outcome was `completed`. Exit 1 is any other outcome or a usage
 
 - `outcome: completed` with `verdict: pass` and no undisposed P0-P2 finding: reviewed.
 - `completed` with findings: fix P0-P2 findings (a P3 is a nit and needs nothing), commit the fix as a new commit, and re-review (below).
-- Any other outcome (`failed`, `refused`, `truncated`, `timeout`): nobody reviewed the input. It is **not** a pass and the review is UNRUN. Fall back to the next reviewer in the table below and run the same command again with `--reviewer`.
+- Any other outcome (`failed`, `refused`, `truncated`, `timeout`): nobody reviewed the input. It is **not** a pass and the review is UNRUN. Fall back to the next reviewer in the table below and run the same command again with `--reviewer`. If the unrun record still lists findings the evidence writer recorded before the reviewer (a conformance postcondition deviation, a plan reference problem), a fresh run is refused: add `--supersedes <that record's stem>`.
 
 | Written by | Primary | Fallback |
 |---|---|---|
@@ -62,7 +62,7 @@ A fix voids the record that found the problem. Re-run the same slot with the ste
 
 `npm run review -- run --slot <slot> --author <vendor> [--path <doc>] --supersedes <stem>`
 
-A run without `--supersedes` is refused while a record of the same slot (and path) that this branch added still carries an open blocking finding, whatever that record's outcome, and review-evidence fails the slot on such a record even when another chain passes. The new record inherits every undisposed finding. What it reviews: only the delta (for a spec or plan, the change between the two blobs) when the earlier record completed with nothing left open; the full input plus the delta when an inherited blocking finding is still open; the full input alone when the earlier record never completed, or, for a PR slot, when the merge base has moved since (a merge from `main` would otherwise mix main's changes into the delta). Its verdict marks each inherited finding resolved or open. Apply `## Stop rule` in `.claude/rules/process.md` if the new findings keep landing in your own fixes.
+A run without `--supersedes` is refused while a record of the same slot (and path) that this branch added still carries an open blocking finding, whatever that record's outcome, and review-evidence fails the slot on such a record even when another chain passes. The new record inherits every undisposed finding. What it reviews: only the delta (for a spec or plan, the change between the two blobs) when the earlier record completed with nothing left open; the full input plus the delta when an inherited blocking finding is still open; the full input alone when the earlier record never completed, or, for a PR slot, when the merge base has moved since (a merge from `main` would otherwise mix main's changes into the delta), or, for a plan or conformance review, when the declared scope changed (another task set, or for conformance another plan path or blob). Its verdict marks each inherited finding resolved or open. Apply `## Stop rule` in `.claude/rules/process.md` if the new findings keep landing in your own fixes.
 
 ## 6. Dispose a finding without a fix
 

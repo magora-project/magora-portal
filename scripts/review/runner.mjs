@@ -105,15 +105,18 @@ const cleanFinding = (f) => ({
 })
 
 // The order is the contract: timeout, then truncated, then a non-zero exit, then the content check.
-export const classifyOutcome = ({ exitCode, stdout, truncated, timedOut, inheritedIds = [] }) => {
+// preFindings: how many findings the evidence writer recorded before the reviewer (failed postconditions, plan
+// reference problems). With any, a `fail` naming nothing new is the reviewer agreeing with them, not malformed.
+export const classifyOutcome = ({ exitCode, stdout, truncated, timedOut, inheritedIds = [], preFindings = 0 }) => {
   const unrun = (outcome) => ({ outcome, verdict: null, findings: [], inherited: [] })
   if (timedOut) return unrun('timeout')
   if (truncated) return unrun('truncated')
   if (exitCode !== 0) return unrun('failed')
   const v = extractVerdict(String(stdout ?? ''), inheritedIds)
   if (!v) return unrun('refused')
-  // A `fail` that names nothing (no new finding, no inherited one left open) is malformed, not a result.
-  if (v.verdict === 'fail' && v.findings.length === 0 && !v.inherited.some((e) => e.status === 'open')) return unrun('refused')
+  // A `fail` that names nothing (no new finding, no inherited one left open, none recorded before the reviewer) is
+  // malformed, not a result.
+  if (v.verdict === 'fail' && v.findings.length === 0 && !v.inherited.some((e) => e.status === 'open') && preFindings === 0) return unrun('refused')
   return { outcome: 'completed', verdict: v.verdict, findings: v.findings.map(cleanFinding), inherited: v.inherited.map((e) => ({ id: e.id, status: e.status, note: e.note })) }
 }
 
@@ -142,8 +145,7 @@ export const independenceProblem = ({ authorVendor, slot, reviewer, otherVendor 
 
 // ---------- promise context (David, 2026-11-06) ----------
 
-// The slots whose prompts ask what the spec, plan and commit messages promised (completeness.md; conformance from
-// PR C). They get the declared plan task sections, the spec sections those tasks cite, and the commit messages.
+// The slots whose prompts ask what the spec, plan and commit messages promised (completeness.md, conformance.md). They get the declared plan task sections, the spec sections those tasks cite, and the commit messages.
 export const CONTEXT_SLOTS = ['completeness', 'conformance']
 
 // Markdown headings outside fenced code blocks: [{ line, level, text }]. A `# comment` in a ```bash block is not one.
@@ -569,7 +571,7 @@ export const runReview = async (o, ctx, conf = null) => {
     prompt, timeoutMs: Math.round(timeoutMin * 60_000), cwd: root, env: ctx.env ?? process.env,
     spawnImpl: ctx.spawnImpl, resolveImpl: ctx.resolveImpl, fetchImpl: ctx.fetchImpl, diffBytes, model,
   })
-  const c = classifyOutcome({ ...res, inheritedIds })
+  const c = classifyOutcome({ ...res, inheritedIds, preFindings: preFindings.length })
 
   const { path, stem } = writeWithStem(root, o.slot, input.identity, (newStem) => {
     let findings
