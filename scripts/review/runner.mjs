@@ -368,7 +368,7 @@ const writeWithStem = (cwd, slot, identity, build) => {
 const cmdRun = async (argv, ctx) => {
   const { values: o } = parseArgs({ args: argv, options: RUN_OPTIONS, strict: true, allowPositionals: false })
   if (!SLOTS.includes(o.slot)) usage(`--slot must be one of ${SLOTS.join('|')}`)
-  // A conformance record needs its conformance block (tasks, deviations, commands), which only the conformance
+  // A conformance record needs its conformance block (tasks, deviations, commands, plan), which only the conformance
   // writer fills; a record written here could never pass review-evidence.
   if (o.slot === 'conformance') usage('conformance records come from `npm run review -- conformance --plan <path> --tasks <ids> --author <vendor>` (scripts/review/conformance.mjs), which runs the plan\'s postconditions and fills the conformance block that review-evidence requires; `run --slot conformance` would write a record without it')
   return runReview(o, ctx)
@@ -376,7 +376,8 @@ const cmdRun = async (argv, ctx) => {
 
 // One review of o.slot (the parsed `run` flags), written as a record. `conf` is the conformance writer's part
 // (scripts/review/conformance.mjs), required for the conformance slot and refused for any other:
-//   { plan: { path, tasks, blob }, check: async ({ root, mb, head }) -> { findings, commands, context } }
+//   { head, plan: { path, tasks, blob }, check: async ({ root, mb, head }) -> { findings, commands, context } }
+// conf.head is the commit the writer read the plan at; the review refuses if HEAD is no longer that commit.
 // check() runs after every refusal and before the reviewer. Its findings (the failed postconditions, D1..Dn, each
 // with source 'postcondition') lead the record; the reviewer's findings are renumbered to follow them; inherited
 // postcondition findings are dropped, because check() recomputes them on every run. The record carries
@@ -397,6 +398,7 @@ export const runReview = async (o, ctx, conf = null) => {
 
   const root = must(await git(['rev-parse', '--show-toplevel'], { cwd }), 'git rev-parse --show-toplevel').trim()
   const head = must(await git(['rev-parse', 'HEAD'], { cwd: root }), 'git rev-parse HEAD').trim()
+  if (conf?.head !== undefined && conf.head !== head) usage(`HEAD moved from ${conf.head} to ${head} while the conformance writer read the plan: run it again`)
   const records = readRecords({ cwd: root })
 
   // input and the full current content

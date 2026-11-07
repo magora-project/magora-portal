@@ -20,6 +20,7 @@ const { dispositionOk, readRecords, writeRecord } = await import('./records.mjs'
 const { parseBody } = await import('./pr-body.mjs')
 const { evaluate } = await import('../ci/review-evidence.mjs')
 const { reviewCli } = await import('./review.mjs')
+const { runReview } = await import('./runner.mjs')
 const { commandArgv, declaredTasks, deviationIds, postconditions, splitCommand } = await import('./conformance.mjs')
 
 let pass = 0, fail = 0
@@ -241,6 +242,10 @@ try {
     put(repo, 'edited.mjs', 'uncommitted\n')
     const dirty = await cli(repo, conformance('T1'))
     ok('uncommitted changes to tracked files refuse a run with command targets', dirty.code === 1 && dirty.spawns.length === 0 && /commit/.test(dirty.err))
+    raw(repo, ['checkout', '--', 'edited.mjs'])
+    const moved = io()
+    const movedErr = await runReview({ slot: 'conformance', author: 'anthropic' }, { cwd: repo, promptFor, env: {}, io: moved.io, spawnImpl: reviewerSpawn([], () => ({ verdict: 'pass', findings: [], inherited: [] })) }, { head: '0'.repeat(40), plan: { path: PLAN, tasks: ['T4'], blob: 'e'.repeat(40) }, check: async () => { throw new Error('check ran') } }).then(() => '', (e) => e.message)
+    ok('a conformance run whose plan was read at another HEAD is refused before the check runs', /HEAD moved/.test(movedErr))
     ok('...and nothing was written by any refusal', readRecords({ cwd: repo }).length === 0)
   }
 

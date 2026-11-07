@@ -171,14 +171,16 @@ export async function conformanceCli(argv, ctx) {
     const root = must(await git(['rev-parse', '--show-toplevel'], { cwd: ctx.cwd }), 'git rev-parse --show-toplevel').trim()
     const planPath = repoPath(o.plan)
     if (planPath.startsWith('/') || /^[A-Za-z]:/.test(planPath) || planPath.startsWith('../')) usage('--plan must be relative to the repository root')
-    const blob = await git(['cat-file', 'blob', `HEAD:${planPath}`], { cwd: root })
+    // One HEAD for the plan text, its blob and the reviewed head: runReview refuses if HEAD moves before it reads it.
+    const head = must(await git(['rev-parse', 'HEAD'], { cwd: root }), 'git rev-parse HEAD').trim()
+    const blob = await git(['cat-file', 'blob', `${head}:${planPath}`], { cwd: root })
     if (blob.code !== 0) usage(`${planPath} is not a file at HEAD: commit the plan first (conformance reads it at the reviewed commit)`)
     const planText = blob.stdout.toString()
     // The record is bound to this plan: its path and its blob at HEAD, which must be what the work tree holds.
-    const planDirty = await git(['diff', '--quiet', 'HEAD', '--', planPath], { cwd: root })
+    const planDirty = await git(['diff', '--quiet', head, '--', `:(literal)${planPath}`], { cwd: root })
     if (planDirty.code === 1) usage(`${planPath} has uncommitted changes: commit them first, so the record names the plan it checked`)
     if (planDirty.code !== 0) throw new Error(`git diff --quiet HEAD failed (${planDirty.code}): ${planDirty.stderr.trim()}`)
-    const planBlob = await blobIdentity({ cwd: root, rev: 'HEAD', path: planPath })
+    const planBlob = await blobIdentity({ cwd: root, rev: head, path: planPath })
     const sel = resolveTasks({ tasks: o.tasks, planExistsAtRev: true, plan: planText })
     if (sel.error) usage(sel.error)
     if (sel.tasks.length === 0) usage('conformance needs at least one task: --tasks none would check nothing')
@@ -192,7 +194,7 @@ export async function conformanceCli(argv, ctx) {
       if (d.code !== 0) throw new Error(`git diff --quiet HEAD failed (${d.code}): ${d.stderr.trim()}`)
     }
     const run = { slot: 'conformance', author: o.author, reviewer: o.reviewer, supersedes: o.supersedes, base: o.base, model: o.model, 'timeout-min': o['timeout-min'] }
-    return await runReview(run, ctx, { plan: { path: planPath, tasks: sel.tasks, blob: planBlob }, check: conformanceCheck({ planPath, tasks, planProblems, ctx }) })
+    return await runReview(run, ctx, { head, plan: { path: planPath, tasks: sel.tasks, blob: planBlob }, check: conformanceCheck({ planPath, tasks, planProblems, ctx }) })
   } catch (e) {
     if (e instanceof UsageError || (e && typeof e.code === 'string' && e.code.startsWith('ERR_PARSE_ARGS'))) io.err(`${e.message}\n${USAGE}\n`)
     else io.err(`review: ${e && e.message}\n`)

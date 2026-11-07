@@ -240,6 +240,7 @@ try {
   ok('conformance that checked another plan path -> FAIL naming both paths', failsWith(evaluate(fx({ conformancePlan: { path: 'docs/superpowers/plans/other.md', blob: PLAN.identity } })), /conformance.*other\.md.*p\.md/))
   ok('conformance that checked an older blob of the plan -> FAIL naming the blobs', failsWith(evaluate(fx({ conformancePlan: { path: PLAN.path, blob: 'f'.repeat(40) } })), /conformance.*ffffffffffff.*dddddddddddd/))
   ok('conformance whose Plan field path is not in the head -> FAIL', (() => { const f = fx(); f.required = f.required.map((r) => (r.slot === 'plan' ? { ...r, input: { ...r.input, identity: null, error: 'x is not in the PR head' } } : r)); return failsWith(evaluate(f), /conformance.*not in the PR head/) })())
+  ok('a Plan field written ./path matches the record\'s repo path -> ok', (() => { const f = fx(); f.body = parseBody(`Lane: specced\nSpec: ${SPEC.path}\nPlan: ./${PLAN.path} T1-T3\nDeviations: none`); return evaluate(f).ok === true })())
   ok('an explicit planDoc overrides the required plan entry', failsWith(evaluate({ ...fx(), planDoc: { path: PLAN.path, identity: 'a'.repeat(40) } }), /conformance.*aaaaaaaaaaaa/))
   ok('conformance tasks are order-insensitive', evaluate(fx({ conformanceTasks: ['T3', 'T1', 'T2'] })).ok)
   ok('a conformance record covering extra tasks -> FAIL naming them', failsWith(evaluate(fx({ conformanceTasks: ['T1', 'T2', 'T3', 'T5'] })), /T5/))

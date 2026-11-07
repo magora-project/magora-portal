@@ -19,7 +19,7 @@ Runs one review slot through `scripts/review/review.mjs` and reads the record it
 | A bot did not or could not review (PR stage) | `substitute:coderabbit`, `substitute:codex` or `substitute:gemini` | the PR's diff |
 | `mechanical` | none | |
 
-Conformance records are written by `npm run review -- conformance`, which runs the plan's postconditions and fills the record's conformance block (tasks, deviations, commands); review-evidence fails a conformance record without that block, so `run --slot conformance` refuses. Follow `.claude/skills/conformance/SKILL.md` for that stage. Sections 4 and 5 below (reading the record, fallback, re-review) apply to it too.
+Conformance records are written by `npm run review -- conformance`, which runs the plan's postconditions and fills the record's conformance block (tasks, deviations, commands, and the plan it checked); review-evidence fails a conformance record without that block, so `run --slot conformance` refuses. Follow `.claude/skills/conformance/SKILL.md` for that stage. Sections 4 and 5 below (reading the record, fallback, re-review) apply to it too.
 
 A review is of one input. `spec` and `plan` cover one file's blob at `HEAD` (commit it first); the rest cover the PR's own diff against its merge base at `HEAD`, so commit before you run. Any later edit voids the record.
 
