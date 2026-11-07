@@ -473,7 +473,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - `apply-setup.mjs --target staging|production|scratch [--ref <ref>] --file <name>`, the operator-setup class (Global Constraints).
     - **Allowed pairs**, from a fixed table. `--file` is a name in that table, never a path.
       - staging: `roles.sql`, `staging-ops.sql`
-      - production: `roles.sql`, `20261029_refresh_login_grants.sql`
+      - production: `roles.sql`, `20261029_refresh_login_grants.sql`, and Task 15b's `<date>_revoke_public_writer_functions.sql` (its name, once Task 15b fixes the date)
       - scratch: `roles.sql`, `rehearsal-fixture.sql`, and each file `listMigrationFiles` returns in the current checkout, the baseline included (Task 26's rehearsal source)
     - **URL variable per target:** `STAGING_DB_URL`, `PROD_SETUP_DB_URL` or `SCRATCH_SETUP_DB_URL`.
     - **Ref checks:** the ref read from the URL must equal the target's ref. For scratch, it must equal `--ref`, which must be neither production's nor staging's.
@@ -482,6 +482,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 
 - [ ] **Step 1: Write the files.** Then write `apply-setup.test.mjs`:
   - (`staging-ops.sql`, production) is refused.
+  - The revoke migration on production is allowed, and on staging is refused (the rebuild applies it there).
   - A `--file ../x.sql` is refused.
   - A production URL with `--target staging` is refused before connecting.
   - A wrong typed-back ref aborts.
@@ -493,8 +494,9 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - (a) a `FOR SELECT TO magora_refresh USING (true)` policy on each copied table, created by a migration
   - (b) Supabase support enabling the attribute
   - (c) a SECURITY DEFINER export function owned by `postgres`, which the privilege check's `executeAllowlist` would then have to name
-- [ ] **Step 3 (operator, David approves each of the two production writes):**
-  - Run `apply-setup.mjs --target production --file roles.sql`, then `--file 20261029_refresh_login_grants.sql`, from the production vault, after PR D merges. Before the second, David has approved Task 15b's exception and confirmed that day's daily backup.
+- [ ] **Step 3 (operator, David approves each of the three production writes):**
+  - Run `apply-setup.mjs --target production --file roles.sql`, then `--file 20261029_refresh_login_grants.sql`, then `--file <date>_revoke_public_writer_functions.sql`, from the production vault, after PR D merges. Before the second, David has approved Task 15b's exception and confirmed that day's daily backup; before the third, David has approved the revoke (Task 15b Step 4).
+  - If the revoke migration raises because `PUBLIC` still holds `EXECUTE` (the expected obstacle in Task 15b Step 4), it has changed nothing. Take Task 15b's fallback: David asks Supabase support, and the privilege check below stays red until support has revoked; then re-run the migration, which now passes without changing anything.
   - Set the login's password with `op run` from a new "Magora Project" item `supabase-refresh-login`.
   - Run `privilege-check.mjs` as that login against production. Expected: 0 violations. Run the positive part with counts David took as `postgres` the same hour. This is criterion 7. It must pass before Task 20 hands the login to the workflow.
 - [ ] **Step 4 (operator):** `apply-setup.mjs --target staging --file staging-ops.sql`. The refresh's rebuild applies the grants migration to staging along with every other migration.
