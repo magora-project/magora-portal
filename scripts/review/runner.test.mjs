@@ -470,6 +470,22 @@ try {
     await runCli(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--rev', 'HEAD', '--tasks', 'none'], { cwd: repo, promptFor, env: {}, io: io().io, spawnImpl: capturePrompt(sent, envelopeOk) })
     ok('plan slot: the prompt states the author\'s task scope and the reference tree', sent.length === 1 && /Plan review scope/.test(sent[0]) && /Tasks in scope: none/.test(sent[0]) && sent[0].includes(headSha))
   }
+  {
+    freshRepo()
+    put(repo, 'docs/p.md', '# Plan\n\n### Task 1: One\n\nONE_BODY\n')
+    commit(repo, 'a plan with one task')
+    const first = await runs(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--rev', 'HEAD', '--tasks', 'none'])
+    const rec = readRecords({ cwd: repo }).find((x) => x.slot === 'plan' && x.supersedes === null)
+    const tasks = ['T1']
+    const sentSame = [], sentWider = []
+    const oSame = io()
+    await runCli(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--rev', 'HEAD', '--tasks', 'none', '--supersedes', rec.stem], { cwd: repo, promptFor, env: {}, io: oSame.io, spawnImpl: capturePrompt(sentSame, envelopeOk) })
+    const head2 = readRecords({ cwd: repo }).find((x) => x.supersedes === rec.stem)
+    const oWider = io()
+    if (tasks.length) await runCli(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--rev', 'HEAD', '--tasks', tasks[0], '--supersedes', head2.stem], { cwd: repo, promptFor, env: {}, io: oWider.io, spawnImpl: capturePrompt(sentWider, envelopeOk) })
+    ok('plan re-review: same tasks and blob sends only the (empty) delta', first.code === 0 && sentSame.length === 1 && /Delta since/.test(sentSame[0]) && !/scope changed/.test(oSame.err))
+    ok('plan re-review: a widened --tasks sends the full plan and says why', tasks.length > 0 && sentWider.length === 1 && !/Delta since/.test(sentWider[0]) && /plan scope changed.*-> T1/.test(oWider.err))
+  }
 
   // P3-2: --supersedes keeps the author vendor
   {
@@ -495,7 +511,8 @@ try {
     freshRepo()
     const oldBlob = raw(repo, ['rev-parse', 'HEAD:docs/p.md'])
     const blobIn = { kind: 'blob', identity: oldBlob, path: 'docs/p.md' }
-    const planRec = (over) => store(prRecord({ type: 'plan', slot: 'plan', input: blobIn, ...over }))
+    // tasks: [] as a real plan record written by these runs' `--tasks none` stores (an unknown scope sends the full plan)
+    const planRec = (over) => store(prRecord({ type: 'plan', slot: 'plan', input: blobIn, rev: oldBlob, tasks: [], ...over }))
     const clean = planRec({})
     put(repo, 'docs/p.md', ['# Plan', 'UNCHANGED_BODY_LINE_1', 'UNCHANGED_BODY_LINE_2', 'a TYPO_FIXED here', 'UNCHANGED_BODY_LINE_3', ''].join('\n'))
     commit(repo, 'typo fix')

@@ -513,18 +513,20 @@ export const runReview = async (o, ctx, conf = null) => {
         io.err(`cannot diff from ${old.input.head} (${d.stderr.trim()}); sending the full input\n`)
       }
     }
-    // A conformance re-review whose plan (path or blob) or task set differs from the superseded record's checks
-    // promises the old review never read against: the delta alone would not show their implementation. Send it all.
-    if (conf && mode !== 'full') {
-      const was = old.conformance ?? {}
-      const sameTasks = Array.isArray(was.tasks) && was.tasks.length === conf.plan.tasks.length && conf.plan.tasks.every((t) => was.tasks.includes(t))
+    // A re-review whose scope differs from the superseded record's covers promises the old review never read: for
+    // conformance a changed plan (path or blob) or task set, for a plan review a changed task set. The delta alone
+    // would not show them (for an unchanged plan blob it is empty). Send the full input.
+    if ((conf || planRef) && mode !== 'full') {
+      const was = conf ? (old.conformance ?? {}) : old
+      const now = conf ? conf.plan.tasks : planRef.tasks
+      const sameTasks = Array.isArray(was.tasks) && was.tasks.length === now.length && now.every((t) => was.tasks.includes(t))
       const changed = [
-        was.plan?.path !== conf.plan.path ? `plan ${was.plan?.path ?? 'unknown'} -> ${conf.plan.path}` : null,
-        was.plan?.path === conf.plan.path && was.plan?.blob !== conf.plan.blob ? `plan blob ${was.plan?.blob ?? 'unknown'} -> ${conf.plan.blob}` : null,
-        sameTasks ? null : `tasks ${(was.tasks ?? []).join(',') || 'unknown'} -> ${conf.plan.tasks.join(',')}`,
+        conf && was.plan?.path !== conf.plan.path ? `plan ${was.plan?.path ?? 'unknown'} -> ${conf.plan.path}` : null,
+        conf && was.plan?.path === conf.plan.path && was.plan?.blob !== conf.plan.blob ? `plan blob ${was.plan?.blob ?? 'unknown'} -> ${conf.plan.blob}` : null,
+        sameTasks ? null : `tasks ${(was.tasks ?? []).join(',') || 'unknown'} -> ${now.join(',') || 'none'}`,
       ].filter(Boolean)
       if (changed.length) {
-        io.err(`the conformance scope changed since ${old.stem} (${changed.join('; ')}); sending the full input\n`)
+        io.err(`the ${o.slot} scope changed since ${old.stem} (${changed.join('; ')}); sending the full input\n`)
         mode = 'full'; delta = null; deltaLabel = ''
       }
     }

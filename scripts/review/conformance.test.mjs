@@ -272,7 +272,7 @@ try {
     put(repo, 'later.mjs', 'export const later = 1\n')
     commit(repo, 'a later change')
     const same = await cli(repo, conformance('T4', ['--supersedes', first.stem]))
-    ok('a re-review with the same plan and tasks sends the delta', same.code === 0 && /Delta since/.test(same.reviewerCalls[0].prompt) && !/conformance scope changed/.test(same.err))
+    ok('a re-review with the same plan and tasks sends the delta', same.code === 0 && /Delta since/.test(same.reviewerCalls[0].prompt) && !/scope changed/.test(same.err))
     const sameHead = heads(repo)[0]
     const wider = await cli(repo, conformance('T3,T4', ['--supersedes', sameHead.stem]))
     ok('a re-review that adds a task sends the full input and says why', wider.reviewerCalls.length === 1 && !/Delta since/.test(wider.reviewerCalls[0].prompt) && /conformance scope changed.*tasks T4 -> T3,T4/.test(wider.err))
