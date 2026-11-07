@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "5788e24c3c238e24d85b2ec8c49012043ab1354d",
+    "mergeBase": "c2b1b1c0c766adb0f36835319706d96157c306c2",
+    "head": "50d3e31dbe672812f810cc2ec14c86d758b90764"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--4636acd9083f--1#D1",
+      "severity": "P1",
+      "summary": "D1: T17 requires the reviewer to see the author's selected remaining tasks, but planRef.tasks and rev are only logged and stored, never included in the prompt, so amendment reviews cannot assess the declared scope.",
+      "file": "scripts/review/runner.mjs",
+      "line": 520,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--5788e24c3c23--1"
+      }
+    },
+    {
+      "id": "conformance--4636acd9083f--1#D2",
+      "severity": "P3",
+      "summary": "D2: T18 specifies conformance tasks, deviations and commands, while the diff additionally requires a plan path/blob binding in records and evidence validation; this useful safeguard extends the planned record contract.",
+      "file": "scripts/ci/review-evidence.mjs",
+      "line": 151
+    },
+    {
+      "id": "conformance--4636acd9083f--1#D3",
+      "severity": "P3",
+      "summary": "D3: T18 requires committed-head postcondition checks, while the diff additionally refuses dirty plans and dirty tracked files when command targets exist; these useful refusals add execution restrictions absent from the plan.",
+      "file": "scripts/review/conformance.mjs",
+      "line": 180
+    }
+  ],
+  "supersedes": "conformance--4636acd9083f--1",
+  "conformance": {
+    "tasks": [
+      "T17",
+      "T18"
+    ],
+    "deviations": [
+      "conformance--4636acd9083f--1#D2",
+      "conformance--4636acd9083f--1#D3"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "572610a2fa81402fb917e1683f4185bde5999acf"
+    }
+  },
+  "createdAt": "2026-11-07T16:19:29.951Z"
+}
