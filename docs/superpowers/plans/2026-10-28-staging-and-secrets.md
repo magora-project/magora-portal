@@ -335,7 +335,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
     - in `public`, for tables:
       - every table column (`attnum` order, type, default, not-null, identity) and column ACL (`attacl`)
       - constraint (`pg_get_constraintdef`), index (`pg_get_indexdef`), view (`pg_get_viewdef`), trigger (`pg_get_triggerdef`), policy (the `pg_policies` row)
-      - 🔴 **OPEN before Task 10 is implemented** (Codex on the spec branch, 2026-10-29): a view's `reloptions` (`security_invoker`, `security_barrier`, `check_option`) are not in the list above, so a change to `security_invoker` alone, which changes whose permissions and RLS apply, would snapshot as identical. Add normalized view `reloptions` to the snapshot and a sabotage step that flips `security_invoker` without changing the query.
+      - a view's `reloptions` (`security_invoker`, `security_barrier`, `check_option`), normalized so an option set to its default equals the option being absent. A change to `security_invoker` alone changes whose permissions and RLS apply without changing the query (raised by Codex on the spec branch, 2026-10-29; #47 item 5).
       - sequence, enum and composite type
       - table ACL (`relacl`, grantees sorted), owner, `relrowsecurity`, `relforcerowsecurity`
     - in `public`, for functions: `pg_get_functiondef`, `proacl`, owner, `prosecdef`, and `proconfig` (search_path)
@@ -370,8 +370,9 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - `ALTER DEFAULT PRIVILEGES … GRANT SELECT ON TABLES TO anon`
   - add a table to `supabase_realtime`
   - add a trigger on `auth.users`
+  - `ALTER VIEW … SET (security_invoker = true)` on a view whose query is unchanged, and the same for `security_barrier`
 
-  After each undo, the diff is empty.
+  After each undo, the diff is empty. Setting `security_invoker = false` explicitly gives no diff.
 - [ ] **Step 6: Run `npm run test:db`.** Expected: PASS.
 - [ ] **Step 7: Commit.**
 
