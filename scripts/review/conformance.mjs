@@ -20,7 +20,7 @@ import { parseArgs } from 'node:util'
 import { EVIDENCE_DIR, git } from './identity.mjs'
 import { deviationIds, repoPath } from './records.mjs'
 import { filesAtRev, parsePlan, resolveTasks } from './plan-targets.mjs'
-import { UsageError, runReview, usage } from './runner.mjs'
+import { DEFAULT_TIMEOUT_MIN, UsageError, runReview, usage } from './runner.mjs'
 import { DRAIN_MS } from './adapters/codex.mjs'
 
 export { deviationIds }
@@ -42,7 +42,8 @@ const must = (r, what) => {
 
 // A command string as argv, split as a POSIX shell would for words and quotes only: '...' is literal; in "..." a
 // backslash escapes only " and \; outside quotes a backslash is literal (Windows paths). Anything a shell would
-// interpret (| & ; < > ` $ unquoted) is refused: no shell runs the command, so it would silently mean something else.
+// interpret (| & ; < > ` $ unquoted, and $ or ` inside double quotes) is refused: no shell runs the command, so it
+// would silently mean something else.
 export const splitCommand = (cmd) => {
   const s = String(cmd)
   const out = []
@@ -55,6 +56,8 @@ export const splitCommand = (cmd) => {
     } else if (quote === '"') {
       if (ch === '\\' && (s[i + 1] === '"' || s[i + 1] === '\\')) cur += s[++i]
       else if (ch === '"') quote = null
+      // A shell expands $ and ` inside double quotes: taken literally, `test -n "$X"` would pass with X unset.
+      else if (ch === '$' || ch === '`') throw new Error(`\`${s}\` needs a shell (${ch} inside double quotes), and conformance runs commands without one: use single quotes for a literal ${ch}, or make the command not need the expansion`)
       else cur += ch
     } else if (ch === '\'' || ch === '"') {
       quote = ch
@@ -89,19 +92,31 @@ export const commandArgv = (cmd, { platform = process.platform, execPath = proce
 // -> { exit, detail }. The output goes to onOutput as it arrives and is not kept: a record is committed, and a
 // command's output can hold anything. exit -1 means the command did not run to an exit status. The result comes at
 // 'close', or drainMs after 'exit': a background descendant that inherited the pipes cannot hold the run open.
-export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = () => {}, drainMs = DRAIN_MS }) => {
+// A command still running timeoutMs after it started is killed (child.kill(), then SIGKILL after killGraceMs; never a
+// process-name match) and recorded as failed with exit -1: postconditions run before the reviewer's own timeout.
+export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = () => {}, drainMs = DRAIN_MS, timeoutMs = 0, killGraceMs = 5000 }) => {
   let argv
   try { argv = commandArgv(cmd) } catch (e) { return Promise.resolve({ exit: -1, detail: `not run: ${e.message}` }) }
   return new Promise((resolve) => {
-    let child, done = false, drainTimer
-    const finish = (r) => { if (!done) { done = true; clearTimeout(drainTimer); resolve(r) } }
+    let child, done = false, drainTimer, deadline, killTimer
+    const finish = (r) => { if (!done) { done = true; clearTimeout(drainTimer); clearTimeout(deadline); resolve(r) } }
     const result = (code, signal) => (Number.isInteger(code) ? { exit: code, detail: `exited ${code}` } : { exit: -1, detail: `killed by ${signal ?? 'a signal'}` })
     try {
       child = spawnImpl(argv.file, argv.args, { cwd, env, shell: false, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
     } catch (e) { finish({ exit: -1, detail: `could not start ${argv.file}: ${e && e.message}` }); return }
     for (const s of [child.stdout, child.stderr]) if (s) s.on('data', (d) => onOutput(d.toString()))
+    if (timeoutMs > 0) {
+      deadline = setTimeout(() => {
+        try { child.kill() } catch { /* already gone */ }
+        killTimer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* already gone */ } }, killGraceMs)
+        if (killTimer.unref) killTimer.unref()
+        for (const s of [child.stdout, child.stderr]) { try { s?.destroy() } catch { /* already closed */ } }
+        finish({ exit: -1, detail: `still running after ${Math.round(timeoutMs / 1000)} s: killed` })
+      }, timeoutMs)
+    }
     child.on('error', (e) => finish({ exit: -1, detail: `could not start ${argv.file}: ${e && e.message}` }))
     child.on('exit', (code, signal) => {
+      clearTimeout(deadline)
       drainTimer = setTimeout(() => {
         for (const s of [child.stdout, child.stderr]) { try { s?.destroy() } catch { /* already closed */ } }
         const r = result(code, signal)
@@ -119,7 +134,7 @@ export const declaredTasks = (plan, ids) => parsePlan(plan).tasks.filter((t) => 
 
 // -> [{ task, target, ok, detail, exit? }] for every create, modify, delete and command target of `tasks`, in order.
 // base is the merge base; head the reviewed commit. A command entry also carries its exit status.
-export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = nodeSpawn, onOutput }) => {
+export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = nodeSpawn, onOutput, commandTimeoutMs = 0 }) => {
   const present = await filesAtRev({ cwd, rev: head })
   const changed = new Set(must(await git(['diff', '--name-only', '-z', '--no-renames', base, head], { cwd }), 'git diff --name-only').split('\0').filter(Boolean))
   const ran = new Map() // command string -> { exit, detail }
@@ -127,7 +142,7 @@ export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = 
   for (const t of tasks) {
     for (const target of t.targets) {
       if (target.type === 'command') {
-        if (!ran.has(target.value)) ran.set(target.value, await runCommand({ cmd: target.value, cwd, env, spawnImpl, onOutput }))
+        if (!ran.has(target.value)) ran.set(target.value, await runCommand({ cmd: target.value, cwd, env, spawnImpl, onOutput, timeoutMs: commandTimeoutMs }))
         const r = ran.get(target.value)
         out[out.length] = { task: t.id, target, ok: r.exit === 0, detail: r.detail, exit: r.exit }
         continue
@@ -147,9 +162,9 @@ export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = 
 }
 
 // The check runReview calls: the failed postconditions as findings D<position>, the commands, nextId, and a prompt section.
-const conformanceCheck = ({ planPath, tasks, planProblems, ctx }) => async ({ root, mb, head }) => {
+const conformanceCheck = ({ planPath, tasks, planProblems, ctx, commandTimeoutMs }) => async ({ root, mb, head }) => {
   const { io } = ctx
-  const pc = await postconditions({ tasks, cwd: root, base: mb, head, env: ctx.env, spawnImpl: ctx.commandSpawnImpl, onOutput: (s) => io.err(s) })
+  const pc = await postconditions({ tasks, cwd: root, base: mb, head, env: ctx.env, spawnImpl: ctx.commandSpawnImpl, onOutput: (s) => io.err(s), commandTimeoutMs })
   const failed = pc.filter((p) => !p.ok)
   // Each ID is the check's position (plan problems, then every target in plan order), not its rank among the
   // failures: fixing D1 must not turn the old D2 into D1, where a justification written for D1 would then pass.
@@ -218,8 +233,12 @@ export async function conformanceCli(argv, ctx) {
       if (d.code === 1) usage('tracked files have uncommitted changes: commit them first, so each command target runs against the commit the record covers')
       if (d.code !== 0) throw new Error(`git diff --quiet HEAD failed (${d.code}): ${d.stderr.trim()}`)
     }
+    // Each command target gets the run's --timeout-min (the reviewer's default when unset) as its own deadline.
+    const timeoutMin = o['timeout-min'] === undefined ? DEFAULT_TIMEOUT_MIN : Number(o['timeout-min'])
+    if (!(timeoutMin > 0)) usage('--timeout-min must be a positive number')
+    const commandTimeoutMs = timeoutMin * 60_000
     const run = { slot: 'conformance', author: o.author, reviewer: o.reviewer, supersedes: o.supersedes, base: o.base, model: o.model, 'timeout-min': o['timeout-min'] }
-    return await runReview(run, ctx, { head, plan: { path: planPath, tasks: sel.tasks, blob: planBlob }, check: conformanceCheck({ planPath, tasks, planProblems, ctx }) })
+    return await runReview(run, ctx, { head, plan: { path: planPath, tasks: sel.tasks, blob: planBlob }, check: conformanceCheck({ planPath, tasks, planProblems, ctx, commandTimeoutMs }) })
   } catch (e) {
     if (e instanceof UsageError || (e && typeof e.code === 'string' && e.code.startsWith('ERR_PARSE_ARGS'))) io.err(`${e.message}\n${USAGE}\n`)
     else io.err(`review: ${e && e.message}\n`)

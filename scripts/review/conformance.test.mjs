@@ -280,6 +280,27 @@ try {
     ok('a command that closes normally resolves at close with its exit status', r2.exit === 1 && r2.detail === 'exited 1')
   }
 
+  // --- push-gate P2s (round 2): expansion inside double quotes; a command that never ends ---
+  {
+    let err = ''
+    try { splitCommand('test -n "$CONFORMANCE_UNSET_EXAMPLE"') } catch (e) { err = e.message }
+    ok('$ inside double quotes needs a shell and is refused', /needs a shell/.test(err))
+    err = ''
+    try { splitCommand('echo "`date`"') } catch (e) { err = e.message }
+    ok('a backtick inside double quotes needs a shell and is refused', /needs a shell/.test(err))
+    ok('$ inside single quotes is literal', splitCommand("grep -n '$x' a.txt").join('|') === 'grep|-n|$x|a.txt')
+    const r = await runCommand({ cmd: 'test -n "$X"', cwd: root, env: {}, spawnImpl: () => { throw new Error('spawned') } })
+    ok('...and runCommand records it as not run (exit -1), without spawning', r.exit === -1 && /needs a shell/.test(r.detail))
+    const kills = []
+    const hung = new EventEmitter()
+    hung.stdout = new PassThrough(); hung.stderr = new PassThrough()
+    hung.kill = (sig) => { kills.push(sig ?? 'SIGTERM') }
+    const res = await Promise.race([runCommand({ cmd: 'npm test', cwd: root, env: {}, spawnImpl: () => hung, timeoutMs: 20, killGraceMs: 10 }), new Promise((rs) => setTimeout(() => rs('hung'), 2000))])
+    await new Promise((rs) => setTimeout(rs, 40))
+    ok('a command that never exits is killed at its deadline and recorded failed with exit -1', res !== 'hung' && res.exit === -1 && /still running/.test(res.detail) && kills[0] === 'SIGTERM')
+    ok('...then SIGKILLed after the grace period', kills.includes('SIGKILL'))
+  }
+
   // --- follow-up: the plan is read at the captured head, not at whatever HEAD is now ---
   {
     const repo = mkrepo()
