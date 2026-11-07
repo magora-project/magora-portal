@@ -584,8 +584,8 @@ This is a spec exception, for David to approve. The migration changes production
   - A `WRITES_WITHOUT_TABLE_PRIVILEGE` violation (Task 11) cannot be allowlisted either. It goes to the advisory, and production's check stays red until it is fixed.
   - **How that fix ships** (#47 item 1; route chosen by David, 2026-11-06; the production change itself still needs his approval before it is applied):
     - Its own migration, `<date>_revoke_public_writer_functions.sql`, with its rollback, so the grants migration keeps its contract (its rollback revokes exactly its `GRANT SELECT`s).
-    - It names a fixed list: the `WRITES_WITHOUT_TABLE_PRIVILEGE` signatures that Task 11 Step 5 observed callable through `PUBLIC` on the local Supabase stack. For each, it first raises an exception unless `PUBLIC` holds `EXECUTE` (the state differs from the one reviewed), then revokes, then raises an exception if `PUBLIC` still holds it. `REVOKE` without the right to change a function's privileges only warns, so this check is what turns a silent no-op into a failure.
-    - Its rollback grants `EXECUTE` to `PUBLIC` on exactly the same list, so applying migration, rollback and migration on staging (§5.5) is exact. A unit test parses both files and requires the same signatures.
+    - It names a fixed list: the `WRITES_WITHOUT_TABLE_PRIVILEGE` signatures that Task 11 Step 5 observed callable through `PUBLIC` on the local Supabase stack. It is idempotent, because `pg_catalog` privileges survive a refresh's rebuild and every refresh replays the migrations: for each signature it revokes `EXECUTE` from `PUBLIC` only if `PUBLIC` holds it, then raises an exception if `PUBLIC` still holds `EXECUTE` on any listed signature. `REVOKE` without the right to change a function's privileges only warns, so that final check is what turns a silent no-op into a failure. On a database where the privilege is already gone (a replay, or after Supabase support revoked it) the migration changes nothing and passes.
+    - Its rollback grants `EXECUTE` to `PUBLIC` on exactly the same list, so applying migration, rollback and migration on staging (§5.5) returns to the reviewed state; the session's closing refresh replays the migration, which revokes again. A unit test parses both files and requires the same signatures. Where only Supabase can change these privileges, the rollback's `GRANT` also only warns and restores nothing; that is accepted, since the revoked state is the safe one.
     - Re-run Step 2's local cycle with this migration in place, and compare the state after the rollback with the state before the migration, not only after the re-apply.
     - **Expected obstacle**, from reading Supabase's image source (`supabase/postgres` at `c6226c6`, not yet run): `postgres` is demoted to `NOSUPERUSER` (`10000000000000_demote-postgres.sql`) and does not own the `pg_catalog` functions, so the migration will probably raise on the local stack. If it does:
       - David asks Supabase support to revoke `EXECUTE` from `PUBLIC` on the listed signatures. Production's privilege check (Task 13 Step 3) stays red until it is done; if support declines, David decides again.
@@ -1027,8 +1027,10 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
 ### Task 26: Interim migration runbook and rehearsal
 
 **Files:**
-- Create: `docs/runbooks/interim-migrations.md`
-- Modify: `AGENTS.md` (Migrations: "Never apply a migration **to production** until its PR is green at its final head")
+- Create: `docs/runbooks/interim-migrations.md`, `supabase/setup/rehearsal-fixture.sql` (Step 4)
+- Modify:
+  - `AGENTS.md` (Migrations: "Never apply a migration **to production** until its PR is green at its final head")
+  - `scripts/db/apply-migrations.mjs` and `scripts/db/apply-migrations.test.mjs` (the `--file` entry point, Step 2)
 
 **The staging lease** (built in Task 20, in PR D, so it is on `main` before this runbook is rehearsed). Disabling the workflow would also block the refreshes the session itself needs, and it does not stop a run already in progress. Instead, the session holds a lease in the repository Actions variable `STAGING_HELD_BY`, which is not a secret.
 - `staging-refresh.yml`'s `admit` job gates its `refresh` job, so no step that writes runs unless admitted.
@@ -1048,7 +1050,7 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
   - Apply the PR's migration, its rollback, then the migration again, through `op run --env-file=env/staging.env -- node scripts/db/apply-migrations.mjs --db-url-env STAGING_DB_URL --file <path>`. That entry point refuses non-staging refs through `writeTarget: 'staging'`.
   - Run the simulated node.
   - End with `gh workflow run staging-refresh.yml -f holder=<lease>`. Once it is green, run `node scripts/staging/lease.mjs release <lease>` once, and wait for it to exit.
-  - Before each dispatch, each apply and the simulated node, run `node scripts/staging/lease.mjs verify <lease>`. If it fails, stop: the lease was lost, and the session starts again from the claim.
+  - Before each dispatch, each apply and the simulated node, and again after the simulated node finishes and before recording its result, run `node scripts/staging/lease.mjs verify <lease>`. If it fails, stop: the lease was lost, the session's results are discarded, and it starts again from the claim.
   - A stranded lease (a crashed session, a lost value): post in the channel, then `node scripts/staging/lease.mjs status` and `node scripts/staging/lease.mjs break --expect <value status printed>`, adding `--holder-confirmed` only after the holder agreed in the channel.
   - After merge, confirm that day's daily backup exists, apply to production by the current method, and run a refresh.
   - One session at a time: a set variable means staging is taken.

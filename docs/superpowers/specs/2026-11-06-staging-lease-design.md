@@ -113,9 +113,11 @@ procedure (plan Task 26's runbook) closes both gaps:
 1. **Drain after claiming.** Once `claim` wins, wait until no `staging-refresh.yml` run is queued,
    waiting, pending or in progress. A run admitted before the claim finishes or is seen still running;
    every run started after the claim reads the lease and is refused unless it carries the value.
-2. **Verify before each write.** Run `verify <lease>` before the session's refresh dispatch, before
-   applying the migration, its rollback and the migration again, before the simulated node, and before
-   the closing refresh. If it fails, stop: the lease was lost, and the session starts again from claim.
+2. **Verify before each write, and once more at the end.** Run `verify <lease>` before the session's
+   refresh dispatch, before applying the migration, its rollback and the migration again, before the
+   simulated node, before the closing refresh, and after the simulated node has finished, before its
+   result is recorded. If any of them fails, stop: the lease was lost, the session's results are
+   discarded, and it starts again from claim (§3.4).
 3. **Release once.** Run `release` once and wait for it to exit; never run two releases, or a release
    and a break, at the same time.
 
@@ -124,9 +126,17 @@ procedure (plan Task 26's runbook) closes both gaps:
 Read-then-delete leaves one race: if a lease is deleted between a `release` or `break`'s read and its
 delete (by a second, concurrent `release` of the same value, or by a `break`) and another session claims
 in that gap, the late delete removes the new lease. §3.3 step 3 forbids the concurrent release, and
-`break`'s 12-hour rule and channel agreement make a break of a live lease unlikely. If it happens
-anyway, the new holder's next `verify` fails before its next write to staging (§3.3 step 2), so no
-write runs without the lease; that session starts again from claim.
+`break`'s 12-hour rule and channel agreement make a break of a live lease unlikely.
+
+If it happens anyway, the lease no longer excludes: a scheduled refresh, or a second claim, can then
+overlap the new holder's session. `verify` does not prevent that. GitHub has no conditional write, so
+a delete can still land between a `verify` and the write it precedes. What `verify` gives is
+detection: the holder's next `verify` fails, the session stops at that point and starts again from
+claim, and its results so far are discarded. The harm is confined to staging: a migration test can run
+against a staging database that a refresh or another session changed underneath it, so its result is
+not trusted. Production is never written by a session, and every session ends with a refresh that
+rebuilds staging. This is accepted: full exclusion needs a lock service with a conditional write, which
+is out of scope (§6).
 
 ## 4. Before Task 20: a one-time probe (operator)
 
@@ -166,5 +176,7 @@ of guards).
 ## 6. Out of scope
 
 - Automatic expiry. A stranded lease waits for `break`.
+- Full mutual exclusion under a concurrent `break` or double `release` (§3.4), which would need a lock
+  service with a conditional write.
 - Locking staging against anything but this repository's refresh workflow and the runbook's session.
 - Secrecy of the value (§2).
