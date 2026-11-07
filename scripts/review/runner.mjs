@@ -524,6 +524,12 @@ export const runReview = async (o, ctx, conf = null) => {
     for (const w of pc.warnings) io.err(`${w}\n`)
   }
 
+  // A plan review's scope is the author's statement (plan Task 17): the reviewer sees which tasks remain and the
+  // tree the reference check read them against, not only the record.
+  if (planRef) {
+    context = [...context, { heading: 'Plan review scope (stated by the author)', text: `Tasks in scope: ${planRef.tasks.length ? planRef.tasks.join(', ') : 'none (no task remains; the reference check checked nothing)'}\nReference check tree: ${planRef.rev}\nReview the plan for these tasks; the others are out of scope for this record.` }]
+  }
+
   // The conformance postconditions: after every refusal above, before the reviewer.
   let checked = null
   if (conf) {

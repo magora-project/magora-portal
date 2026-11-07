@@ -464,6 +464,12 @@ try {
     const otherPath = await runs(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'base.txt'])
     ok('blob slot: a head for another path does not block', otherPath.code === 0 && otherPath.sp.length === 1)
   }
+  {
+    freshRepo()
+    const sent = [], headSha = raw(repo, ['rev-parse', 'HEAD'])
+    await runCli(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'docs/p.md', '--rev', 'HEAD', '--tasks', 'none'], { cwd: repo, promptFor, env: {}, io: io().io, spawnImpl: capturePrompt(sent, envelopeOk) })
+    ok('plan slot: the prompt states the author\'s task scope and the reference tree', sent.length === 1 && /Plan review scope/.test(sent[0]) && /Tasks in scope: none/.test(sent[0]) && sent[0].includes(headSha))
+  }
 
   // P3-2: --supersedes keeps the author vendor
   {
