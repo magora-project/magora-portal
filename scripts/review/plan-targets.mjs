@@ -23,19 +23,25 @@ const parse = (markdown) => {
   const lines = String(markdown).split(/\r?\n/)
   const tasks = [], problems = []
   const first = new Map()
-  let cur = null, dup = false, inFiles = false, fence = null
+  let cur = null, dup = false, inFiles = false, fence = null, filesLine = 0, filesRead = 0
+  // Leaving a Files block that read no line at all: its targets, if any, were never read. Report it (Task 17: nothing
+  // in a Files block is dropped silently).
+  const endFiles = () => {
+    if (inFiles && filesRead === 0 && cur !== null && !dup) problems[problems.length] = { task: cur.id, text: `${cur.id} line ${filesLine}: the **Files:** block has no target line before the next text; write each target as "- ${TARGET_TYPES.join('|')}: \`value\`" directly under it` }
+    inFiles = false
+  }
   lines.forEach((l, i) => {
     const n = i + 1
     const f = fenceOf(l)
     if (f) {
       if (fence === null) fence = f
       else if (f[0] === fence[0] && f.length >= fence.length && l.trim() === f) fence = null
-      inFiles = false
+      endFiles()
       return
     }
     if (fence !== null) return
     if (/^#{1,3}\s/.test(l)) {
-      inFiles = false
+      endFiles()
       cur = null
       dup = false
       const h = HEADING.exec(l)
@@ -55,7 +61,7 @@ const parse = (markdown) => {
       }
       return
     }
-    if (l.trim() === '**Files:**') { inFiles = cur !== null || dup; return }
+    if (l.trim() === '**Files:**') { endFiles(); inFiles = cur !== null || dup; filesLine = n; filesRead = 0; return }
     // A Files heading written another way would leave the task with no targets and no problem: report it.
     if (cur !== null && !dup && /^\s*(\*\*Files\*\*\s*:|\*\*Files\s*:\*\*|Files\s*:)\s*$/i.test(l)) {
       inFiles = false
@@ -63,16 +69,21 @@ const parse = (markdown) => {
       return
     }
     if (!inFiles) return
+    // A blank line does not end the block: the targets after it are still the task's (a blank line ending it dropped
+    // every one of them with no problem). The block ends at the next text, heading or fence.
+    if (l.trim() === '') return
     // Any other list item in the block (a "* " or "+ " or numbered bullet, or an indented one) is an untyped Files
     // line (plan Task 17), not the end of the block: ending there would drop it and every target after it unreported.
     const otherItem = !l.startsWith('- ') && /^\s*([-*+]|\d+[.)])\s+\S/.test(l)
     if (!otherItem && /^\s+\S/.test(l)) return // a wrapped continuation of the bullet above
-    if (!otherItem && !l.startsWith('- ')) { inFiles = false; return }
+    if (!otherItem && !l.startsWith('- ')) { endFiles(); return }
+    filesRead++
     if (dup) return
     const m = TARGET.exec(l)
     if (m && m[2].trim() !== '') cur.targets[cur.targets.length] = { type: m[1], value: m[2], line: n }
     else problems[problems.length] = { task: cur.id, text: `${cur.id} line ${n}: untyped Files line ${JSON.stringify(l.trim())}; write "- ${TARGET_TYPES.join('|')}: \`value\`"` }
   })
+  endFiles()
   return { tasks, problems }
 }
 

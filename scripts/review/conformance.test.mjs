@@ -153,7 +153,7 @@ try {
     ok('Windows: npx runs npx-cli.js and keeps a quoted argument whole', npx.file === win.execPath && /npx-cli\.js$/.test(npx.args[0]) && JSON.stringify(npx.args.slice(1)) === '["eslint","a b.js"]')
     const mac = commandArgv('npm run check:migrations', { platform: 'darwin', execPath: '/usr/bin/node' })
     ok('macOS: npm is spawned as npm with the same argv', mac.file === 'npm' && JSON.stringify(mac.args) === '["run","check:migrations"]')
-    ok('single quotes and empty quotes split as a shell would', JSON.stringify(splitCommand(`node -e 'a b' "" x\\y`)) === '["node","-e","a b","","x\\\\y"]')
+    ok('single quotes and empty quotes split as a shell would', JSON.stringify(splitCommand(`node -e 'a b' "" 'x\\y'`)) === '["node","-e","a b","","x\\\\y"]')
     ok('an escaped double quote inside double quotes', JSON.stringify(splitCommand('echo "say \\"hi\\""')) === '["echo","say \\"hi\\""]')
     ok('an unterminated quote is refused', (() => { try { splitCommand('echo "x'); return false } catch (e) { return /quote/.test(e.message) } })())
     ok('an unquoted shell operator is refused (no shell runs it)', ['npm test && npm run lint', 'a | b', 'a > f', 'a; b'].every((c) => { try { splitCommand(c); return false } catch (e) { return /shell/.test(e.message) } }))
@@ -291,6 +291,7 @@ try {
     ok('$ inside single quotes is literal', splitCommand("grep -n '$x' a.txt").join('|') === 'grep|-n|$x|a.txt')
     const refused = (c) => { try { splitCommand(c); return false } catch (e) { return /needs a shell/.test(e.message) } }
     ok('an unquoted glob needs a shell and is refused (* ? [)', ['test ! -e scripts/review/[c]onformance.mjs', 'ls *.mjs', 'ls a?.mjs'].every(refused))
+    ok('an unquoted backslash needs a shell and is refused (a shell reads it as an escape)', refused("test 'a\\b' = a\\b") && refused('node scripts\\x.mjs'))
     ok('unquoted ~ { } ! # ( ) need a shell and are refused', ['cat ~/x', 'echo a{b,c}', 'test ! -e x', 'echo a #b', 'echo (x)'].every(refused))
     ok('a quoted glob is literal', splitCommand("test '!' -e 'scripts/review/[c]onformance.mjs'").join('|') === 'test|!|-e|scripts/review/[c]onformance.mjs' && splitCommand('ls "*.mjs"').join('|') === 'ls|*.mjs')
     ok('ordinary commands still split', splitCommand('npm run check:migrations').join('|') === 'npm|run|check:migrations' && splitCommand('node scripts/x.mjs --flag=a,b @scope/pkg 50%').join('|') === 'node|scripts/x.mjs|--flag=a,b|@scope/pkg|50%')

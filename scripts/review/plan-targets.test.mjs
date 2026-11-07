@@ -56,6 +56,18 @@ try {
   ok('the trailing text is not part of the value (T2)', parsedThis.tasks.find((t) => t.id === 'T2').targets[0].value === '~/code/claude-config/hooks/spec_plan_threshold.sh')
   ok('this plan parses T1 to T25, once each', parsedThis.tasks.length === 25 && new Set(parsedThis.tasks.map((t) => t.id)).size === 25)
   ok('an untyped "- Create: x" line is a problem with its line number', /line \d+/.test(parsePlan('### Task 1: X\n\n**Files:**\n- Create: `x`\n').problems.join()))
+  // push-gate round 4: a blank line does not end a Files block
+  {
+    const blank = parsePlan('### Task 1: X\n\n**Files:**\n\n- create: `missing.mjs`\n- command: `false`\n\nBody text.\n')
+    ok('targets after a blank line under **Files:** are read', blank.tasks[0].targets.map((t) => t.value).join() === 'missing.mjs,false' && blank.problems.length === 0)
+    const gap = parsePlan('### Task 1: X\n\n**Files:**\n- create: `a.mjs`\n\n- create: `b.mjs`\n')
+    ok('a blank line between targets keeps the block', gap.tasks[0].targets.map((t) => t.value).join() === 'a.mjs,b.mjs')
+    const text = parsePlan('### Task 1: X\n\n**Files:**\nSee below.\n- create: `x.mjs`\n')
+    ok('a Files block whose first line is text, not a target, is a problem', text.problems.some((x) => /T1 line 3: the \*\*Files:\*\* block has no target line/.test(x)))
+    ok('a Files block left empty at the end of the plan is a problem', parsePlan('### Task 1: X\n\n**Files:**\n').problems.some((x) => /no target line/.test(x)))
+    ok('text after the targets still ends the block cleanly', parsePlan('### Task 1: X\n\n**Files:**\n- create: `x.mjs`\n\nTask body.\n- not a target\n').problems.length === 0)
+  }
+
   // push-gate P2: a ./ or backslash spelling of a path is the same file as git's spelling
   {
     const has = setOf(['package.json', 'src/a.mjs'])

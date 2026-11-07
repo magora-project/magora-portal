@@ -41,13 +41,14 @@ const must = (r, what) => {
 // ---------- commands ----------
 
 // A command string as argv, split as a POSIX shell would for words and quotes only: '...' is literal; in "..." a
-// backslash escapes only " and \; outside quotes a backslash is literal (Windows paths).
+// backslash escapes only " and \. Outside quotes a backslash is refused: a shell reads it as an escape, so taking it
+// literally could pass where the shell fails. Write paths with / (Node and git accept it on Windows) or quote them.
 // No shell runs the command, so anything a shell would expand or interpret would silently mean something else (and
 // could pass where the shell would fail). Outside quotes only SAFE_CHARS are accepted: every other character (globs
 // * ? [ ], ~, { }, !, #, $, `, | & ; < > ( ), ...) is refused as needing a shell. That is an allowlist on purpose: a
 // list of the characters to refuse was incomplete twice. Inside single quotes everything is literal, as in a shell;
 // inside double quotes $ and ` are refused (a shell expands them there) and the rest is literal.
-const SAFE_CHARS = /^[A-Za-z0-9_@%+=:,./\\-]$/
+const SAFE_CHARS = /^[A-Za-z0-9_@%+=:,./-]$/
 export const splitCommand = (cmd) => {
   const s = String(cmd)
   const out = []
