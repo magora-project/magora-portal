@@ -72,7 +72,7 @@ A run without `--supersedes` is refused while a record of the same slot (and pat
 - `reclassified-nit`: a blocking finding the author judges to be a nit; the one-line reason is shown to the merging maintainer.
 - `justified-deviation`: a conformance deviation that stays, with its justification (conformance records only).
 
-A disposition writes a new record that supersedes the old one; it never edits a record. `fixed` cannot be set by hand: only a re-review (`--supersedes`) sets it.
+On a conformance record only `justified-deviation` is allowed: a deviation is fixed or justified (`.claude/skills/conformance/SKILL.md`). A disposition writes a new record that supersedes the old one; it never edits a record. `fixed` cannot be set by hand: only a re-review (`--supersedes`) sets it.
 
 ## Rules
 

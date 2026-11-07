@@ -40,7 +40,7 @@ For every deviation ID in the record, do one of two things (D-3):
 
   `npm run review -- conformance --plan <plan> --tasks <ids> --author <vendor> --supersedes <stem>`
 
-  The postconditions run again from scratch. The reviewer reassesses each deviation it inherits, including one you justified earlier, and marks it fixed or still open. A run without `--supersedes` is refused while the chain head has an open deviation.
+  The postconditions run again from scratch. Every other deviation not yet fixed is inherited, a P3 or one you justified earlier included, and the reviewer marks each fixed or still open. A run without `--supersedes` is refused while the chain head lists any deviation.
 
 - **Justify it.** Keep it, and say why in the PR description's `Deviations:` field, one line per ID: why the plan's version isn't needed and why the built version is better. Copy each ID verbatim from the chain head's `conformance.deviations`: `D2` on a first run, or `conformance--<id12>--<n>#D2` once a re-review has inherited it.
 
@@ -52,7 +52,7 @@ For every deviation ID in the record, do one of two things (D-3):
 
   Then record the disposition with the same ID: `npm run review -- dispose --record <stem> --finding <id> --kind justified-deviation --reason "see Deviations"`. Write `Deviations: none` when there is none.
 
-review-evidence passes the conformance record only when its task IDs equal the `Plan:` field's and its deviation IDs equal the `Deviations:` field's exactly. Once a re-review marks a justified deviation fixed, take it out of the `Deviations:` field. A P3 deviation is listed too, though it blocks nothing.
+review-evidence passes the conformance record only when its task IDs equal the `Plan:` field's and its deviation IDs equal the `Deviations:` field's exactly. Once a re-review marks a justified deviation fixed, take it out of the `Deviations:` field. A P3 deviation is a deviation too: fix it or list it, and a re-review reassesses it like any other. There is no third way: `dispose` refuses `pre-existing` and `reclassified-nit` on a conformance record.
 
 Locally, `npm run review -- init-local` with `--plan "<plan> <ids>"` and one `--deviation "<id>: why"` per justified ID (the ID as the record lists it), then `npm run review -- check --local`, judges the records as CI will.
 

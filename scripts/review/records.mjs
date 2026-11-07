@@ -171,18 +171,21 @@ export const undisposedBlocking = (rec, { deviations = [] } = {}) =>
 
 // Findings to carry into a re-review. Ordinary IDs are prefixed with the old record's stem; a gate ID keeps
 // its ID and is always carried: one with an acceptable disposition (or a P3) is copied as is, so it stays verifiable at the chain head.
-// A blocking justified-deviation on a conformance record is reopened like an undisposed finding (prefixed, disposition
-// dropped), whatever `deviations` says: the re-review reassesses it, so a deviation the author has since fixed can be
-// marked fixed and dropped from the Deviations field, and one still present comes back for the author to dispose again.
-// Copying it as is would leave a disposition that fails at the chain head once the Deviations field drops its ID.
+// On a conformance record every finding not disposed `fixed` is a deviation (deviationIds), and spec §5.4 lets a
+// deviation leave the chain only fixed by a re-review or justified in the Deviations field. So each one, P3 included and
+// whatever its disposition (justified-deviation, or a pre-existing / reclassified-nit on a legacy record: dispose now
+// refuses those kinds on conformance), is reopened like an undisposed finding (prefixed, disposition dropped). The
+// re-review reassesses it: one the author has since fixed is marked fixed and leaves the Deviations field; one still
+// present comes back for the author to justify again. The runner drops the inherited postcondition findings, which
+// it recomputes. Other record types keep the rule above: acceptable dispositions and P3s are not carried.
 export const inherit = (old, { deviations = [] } = {}) => {
   const out = []
   const opts = { deviations, recordType: old.type }
+  const conformance = old.type === 'conformance'
   for (const f of old.findings || []) {
     const gate = isGateId(f.id)
     if (gate && dispositionOk(f, opts)) { out.push({ ...f }); continue } // every gate ID stays visible at the chain head
-    const justified = old.type === 'conformance' && isObj(f.disposition) && f.disposition.kind === 'justified-deviation'
-    if (!isBlockingByDefault(f) || (!justified && dispositionOk(f, opts))) continue
+    if (conformance ? isObj(f.disposition) && f.disposition.kind === 'fixed' : (!isBlockingByDefault(f) || dispositionOk(f, opts))) continue
     const { disposition: _d, ...rest } = f // eslint-disable-line no-unused-vars
     out.push({ ...rest, id: gate ? f.id : `${old.stem}#${f.id}` })
   }

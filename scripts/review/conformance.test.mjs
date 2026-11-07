@@ -16,7 +16,7 @@ process.env.GIT_CONFIG_GLOBAL = emptyConfig
 process.env.GIT_CONFIG_NOSYSTEM = '1'
 
 const { inputIdentity, mergeBase } = await import('./identity.mjs')
-const { dispositionOk, readRecords } = await import('./records.mjs')
+const { dispositionOk, readRecords, writeRecord } = await import('./records.mjs')
 const { parseBody } = await import('./pr-body.mjs')
 const { evaluate } = await import('../ci/review-evidence.mjs')
 const { reviewCli } = await import('./review.mjs')
@@ -287,6 +287,34 @@ try {
     const head = heads(repo)[0]
     ok('a justified deviation the reviewer still sees comes back with no disposition', head.findings.map((f) => `${f.id}:${f.disposition === undefined}`).join() === `${justified.stem}#D1:true` && head.conformance.deviations.join() === `${justified.stem}#D1`)
   }
+  // --- I1: a P3 deviation, and a legacy reclassified-nit one, are reassessed by the re-review, not dropped ---
+  {
+    const repo = mkrepo()
+    await cli(repo, conformance('T4'), { verdictFor: () => ({ verdict: 'fail', findings: [{ id: 'F1', severity: 'P3', summary: 'a nit deviation' }, { id: 'F2', severity: 'P1', summary: 'a real one' }], inherited: [] }) })
+    const first = readRecords({ cwd: repo })[0]
+    ok('I1: the first run has a P3 D1 and a P1 D2, both deviations', first.findings.map((f) => `${f.id}:${f.severity}`).join() === 'D1:P3,D2:P1' && first.conformance.deviations.join() === 'D1,D2')
+    // a legacy record (written before dispose refused it) reclassified D2 as a nit
+    const { stem: _s, ...body } = first // eslint-disable-line no-unused-vars
+    const legacyPath = writeRecord({ cwd: repo, record: { ...body, findings: first.findings.map((f) => (f.id === 'D2' ? { ...f, disposition: { kind: 'reclassified-nit', reason: 'small' } } : f)), supersedes: first.stem, createdAt: '2026-11-06T12:00:00.000Z' } })
+    const legacy = readRecords({ cwd: repo }).find((x) => legacyPath.endsWith(`${x.stem}.json`))
+    const fresh = await cli(repo, conformance('T4'))
+    ok('I1: a fresh run is refused while the conformance head still has a deviation, even a P3 or reclassified one', fresh.code === 1 && fresh.spawns.length === 0 && fresh.err.includes(legacy.stem) && /--supersedes/.test(fresh.err))
+    const again = await cli(repo, conformance('T4', ['--supersedes', legacy.stem]), { verdictFor: allInherited('resolved') })
+    ok('I1: the re-review sends the P3 and the reclassified deviation to the reviewer (toAssess)', again.code === 0 && inheritedIn(again.reviewerCalls[0].prompt).join() === `${legacy.stem}#D1,${legacy.stem}#D2`)
+    const head = heads(repo)[0]
+    ok('I1: both are marked fixed by the re-review and the head lists no deviation', head.findings.length === 2 && head.findings.every((f) => f.disposition?.kind === 'fixed' && f.disposition.by === head.stem) && head.conformance.deviations.length === 0)
+  }
+
+  // --- M5: an untyped Files line in a declared task is a P1 deviation ---
+  {
+    const repo = mkrepo()
+    put(repo, 'docs/plan2.md', ['# Plan', '', '### Task 1: Untyped', '', '**Files:**', '- `made.mjs`', '', 'Body.', ''].join('\n'))
+    commit(repo, 'plan2')
+    await cli(repo, ['conformance', '--plan', 'docs/plan2.md', '--tasks', 'T1', '--author', 'anthropic'])
+    const rec = readRecords({ cwd: repo })[0]
+    ok('M5: an untyped Files line in a declared task becomes a P1 deviation D1 from the evidence writer', rec && rec.findings.length === 1 && rec.findings[0].id === 'D1' && rec.findings[0].severity === 'P1' && rec.findings[0].source === 'postcondition' && /untyped/.test(rec.findings[0].summary) && rec.findings[0].file === 'docs/plan2.md' && rec.conformance.deviations.join() === 'D1')
+  }
+
   // --- a deviation still open after a re-review is justified under its chained ID, verbatim ---
   {
     const repo = mkrepo()

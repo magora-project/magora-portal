@@ -320,6 +320,18 @@ const passingHead = (records, rec, { identity }) => {
   return rec.findings.every((f) => !(isBlockingByDefault(f) && f.disposition?.kind === 'fixed' && !chain.has(f.disposition.by)))
 }
 
+// Reviewer findings with every `ref-N` ID renamed to the first F<n> no other finding uses.
+const awayFromRef = (findings) => {
+  const used = new Set(findings.map((f) => f.id))
+  return findings.map((f) => {
+    if (!/^ref-\d+$/.test(f.id)) return f
+    let k = 1
+    while (used.has(`F${k}`)) k++
+    used.add(`F${k}`)
+    return { ...f, id: `F${k}` }
+  })
+}
+
 // The three substitute:<bot> slots share one file, substitute.md, with {{bot}} filled in.
 export const defaultPromptFor = (slot, { root }) => {
   const p = join(root, '.claude', 'review', 'slots', `${isSubstitute(slot) ? 'substitute' : slotFile(slot)}.md`)
@@ -432,12 +444,16 @@ export const runReview = async (o, ctx, conf = null) => {
   // finding would let that finding go unassessed (§5.3: a re-review inherits every undisposed finding). That holds
   // whatever the head's outcome: a failed re-review carries its inherited findings forward undisposed. A head with
   // no open finding (a fresh run that never completed) does not block, so the reviewer fallback still works.
+  // On a conformance head every deviation (each finding not fixed, P3 or justified included) is open in this sense:
+  // records.mjs inherit reopens them all, and a fresh chain would drop them unreassessed (§5.4).
   if (o.supersedes === undefined) {
     const added = await addedStemsFor(root, await defaultBase(root, o.base), head)
+    const openIds = (r) => (r.slot === 'conformance' ? deviationIds(r.findings) : undisposedBlocking(r).map((f) => f.id))
     const open = chainHeads(records).filter((r) => !r.invalid && r.slot === o.slot
-      && (!blob || r.input.path === input.path) && (added === null || added.has(r.stem)) && undisposedBlocking(r).length > 0)
+      && (!blob || r.input.path === input.path) && (added === null || added.has(r.stem)) && openIds(r).length > 0)
     if (open.length) {
-      usage(`${open.map((r) => `record ${r.stem} left ${undisposedBlocking(r).map((f) => f.id).join(', ')} open`).join('; ')}: re-review with --supersedes ${open.length === 1 ? open[0].stem : '<stem>'} so the open finding is inherited, or dispose it`)
+      const how = o.slot === 'conformance' ? 'so its deviations are reassessed' : 'so the open finding is inherited, or dispose it'
+      usage(`${open.map((r) => `record ${r.stem} left ${openIds(r).join(', ')} open`).join('; ')}: re-review with --supersedes ${open.length === 1 ? open[0].stem : '<stem>'} ${how}`)
     }
   }
 
@@ -462,8 +478,8 @@ export const runReview = async (o, ctx, conf = null) => {
     if (old.input.kind !== input.kind || (blob && old.input.path !== input.path)) usage(`record ${old.stem} covers ${old.input.kind} ${old.input.path ?? ''}, not this input`)
     if (old.authorVendor !== o.author) usage(`record ${old.stem} has authorVendor ${old.authorVendor}, not ${o.author}: a re-review keeps the author`)
     // The reference check and the conformance postconditions are recomputed on every run, so the old record's
-    // findings from them are not inherited. A conformance justified-deviation arrives here reopened (records.mjs
-    // inherit), so it goes to toAssess: the reviewer reassesses it rather than it being carried as is.
+    // findings from them are not inherited. Every other conformance deviation not fixed (justified, P3, or a legacy
+    // pre-existing / reclassified-nit) arrives here reopened (records.mjs inherit), so it goes to toAssess.
     for (const f of inherit(old)) {
       if ((planRef && /#ref-\d+$/.test(f.id)) || f.source === 'postcondition') continue
       if (f.disposition !== undefined) carried.push(f)
@@ -536,7 +552,9 @@ export const runReview = async (o, ctx, conf = null) => {
       const status = new Map(c.inherited.map((e) => [e.id, e.status]))
       const assessed = toAssess.map((f) => (status.get(f.id) === 'resolved' ? { ...f, disposition: { kind: 'fixed', by: newStem } } : f))
       // Conformance deviation IDs: the postconditions' D1..Dn first, then the reviewer's findings in its order.
-      const fresh = conf ? c.findings.map((f, i) => ({ ...f, id: `D${preFindings.length + i + 1}` })) : c.findings
+      // Plan slot: `ref-N` belongs to the reference check (and is dropped on a re-review as recomputed), so a
+      // reviewer finding with such an ID takes the first free F<n> instead.
+      const fresh = conf ? c.findings.map((f, i) => ({ ...f, id: `D${preFindings.length + i + 1}` })) : planRef ? awayFromRef(c.findings) : c.findings
       findings = [...preFindings, ...fresh, ...assessed, ...carried]
     } else {
       findings = [...preFindings, ...toAssess, ...carried] // nobody reviewed: carry everything forward undisposed
@@ -570,6 +588,8 @@ const cmdDispose = async (argv, ctx) => {
   if (!f) usage(`record ${old.stem} has no finding ${o.finding}`)
   if (f.disposition && f.disposition.kind === 'fixed') usage(`finding ${o.finding} is already fixed`)
   if (o.kind === 'justified-deviation' && old.type !== 'conformance') usage('justified-deviation applies only to a conformance record')
+  // §5.4: a conformance deviation is either fixed (a re-review marks it) or justified in the Deviations field.
+  if (old.type === 'conformance' && o.kind !== 'justified-deviation') usage(`a conformance deviation is not ${o.kind} (spec §5.4): fix it and re-review with --supersedes, or justify it in the PR's Deviations field and dispose it --kind justified-deviation`)
   const disposition = { kind: o.kind, reason: o.reason, ...(nonEmpty(o.issue) ? { issue: o.issue } : {}) }
   const { stem: _s, invalid: _i, ...body } = old // eslint-disable-line no-unused-vars
   const record = {

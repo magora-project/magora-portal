@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
-const { chainHeads, dispositionOk, inherit, isBlockingByDefault, readRecords, repoPath, slotFile, undisposedBlocking, validateRecord, writeRecord } = await import('./records.mjs')
+const { chainHeads, deviationIds, dispositionOk, inherit, isBlockingByDefault, readRecords, repoPath, slotFile, undisposedBlocking, validateRecord, writeRecord } = await import('./records.mjs')
 
 let pass = 0, fail = 0
 const ok = (n, c) => {
@@ -192,6 +192,20 @@ try {
   ok('inherit reopens a conformance justified-deviation: prefixed, disposition dropped, not copied as is', inhConf.some((x) => x.id === `${confRec.stem}#D1` && x.disposition === undefined) && inhConf.some((x) => x.id === 'D1') === false)
   ok('inherit reopens it even when the Deviations field still lists it', inherit(confRec, { deviations: [{ id: 'D1', justification: 'j' }] }).map((x) => `${x.id}:${x.disposition === undefined}`).join() === `${confRec.stem}#D1:true,${confRec.stem}#D2:true`)
   ok('inherit still prefixes and reopens an undisposed conformance finding', inhConf.some((x) => x.id === `${confRec.stem}#D2` && x.disposition === undefined))
+  // I1: on a conformance record every finding not fixed is reopened, whatever its disposition or severity, so a
+  // deviation leaves the chain only fixed (by a re-review) or justified; deviationIds and inherit agree.
+  const legacy = { stem: 'conformance--abc--2', type: 'conformance', findings: [
+    { id: 'D1', severity: 'P1', summary: 'a', disposition: { kind: 'reclassified-nit', reason: 'r' } },
+    { id: 'D2', severity: 'P1', summary: 'b', disposition: { kind: 'pre-existing', reason: 'r', issue: 'https://example.test/1' } },
+    { id: 'D3', severity: 'P3', summary: 'c' },
+    { id: 'D4', severity: 'P1', summary: 'd', disposition: { kind: 'justified-deviation', reason: 'r' } },
+    { id: 'D5', severity: 'P1', summary: 'e', disposition: { kind: 'fixed', by: 'conformance--abc--2' } },
+    { id: 'D6', severity: 'P3', summary: 'f', disposition: { kind: 'reclassified-nit', reason: 'r' } },
+  ] }
+  const inhLegacy = inherit(legacy)
+  ok('inherit on a conformance record reopens reclassified-nit, pre-existing, undisposed P3 and justified findings; only fixed is dropped', inhLegacy.map((x) => `${x.id}:${x.disposition === undefined}`).join() === ['D1', 'D2', 'D3', 'D4', 'D6'].map((d) => `${legacy.stem}#${d}:true`).join())
+  ok('inherit and deviationIds agree on a conformance record', inhLegacy.map((x) => x.id.split('#')[1]).join() === deviationIds(legacy.findings).filter((id) => id !== 'D5').join() && deviationIds(legacy.findings).includes('D5') === false)
+  ok('inherit on a correctness record still drops an acceptable disposition and a P3 (only the unacceptable justified-deviation reopens)', inherit({ ...legacy, stem: 'correctness--abc--3', type: 'prepush' }).map((x) => x.id).join() === 'correctness--abc--3#D4')
   const preRec = { stem: 'correctness--abc--9', type: 'prepush', findings: [{ id: 'D1', severity: 'P1', summary: 'dev', disposition: { kind: 'justified-deviation', reason: 'x' } }] }
   ok('inherit reopens a justified-deviation on a non-conformance record', inherit(preRec).map((x) => `${x.id}:${x.disposition === undefined}`).join() === `${preRec.stem}#D1:true`)
 

@@ -415,6 +415,16 @@ try {
     const r = await runs(['run', '--slot', 'conformance', '--author', 'anthropic'])
     ok('run --slot conformance is refused before spawning, naming the conformance command and the block it fills', r.code === 1 && r.sp.length === 0 && /review -- conformance --plan/.test(r.err) && /conformance block/.test(r.err) && /not available yet/.test(r.err) === false)
     ok('...and writes no record', readRecords({ cwd: repo }).length === 0)
+    // I1 (a): a conformance deviation is fixed or justified (§5.4), never pre-existing or reclassified-nit
+    const conf = store(prRecord({ slot: 'conformance', type: 'conformance', verdict: 'fail', findings: [{ id: 'D1', severity: 'P1', summary: 'dev' }], conformance: { tasks: ['T1'], deviations: ['D1'], commands: [] } }))
+    const pe = await errOfCli(['dispose', '--record', conf.stem, '--finding', 'D1', '--kind', 'pre-existing', '--reason', 'old', '--issue', 'https://example.test/1'])
+    const rn = await errOfCli(['dispose', '--record', conf.stem, '--finding', 'D1', '--kind', 'reclassified-nit', '--reason', 'small'])
+    ok('dispose pre-existing on a conformance record is refused, naming fixed and justified-deviation', /§5\.4/.test(pe) && /conformance/.test(pe) && /justified-deviation/.test(pe) && /re-review/.test(pe))
+    ok('dispose reclassified-nit on a conformance record is refused the same way', /§5\.4/.test(rn) && /conformance/.test(rn) && /justified-deviation/.test(rn))
+    ok('...and neither wrote a record', readRecords({ cwd: repo }).length === 1)
+    const corr = store(prRecord({ verdict: 'fail', findings: [{ id: 'F1', severity: 'P1', summary: 'bug' }, { id: 'F2', severity: 'P1', summary: 'bug2' }] }))
+    ok('reclassified-nit and pre-existing stay allowed on a correctness record', (await cli(['dispose', '--record', corr.stem, '--finding', 'F1', '--kind', 'reclassified-nit', '--reason', 'small'])).code === 0
+      && (await cli(['dispose', '--record', recordsBy((x) => x.supersedes === corr.stem)[0].stem, '--finding', 'F2', '--kind', 'pre-existing', '--reason', 'old', '--issue', 'https://example.test/2'])).code === 0)
   }
 
   // P2-1 layer 2: a fresh run refuses while a completed chain head of the slot has an open blocking finding
@@ -651,6 +661,18 @@ try {
     const again = await planRun(['--rev', mainSha, '--supersedes', stem])
     const second = again.recs.find((x) => x.supersedes === stem)
     ok('a re-review recomputes the reference findings instead of inheriting the old ones', again.code === 0 && second && second.findings.length === 1 && second.findings[0].id === 'ref-1' && second.rev === mainSha)
+
+    // M-b: a reviewer finding named ref-N must not collide with (or be dropped as) a reference-check finding
+    mainSha = planRepo()
+    const refJson = JSON.stringify({ verdict: 'fail', findings: [{ id: 'ref-1', severity: 'P2', summary: 'reviewer said ref-1' }, { id: 'F1', severity: 'P2', summary: 'reviewer F1' }], inherited: [] })
+    const clash = await planRun(['--rev', mainSha], { spawnImpl: recordSpawn([], envelope(refJson)) })
+    const crec = clash.recs[0]
+    const renamed = crec.findings.find((x) => x.summary === 'reviewer said ref-1')
+    ok('plan slot: a reviewer finding with a ref-N ID is renumbered away from the reference findings', clash.code === 0 && crec.findings.map((x) => x.id).join() === 'ref-1,F2,F1' && renamed.id === 'F2' && new Set(crec.findings.map((x) => x.id)).size === crec.findings.length)
+    const sentAgain = []
+    await planRun(['--rev', mainSha, '--supersedes', crec.stem], { spawnImpl: capturePrompt(sentAgain, envelopeOk) })
+    const crec2 = readRecords({ cwd: repo }).find((x) => x.supersedes === crec.stem)
+    ok('...and a --supersedes re-review inherits it instead of dropping it as a reference finding', crec2.findings.some((x) => x.id === `${crec.stem}#F2`) && sentAgain[0].includes(`${crec.stem}#F2`))
 
     planRepo()
     const sp3 = []
