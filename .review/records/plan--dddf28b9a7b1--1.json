@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "dddf28b9a7b15f2ec0a34f1ba0401cc88124262f",
+    "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "Typed task targets remain incomplete: Task 20 omits creation of lease.mjs and lease.test.mjs, Task 15b omits its separate writer-function migration, rollback and test, Task 14 omits maintainer.env and env-refs.test.mjs changes, and Task 11 omits creating the allowlist that Task 15b declares as a modification, leaving required implementation work outside the declared targets.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 753
+    },
+    {
+      "id": "plan--43fe063c6c97--2#F1",
+      "severity": "P1",
+      "summary": "The writer-function migration requires PUBLIC EXECUTE to exist before revoking it, but every refresh replays all migrations without restoring pg_catalog privileges, so the second refresh—and the first after support performs the revocations—will fail.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 587,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--dddf28b9a7b1--1"
+      }
+    },
+    {
+      "id": "plan--43fe063c6c97--2#F3",
+      "severity": "P2",
+      "summary": "Task 26's typed Files list omits creation of supabase/setup/rehearsal-fixture.sql and modifications to apply-migrations.mjs and its test, although its execution steps require those changes, leaving the declared task targets incomplete.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 1029,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--dddf28b9a7b1--1"
+      }
+    }
+  ],
+  "supersedes": "plan--43fe063c6c97--2",
+  "createdAt": "2026-11-07T03:14:57.034Z"
+}

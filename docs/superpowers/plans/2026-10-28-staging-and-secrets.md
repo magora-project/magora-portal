@@ -378,7 +378,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 ### Task 11: Privilege check (criterion 7)
 
 **Files:**
-- Create: `scripts/db/privilege-check.mjs`, `scripts/db/privilege-check.test.mjs`, `scripts/db/privilege-check.itest.mjs`
+- Create: `scripts/db/privilege-check.mjs`, `scripts/db/privilege-check.test.mjs`, `scripts/db/privilege-check.itest.mjs`, `supabase/migrations/checks/refresh-execute-allowlist.txt` (Step 3)
 
 **Interfaces:**
 - Produces:
@@ -504,7 +504,8 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 ### Task 14: Edge Function deploy to staging
 
 **Files:**
-- Create: `scripts/staging/deploy-functions.mjs`, `scripts/staging/deploy-functions.test.mjs`
+- Create: `scripts/staging/deploy-functions.mjs`, `scripts/staging/deploy-functions.test.mjs`, `env/maintainer.env`
+- Modify: `scripts/secrets/env-refs.test.mjs` (the `maintainer.env` case)
 
 **Interfaces:**
 - Produces:
@@ -566,7 +567,9 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 This is a spec exception, for David to approve. The migration changes production ACLs before staging can test it: the first refresh needs the grants, so §5.5's staging step cannot run first. That is §5.11 step 2's bootstrap argument, but this migration, unlike the baseline, does write production. The plan's mitigations are a local forward, rollback and forward cycle, the privilege check, and backup confirmation before applying. **David approves this exception before Step 5.**
 
 **Files:**
-- Create: `supabase/migrations/20261029_refresh_login_grants.sql`, `supabase/migrations/rollbacks/20261029_refresh_login_grants.rollback.sql`
+- Create:
+  - `supabase/migrations/20261029_refresh_login_grants.sql`, `supabase/migrations/rollbacks/20261029_refresh_login_grants.rollback.sql`
+  - `supabase/migrations/<date>_revoke_public_writer_functions.sql`, `supabase/migrations/rollbacks/<date>_revoke_public_writer_functions.rollback.sql` and `scripts/db/revoke-writers.test.mjs` (Step 4)
 - Modify:
   - `supabase/migrations/checks/refresh-execute-allowlist.txt`
   - `AGENTS.md` (Migrations: "A migration that creates a table classified *copied* or *transformed* in `supabase/staging/table-manifest.json` grants `SELECT` on it to `magora_refresh`.")
@@ -585,7 +588,7 @@ This is a spec exception, for David to approve. The migration changes production
   - **How that fix ships** (#47 item 1; route chosen by David, 2026-11-06; the production change itself still needs his approval before it is applied):
     - Its own migration, `<date>_revoke_public_writer_functions.sql`, with its rollback, so the grants migration keeps its contract (its rollback revokes exactly its `GRANT SELECT`s).
     - It names a fixed list: the `WRITES_WITHOUT_TABLE_PRIVILEGE` signatures that Task 11 Step 5 observed callable through `PUBLIC` on the local Supabase stack. It is idempotent, because `pg_catalog` privileges survive a refresh's rebuild and every refresh replays the migrations: for each signature it revokes `EXECUTE` from `PUBLIC` only if `PUBLIC` holds it, then raises an exception if `PUBLIC` still holds `EXECUTE` on any listed signature. `REVOKE` without the right to change a function's privileges only warns, so that final check is what turns a silent no-op into a failure. On a database where the privilege is already gone (a replay, or after Supabase support revoked it) the migration changes nothing and passes.
-    - Its rollback grants `EXECUTE` to `PUBLIC` on exactly the same list, so applying migration, rollback and migration on staging (§5.5) returns to the reviewed state; the session's closing refresh replays the migration, which revokes again. A unit test parses both files and requires the same signatures. Where only Supabase can change these privileges, the rollback's `GRANT` also only warns and restores nothing; that is accepted, since the revoked state is the safe one.
+    - Its rollback grants `EXECUTE` to `PUBLIC` on exactly the same list, so applying migration, rollback and migration on staging (§5.5) returns to the reviewed state; the session's closing refresh replays the migration, which revokes again. A unit test, `scripts/db/revoke-writers.test.mjs`, parses both files and requires the same signatures. Where only Supabase can change these privileges, the rollback's `GRANT` also only warns and restores nothing; that is accepted, since the revoked state is the safe one.
     - Re-run Step 2's local cycle with this migration in place, and compare the state after the rollback with the state before the migration, not only after the re-apply.
     - **Expected obstacle**, from reading Supabase's image source (`supabase/postgres` at `c6226c6`, not yet run): `postgres` is demoted to `NOSUPERUSER` (`10000000000000_demote-postgres.sql`) and does not own the `pg_catalog` functions, so the migration will probably raise on the local stack. If it does:
       - David asks Supabase support to revoke `EXECUTE` from `PUBLIC` on the listed signatures. Production's privilege check (Task 13 Step 3) stays red until it is done; if support declines, David decides again.
@@ -750,7 +753,7 @@ This is a spec exception, for David to approve. The migration changes production
 ### Task 20: Refresh workflow and first run
 
 **Files:**
-- Create: `.github/workflows/staging-refresh.yml`
+- Create: `.github/workflows/staging-refresh.yml`, `scripts/staging/lease.mjs`, `scripts/staging/lease.test.mjs` (Step 1b)
 
 **Interfaces:**
 - Consumes: environment `staging-sync` (`main` only), holding:

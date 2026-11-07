@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "43fe063c6c971299fe06063a3556aca87de1c93d",
+    "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "The writer-function migration requires PUBLIC EXECUTE to exist before revoking it, but every refresh replays all migrations without restoring pg_catalog privileges, so the second refresh—and the first after support performs the revocations—will fail.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 587
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "Task 4 omits the named spec §5.1 requirements to reject missing MD5s, verify source/destination MD5 listings and enforce the reviewed rclone version, allowing size-only comparisons to mark changed same-size objects as successfully backed up.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 225,
+      "disposition": {
+        "kind": "reclassified-nit",
+        "reason": "Task 4 shipped in PR #46; storage-backup.yml already refuses no-MD5 buckets (L139-146), compares MD5s after the check (L181-193) and pins rclone 1.60 (L40-44). The plan text is historical and drives no further work."
+      }
+    },
+    {
+      "id": "F3",
+      "severity": "P2",
+      "summary": "Task 26's typed Files list omits creation of supabase/setup/rehearsal-fixture.sql and modifications to apply-migrations.mjs and its test, although its execution steps require those changes, leaving the declared task targets incomplete.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 1029
+    }
+  ],
+  "supersedes": "plan--43fe063c6c97--1",
+  "createdAt": "2026-11-07T03:13:56.832Z"
+}
