@@ -41,13 +41,18 @@ const must = (r, what) => {
 // ---------- commands ----------
 
 // A command string as argv, split as a POSIX shell would for words and quotes only: '...' is literal; in "..." a
-// backslash escapes only " and \; outside quotes a backslash is literal (Windows paths). Anything a shell would
-// interpret (| & ; < > ` $ unquoted, and $ or ` inside double quotes) is refused: no shell runs the command, so it
-// would silently mean something else.
+// backslash escapes only " and \; outside quotes a backslash is literal (Windows paths).
+// No shell runs the command, so anything a shell would expand or interpret would silently mean something else (and
+// could pass where the shell would fail). Outside quotes only SAFE_CHARS are accepted: every other character (globs
+// * ? [ ], ~, { }, !, #, $, `, | & ; < > ( ), ...) is refused as needing a shell. That is an allowlist on purpose: a
+// list of the characters to refuse was incomplete twice. Inside single quotes everything is literal, as in a shell;
+// inside double quotes $ and ` are refused (a shell expands them there) and the rest is literal.
+const SAFE_CHARS = /^[A-Za-z0-9_@%+=:,./\\-]$/
 export const splitCommand = (cmd) => {
   const s = String(cmd)
   const out = []
   let cur = '', word = false, quote = null
+  const needsShell = (what) => new Error(`\`${s}\` needs a shell (${what}), and conformance runs commands without one: quote a literal character in single quotes, or make each command its own command target that needs no shell`)
   for (let i = 0; i < s.length; i++) {
     const ch = s[i]
     if (quote === '\'') {
@@ -56,19 +61,18 @@ export const splitCommand = (cmd) => {
     } else if (quote === '"') {
       if (ch === '\\' && (s[i + 1] === '"' || s[i + 1] === '\\')) cur += s[++i]
       else if (ch === '"') quote = null
-      // A shell expands $ and ` inside double quotes: taken literally, `test -n "$X"` would pass with X unset.
-      else if (ch === '$' || ch === '`') throw new Error(`\`${s}\` needs a shell (${ch} inside double quotes), and conformance runs commands without one: use single quotes for a literal ${ch}, or make the command not need the expansion`)
+      else if (ch === '$' || ch === '`') throw needsShell(`${ch} inside double quotes`)
       else cur += ch
     } else if (ch === '\'' || ch === '"') {
       quote = ch
       word = true
-    } else if (/\s/.test(ch)) {
+    } else if (ch === ' ' || ch === '\t') {
       if (word) { out[out.length] = cur; cur = ''; word = false }
-    } else if ('|&;<>`$'.includes(ch)) {
-      throw new Error(`\`${s}\` needs a shell (unquoted ${ch}), and conformance runs commands without one: make each command its own command target`)
-    } else {
+    } else if (SAFE_CHARS.test(ch)) {
       cur += ch
       word = true
+    } else {
+      throw needsShell(`unquoted ${JSON.stringify(ch)}`)
     }
   }
   if (quote !== null) throw new Error(`unterminated ${quote} quote in \`${s}\``)
@@ -94,36 +98,46 @@ export const commandArgv = (cmd, { platform = process.platform, execPath = proce
 // 'close', or drainMs after 'exit': a background descendant that inherited the pipes cannot hold the run open.
 // A command still running timeoutMs after it started is killed (child.kill(), then SIGKILL after killGraceMs; never a
 // process-name match) and recorded as failed with exit -1: postconditions run before the reviewer's own timeout.
-export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = () => {}, drainMs = DRAIN_MS, timeoutMs = 0, killGraceMs = 5000 }) => {
+export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = () => {}, drainMs = DRAIN_MS, timeoutMs = 0, killGraceMs = 5000, reapMs = 5000 }) => {
   let argv
   try { argv = commandArgv(cmd) } catch (e) { return Promise.resolve({ exit: -1, detail: `not run: ${e.message}` }) }
   return new Promise((resolve) => {
-    let child, done = false, drainTimer, deadline, killTimer
-    const finish = (r) => { if (!done) { done = true; clearTimeout(drainTimer); clearTimeout(deadline); resolve(r) } }
+    let child, done = false, timedOut = false
+    const timers = []
+    const later = (ms, fn) => { const t = setTimeout(fn, ms); timers[timers.length] = t; return t }
+    const finish = (r) => { if (!done) { done = true; for (const t of timers) clearTimeout(t); resolve(r) } }
+    const release = () => { for (const st of [child.stdout, child.stderr]) { try { st?.destroy() } catch { /* already closed */ } } }
     const result = (code, signal) => (Number.isInteger(code) ? { exit: code, detail: `exited ${code}` } : { exit: -1, detail: `killed by ${signal ?? 'a signal'}` })
+    const killedDetail = () => `still running after ${Math.round(timeoutMs / 1000)} s: killed`
     try {
       child = spawnImpl(argv.file, argv.args, { cwd, env, shell: false, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
     } catch (e) { finish({ exit: -1, detail: `could not start ${argv.file}: ${e && e.message}` }); return }
-    for (const s of [child.stdout, child.stderr]) if (s) s.on('data', (d) => onOutput(d.toString()))
+    for (const st of [child.stdout, child.stderr]) if (st) st.on('data', (d) => onOutput(d.toString()))
+    // The deadline: SIGTERM, then SIGKILL after killGraceMs. The result waits for the process to exit, so the next
+    // command or the reviewer never runs beside it; only if it has not exited reapMs after SIGKILL does the result
+    // come anyway, and it says so. (A descendant the command started in the background is not killed: its pipes are
+    // released, as for any command that has exited.)
     if (timeoutMs > 0) {
-      deadline = setTimeout(() => {
+      later(timeoutMs, () => {
+        timedOut = true
         try { child.kill() } catch { /* already gone */ }
-        killTimer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* already gone */ } }, killGraceMs)
-        if (killTimer.unref) killTimer.unref()
-        for (const s of [child.stdout, child.stderr]) { try { s?.destroy() } catch { /* already closed */ } }
-        finish({ exit: -1, detail: `still running after ${Math.round(timeoutMs / 1000)} s: killed` })
-      }, timeoutMs)
+        later(killGraceMs, () => {
+          try { child.kill('SIGKILL') } catch { /* already gone */ }
+          later(reapMs, () => { release(); finish({ exit: -1, detail: `${killedDetail()}, but it had not exited ${Math.round((killGraceMs + reapMs) / 1000)} s after SIGTERM` }) })
+        })
+      })
     }
     child.on('error', (e) => finish({ exit: -1, detail: `could not start ${argv.file}: ${e && e.message}` }))
     child.on('exit', (code, signal) => {
-      clearTimeout(deadline)
-      drainTimer = setTimeout(() => {
-        for (const s of [child.stdout, child.stderr]) { try { s?.destroy() } catch { /* already closed */ } }
+      if (timedOut) { release(); finish({ exit: -1, detail: killedDetail() }); return }
+      for (const t of timers) clearTimeout(t)
+      later(drainMs, () => {
+        release()
         const r = result(code, signal)
         finish({ ...r, detail: `${r.detail}; its output pipes were still held open ${drainMs} ms later (a background process?)` })
-      }, drainMs)
+      })
     })
-    child.on('close', (code, signal) => finish(result(code, signal)))
+    child.on('close', (code, signal) => finish(timedOut ? { exit: -1, detail: killedDetail() } : result(code, signal)))
   })
 }
 

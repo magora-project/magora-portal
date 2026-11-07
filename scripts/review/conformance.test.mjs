@@ -289,16 +289,26 @@ try {
     try { splitCommand('echo "`date`"') } catch (e) { err = e.message }
     ok('a backtick inside double quotes needs a shell and is refused', /needs a shell/.test(err))
     ok('$ inside single quotes is literal', splitCommand("grep -n '$x' a.txt").join('|') === 'grep|-n|$x|a.txt')
+    const refused = (c) => { try { splitCommand(c); return false } catch (e) { return /needs a shell/.test(e.message) } }
+    ok('an unquoted glob needs a shell and is refused (* ? [)', ['test ! -e scripts/review/[c]onformance.mjs', 'ls *.mjs', 'ls a?.mjs'].every(refused))
+    ok('unquoted ~ { } ! # ( ) need a shell and are refused', ['cat ~/x', 'echo a{b,c}', 'test ! -e x', 'echo a #b', 'echo (x)'].every(refused))
+    ok('a quoted glob is literal', splitCommand("test '!' -e 'scripts/review/[c]onformance.mjs'").join('|') === 'test|!|-e|scripts/review/[c]onformance.mjs' && splitCommand('ls "*.mjs"').join('|') === 'ls|*.mjs')
+    ok('ordinary commands still split', splitCommand('npm run check:migrations').join('|') === 'npm|run|check:migrations' && splitCommand('node scripts/x.mjs --flag=a,b @scope/pkg 50%').join('|') === 'node|scripts/x.mjs|--flag=a,b|@scope/pkg|50%')
     const r = await runCommand({ cmd: 'test -n "$X"', cwd: root, env: {}, spawnImpl: () => { throw new Error('spawned') } })
     ok('...and runCommand records it as not run (exit -1), without spawning', r.exit === -1 && /needs a shell/.test(r.detail))
-    const kills = []
+    // A command that ignores SIGTERM: the result must wait until SIGKILL has made it exit.
+    const kills = [], events = []
     const hung = new EventEmitter()
     hung.stdout = new PassThrough(); hung.stderr = new PassThrough()
-    hung.kill = (sig) => { kills.push(sig ?? 'SIGTERM') }
-    const res = await Promise.race([runCommand({ cmd: 'npm test', cwd: root, env: {}, spawnImpl: () => hung, timeoutMs: 20, killGraceMs: 10 }), new Promise((rs) => setTimeout(() => rs('hung'), 2000))])
-    await new Promise((rs) => setTimeout(rs, 40))
-    ok('a command that never exits is killed at its deadline and recorded failed with exit -1', res !== 'hung' && res.exit === -1 && /still running/.test(res.detail) && kills[0] === 'SIGTERM')
-    ok('...then SIGKILLed after the grace period', kills.includes('SIGKILL'))
+    hung.kill = (sig = 'SIGTERM') => { kills.push(sig); events.push(`kill ${sig}`); if (sig === 'SIGKILL') setTimeout(() => { events.push('exit'); hung.emit('exit', null, 'SIGKILL') }, 15) }
+    const res = await Promise.race([runCommand({ cmd: 'npm test', cwd: root, env: {}, spawnImpl: () => hung, timeoutMs: 20, killGraceMs: 30, reapMs: 1000 }).then((r) => { events.push('resolved'); return r }), new Promise((rs) => setTimeout(() => rs('hung'), 3000))])
+    ok('a command that never exits is killed at its deadline and recorded failed with exit -1', res !== 'hung' && res.exit === -1 && /still running/.test(res.detail) && kills.join() === 'SIGTERM,SIGKILL')
+    ok('...and the result waits until it has exited (after SIGKILL), not just until SIGTERM was sent', events.join() === 'kill SIGTERM,kill SIGKILL,exit,resolved')
+    const stuck = new EventEmitter()
+    stuck.stdout = new PassThrough(); stuck.stderr = new PassThrough()
+    stuck.kill = () => {}
+    const res2 = await Promise.race([runCommand({ cmd: 'npm test', cwd: root, env: {}, spawnImpl: () => stuck, timeoutMs: 10, killGraceMs: 10, reapMs: 20 }), new Promise((rs) => setTimeout(() => rs('hung'), 3000))])
+    ok('a command that does not exit even after SIGKILL still yields a result, which says it had not exited', res2 !== 'hung' && res2.exit === -1 && /had not exited/.test(res2.detail))
   }
 
   // --- follow-up: the plan is read at the captured head, not at whatever HEAD is now ---
