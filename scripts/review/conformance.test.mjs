@@ -1,6 +1,7 @@
 // Self-test for scripts/review/conformance.mjs (plan Task 18) and `review.mjs conformance`. Builds scratch git repos
-// in mkdtemp and deletes them afterwards. Never spawns a real reviewer or a real command: the reviewer spawn
-// (spawnImpl) and the postcondition command spawn (commandSpawnImpl) are both stubbed.
+// in mkdtemp and deletes them afterwards. Never spawns a real reviewer. The postcondition command spawn
+// (commandSpawnImpl) is stubbed, except in one test that runs real `node` processes to show a timed-out command's
+// grandchild outliving it (and kills that grandchild by its pid afterwards).
 // Run: node scripts/review/conformance.test.mjs
 import { spawnSync } from 'node:child_process'
 import { EventEmitter } from 'node:events'
@@ -323,6 +324,50 @@ try {
     stuck.kill = () => {}
     const res2 = await Promise.race([runCommand({ cmd: 'npm test', cwd: root, env: {}, spawnImpl: () => stuck, timeoutMs: 10, killGraceMs: 10, reapMs: 20 }), new Promise((rs) => setTimeout(() => rs('hung'), 3000))])
     ok('a command that does not exit even after SIGKILL still yields a result, which says it had not exited', res2 !== 'hung' && res2.exit === -1 && /had not exited/.test(res2.detail))
+    ok('...and both timed-out results say so (timedOut), for postconditions to stop the run', res.timedOut === true && res2.timedOut === true && r.timedOut === undefined)
+  }
+
+  // --- push-gate P2 (round 6): a timed-out command stops the run; nothing runs after it, no record is written ---
+  {
+    const repo = mkrepo()
+    const before = readRecords({ cwd: repo }).length
+    const o = io(), reviewerCalls = [], commandSpawns = []
+    const hung = (file, args) => {
+      commandSpawns.push([file, ...args].join(' '))
+      const c = new EventEmitter()
+      c.stdout = new PassThrough(); c.stderr = new PassThrough(); c.pid = 4242
+      c.kill = () => { setTimeout(() => c.emit('exit', null, 'SIGTERM'), 5) }
+      return c
+    }
+    const code = await reviewCli(conformance('T1,T2', ['--timeout-min', '0.0005']), { cwd: repo, promptFor, env: {}, io: o.io, spawnImpl: reviewerSpawn(reviewerCalls, () => ({ verdict: 'pass', findings: [], inherited: [] })), commandSpawnImpl: hung })
+    ok('a command target that times out stops the run: exit 1, unrun, naming the command and its pid', code === 1 && /stopped, unrun/.test(o.err) && /npm test/.test(o.err) && /pid 4242/.test(o.err))
+    ok('...the reviewer is not run and no record is written', reviewerCalls.length === 0 && readRecords({ cwd: repo }).length === before)
+  }
+
+  // --- the same with real processes: a foreground grandchild outlives its killed parent, so the run must stop ---
+  {
+    const repo = mkrepo()
+    const head = raw(repo, ['rev-parse', 'HEAD'])
+    const grandPid = join(repo, 'grand.pid'), secondRan = join(repo, 'second.ran')
+    put(repo, 'grand.mjs', `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(grandPid)}, String(process.pid))\nsetInterval(() => {}, 1000)\n`)
+    put(repo, 'parent.mjs', `import { spawn } from 'node:child_process'\nspawn(process.execPath, ['grand.mjs'], { stdio: 'inherit' })\nsetInterval(() => {}, 1000)\n`)
+    put(repo, 'second.mjs', `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(secondRan)}, 'ran')\n`)
+    const tasks = [{ id: 'T1', targets: [{ type: 'command', value: 'node parent.mjs' }, { type: 'command', value: 'node second.mjs' }] }]
+    const { existsSync, readFileSync } = await import('node:fs')
+    const env = { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}` }
+    let err = '', grand = 0
+    const started = Date.now()
+    try {
+      // the deadline must leave the grandchild time to start and write its pid
+      await postconditions({ tasks, cwd: repo, base: head, head, env, commandTimeoutMs: 1500 })
+    } catch (e) { err = e.message }
+    try { grand = Number(readFileSync(grandPid, 'utf8')) } catch { /* never started */ }
+    let alive = false
+    if (grand > 0) { try { process.kill(grand, 0); alive = true } catch { /* gone */ } }
+    ok('real processes: a timed-out command stops postconditions with an error naming its pid', /stopped, unrun/.test(err) && /pid \d+/.test(err) && Date.now() - started < 10_000)
+    ok('...its foreground grandchild was still running when the run stopped (why nothing may run after it)', alive)
+    ok('...and the next command target never ran', !existsSync(secondRan))
+    if (grand > 0) { try { process.kill(grand, 'SIGKILL') } catch { /* gone */ } }
   }
 
   // --- follow-up: the plan is read at the captured head, not at whatever HEAD is now ---

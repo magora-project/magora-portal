@@ -98,7 +98,8 @@ export const commandArgv = (cmd, { platform = process.platform, execPath = proce
 // command's output can hold anything. exit -1 means the command did not run to an exit status. The result comes at
 // 'close', or drainMs after 'exit': a background descendant that inherited the pipes cannot hold the run open.
 // A command still running timeoutMs after it started is killed (child.kill(), then SIGKILL after killGraceMs; never a
-// process-name match) and recorded as failed with exit -1: postconditions run before the reviewer's own timeout.
+// process-name match) and the result carries timedOut: true and its pid. Only the direct process is signalled:
+// processes it started (npm's test runner and its tests) may outlive it, so postconditions() stops the run there.
 export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = () => {}, drainMs = DRAIN_MS, timeoutMs = 0, killGraceMs = 5000, reapMs = 5000 }) => {
   let argv
   try { argv = commandArgv(cmd) } catch (e) { return Promise.resolve({ exit: -1, detail: `not run: ${e.message}` }) }
@@ -110,6 +111,7 @@ export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = ()
     const release = () => { for (const st of [child.stdout, child.stderr]) { try { st?.destroy() } catch { /* already closed */ } } }
     const result = (code, signal) => (Number.isInteger(code) ? { exit: code, detail: `exited ${code}` } : { exit: -1, detail: `killed by ${signal ?? 'a signal'}` })
     const killedDetail = () => `still running after ${Math.round(timeoutMs / 1000)} s: killed`
+    const killed = (detail) => ({ exit: -1, detail, timedOut: true, pid: child.pid })
     try {
       child = spawnImpl(argv.file, argv.args, { cwd, env, shell: false, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
     } catch (e) { finish({ exit: -1, detail: `could not start ${argv.file}: ${e && e.message}` }); return }
@@ -124,13 +126,13 @@ export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = ()
         try { child.kill() } catch { /* already gone */ }
         later(killGraceMs, () => {
           try { child.kill('SIGKILL') } catch { /* already gone */ }
-          later(reapMs, () => { release(); finish({ exit: -1, detail: `${killedDetail()}, but it had not exited ${Math.round((killGraceMs + reapMs) / 1000)} s after SIGTERM` }) })
+          later(reapMs, () => { release(); finish(killed(`${killedDetail()}, but it had not exited ${Math.round((killGraceMs + reapMs) / 1000)} s after SIGTERM`)) })
         })
       })
     }
     child.on('error', (e) => finish({ exit: -1, detail: `could not start ${argv.file}: ${e && e.message}` }))
     child.on('exit', (code, signal) => {
-      if (timedOut) { release(); finish({ exit: -1, detail: killedDetail() }); return }
+      if (timedOut) { release(); finish(killed(killedDetail())); return }
       for (const t of timers) clearTimeout(t)
       later(drainMs, () => {
         release()
@@ -138,7 +140,7 @@ export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = ()
         finish({ ...r, detail: `${r.detail}; its output pipes were still held open ${drainMs} ms later (a background process?)` })
       })
     })
-    child.on('close', (code, signal) => finish(timedOut ? { exit: -1, detail: killedDetail() } : result(code, signal)))
+    child.on('close', (code, signal) => finish(timedOut ? killed(killedDetail()) : result(code, signal)))
   })
 }
 
@@ -159,6 +161,9 @@ export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = 
       if (target.type === 'command') {
         if (!ran.has(target.value)) ran.set(target.value, await runCommand({ cmd: target.value, cwd, env, spawnImpl, onOutput, timeoutMs: commandTimeoutMs }))
         const r = ran.get(target.value)
+        // A timed-out command's descendants may still be running and changing files, so nothing may run after it:
+        // not the next command, not the reviewer. The run stops here, unrun, and no record is written.
+        if (r.timedOut) throw new Error(`conformance stopped, unrun: ${t.id} command \`${target.value}\` (pid ${r.pid ?? 'unknown'}) was ${r.detail}. No record was written and nothing else ran. Processes it started may still be running: check for them before running conformance again (raise --timeout-min if the command needs longer).`)
         out[out.length] = { task: t.id, target, ok: r.exit === 0, detail: r.detail, exit: r.exit }
         continue
       }
