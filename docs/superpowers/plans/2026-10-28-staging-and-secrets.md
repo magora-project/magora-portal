@@ -582,7 +582,14 @@ This is a spec exception, for David to approve. The migration changes production
   - For each `EXECUTE` violation, read the function. Allowlist it, with its reason, only if it cannot write.
   - A writing `SECURITY DEFINER` function callable through `PUBLIC` is **not** allowlisted. It goes to the private advisory (Task 7), and production's privilege check (Task 13 Step 3) stays red until that fix is applied.
   - A `WRITES_WITHOUT_TABLE_PRIVILEGE` violation (Task 11) cannot be allowlisted either. It goes to the advisory, and production's check stays red until it is fixed.
-  - 🔴 **OPEN before this step is executed: how that fix ships.** Found by Codex on the spec branch, 2026-10-29. The likely fix is revoking `EXECUTE` on those functions from `PUBLIC`, which changes production and needs David's approval. Not yet decided: which migration carries it (the grants migration's rollback is defined as revoking exactly its `GRANT SELECT`s, so adding the revoke there breaks that contract); whether its rollback restores the `PUBLIC` grants or deliberately keeps them revoked; and re-running Step 2's local cycle once the final migration contents are known, checking the state after rollback, not only after re-apply. Until it is decided, this step's local PASS cannot be expected on a stack that exposes these functions.
+  - **How that fix ships** (#47 item 1; route chosen by David, 2026-11-06; the production change itself still needs his approval before it is applied):
+    - Its own migration, `<date>_revoke_public_writer_functions.sql`, with its rollback, so the grants migration keeps its contract (its rollback revokes exactly its `GRANT SELECT`s).
+    - It names a fixed list: the `WRITES_WITHOUT_TABLE_PRIVILEGE` signatures that Task 11 Step 5 observed callable through `PUBLIC` on the local Supabase stack. For each, it first raises an exception unless `PUBLIC` holds `EXECUTE` (the state differs from the one reviewed), then revokes, then raises an exception if `PUBLIC` still holds it. `REVOKE` without the right to change a function's privileges only warns, so this check is what turns a silent no-op into a failure.
+    - Its rollback grants `EXECUTE` to `PUBLIC` on exactly the same list, so applying migration, rollback and migration on staging (§5.5) is exact. A unit test parses both files and requires the same signatures.
+    - Re-run Step 2's local cycle with this migration in place, and compare the state after the rollback with the state before the migration, not only after the re-apply.
+    - **Expected obstacle**, from reading Supabase's image source (`supabase/postgres` at `c6226c6`, not yet run): `postgres` is demoted to `NOSUPERUSER` (`10000000000000_demote-postgres.sql`) and does not own the `pg_catalog` functions, so the migration will probably raise on the local stack. If it does:
+      - David asks Supabase support to revoke `EXECUTE` from `PUBLIC` on the listed signatures. Production's privilege check (Task 13 Step 3) stays red until it is done; if support declines, David decides again.
+      - Meanwhile, the refresh (Task 18) fails if `pg_largeobject_metadata` has any row. Nothing comparable watches `pg_logical_emit_message`, whose writes go only to the WAL; that gap is recorded with the advisory (Task 7).
   - Non-`EXECUTE` privileges reached through `PUBLIC` (`USAGE`/`CREATE` on schemas, `TEMP` on the database) are handled the same way: `USAGE` is not in §5.10's forbidden list. `CREATE` on `public` is revoked from `PUBLIC` by Supabase's defaults; if it is present, it goes to the advisory. `TEMP` is not a write to production data, and is recorded in the allowlist file's header as accepted, for David to confirm.
   - Expected after this step: the check passes locally.
 - [ ] **Step 5: Commit** with PR D. The production application is Task 13 Step 3.
@@ -765,13 +772,10 @@ This is a spec exception, for David to approve. The migration changes production
   - The `refresh` job's first step fails unless `github.ref == 'refs/heads/main'`.
   - Checkout with `ref: main`, `fetch-depth: 0` (the smoke's SHA check needs history) and `persist-credentials: false`.
   - `npm ci`, then `node scripts/staging/refresh/index.mjs --audio-nights "$AUDIO_NIGHTS"`, with every secret passed through `env:`. Until Task 22 lands it runs with `--no-smoke`.
-- [ ] **Step 1b: Write `scripts/staging/lease.mjs` and `lease.test.mjs`** (interfaces in Task 26's lease paragraph):
-  - the four `admit` cases
-  - `claim` refusing an already-held lease
-  - `release` refusing the wrong login, with `gh` injected as a fake
-  - 🔴 These cases are superseded by the lease design that Task 26's OPEN block requires; write the tests that design names.
+- [ ] **Step 1a (operator): run the probe** in `docs/superpowers/specs/2026-11-06-staging-lease-design.md` §4 and record its results for the PR D description. If a duplicate create does not return 409, stop: the lease design goes back for revision.
+- [ ] **Step 1b: Write `scripts/staging/lease.mjs` and `lease.test.mjs`** to that spec (§3.2), with the tests its §5 names, `gh` injected as a fake.
 
-  Run it: FAIL, implement, PASS.
+  Run it: FAIL, implement, PASS. Then sabotage each rule §5 names and confirm a test fails.
 - [ ] **Step 2: Lint.** `actionlint` is clean. Read the YAML for any `pull_request` trigger (there must be none) and for `${{ secrets.* }}` inside a `run:` line (there must be none).
 - [ ] **Step 3 (operator, David):**
   - Create the `staging-sync` environment, set to `main` only.
@@ -1028,33 +1032,26 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
 
 **The staging lease** (built in Task 20, in PR D, so it is on `main` before this runbook is rehearsed). Disabling the workflow would also block the refreshes the session itself needs, and it does not stop a run already in progress. Instead, the session holds a lease in the repository Actions variable `STAGING_HELD_BY`, which is not a secret.
 - `staging-refresh.yml`'s `admit` job gates its `refresh` job, so no step that writes runs unless admitted.
-- `admit({event, held, holder}) -> boolean`:
-  - a schedule while held → false
-  - a schedule while unheld → true
-  - a dispatch while held → true only if `holder === held`
-  - a dispatch while unheld → true
-- `scripts/staging/lease.mjs` also exports `claim(login)` and `release(login)`, which call `gh variable`:
-  - `claim` refuses if the variable is already set, sets it, and reads it back to confirm that it holds `login`.
-  - `release` refuses unless the variable holds `login`.
-- 🔴 **OPEN before Task 20 is implemented: the lease is not yet exclusive.** Found by Codex on the spec branch, 2026-10-29; design it in its own artifact before Task 20, as the first work of PR D (Task 20 ships in PR D), and do not implement `claim`/`release` as written above. Known so far:
-  - `claim` as written is read, set, read back, so two maintainers can both win. Acquiring by **creating** the variable (`POST repos/{owner}/{repo}/actions/variables`) gives one winner: the endpoint refuses an existing name with 409 (GitHub's own CLI handles that response; the REST reference documents only 201). Confirm with a one-time probe in this repository. Never fall back to `gh variable set` or a PATCH, which overwrite.
-  - `release` has no atomic delete-if-equal: GitHub's delete is by name only. A release must be bound to its own session, including two sessions under one OS account and one GitHub login, so a late or repeated release cannot delete a newer lease. A shared local token path does not achieve that.
-  - Recovery is undefined for a stranded lease (a crashed session, a lost proof) and for an empty-valued variable, which blocks every claim while `admit` reads it as unheld (`vars.*` is `''` for both). An uncoordinated manual delete can erase a successful claim.
-  - Same-machine concurrent claims need exclusive local proof creation as well as the remote winner.
-  - Tests must cover interleaved claims, a repeated or late release after another claim, and recovery.
+- The lease is designed in `docs/superpowers/specs/2026-11-06-staging-lease-design.md` (#47 item 2, which replaced this task's earlier OPEN block). In short:
+  - `claim(login)` **creates** the variable with the value `<login>:<id>`, a fresh random `<id>` per claim, and prints that value. GitHub refuses an existing name, so one claim wins. It never overwrites (no `PATCH`, `PUT` or `gh variable set`).
+  - `release(value)` deletes the variable only if it still holds exactly `value`, so a late or repeated release refuses.
+  - `break({expect, holderConfirmed})` deletes a stranded or malformed lease whose value equals `expect`, once it is 12 hours old or the holder has agreed in the maintainers' channel.
+  - `admit({event, held, holder})` follows the spec's §3.2 table; `holder` is the whole value.
+  - Before Task 20 is implemented, the spec's §4 probe confirms that GitHub refuses a duplicate name with 409.
 
 - [ ] **Step 1: Write the runbook** following §5.5, with exact commands.
-  - Claim staging in the maintainers' channel. Then run `node scripts/staging/lease.mjs claim <github-login>`.
+  - Claim staging in the maintainers' channel. Then run `node scripts/staging/lease.mjs claim <github-login>`, and keep the value it prints (`<lease>` below); release and dispatches need it.
   - Drain: wait until `gh run list --workflow staging-refresh.yml --json status --jq '[.[] | select(.status != "completed")] | length'` prints `0`. That covers queued, waiting, pending and in-progress runs.
-  - `gh workflow run staging-refresh.yml -f holder=<login>`, and wait for green.
+  - `gh workflow run staging-refresh.yml -f holder=<lease>`, and wait for green.
   - Apply the PR's migration, its rollback, then the migration again, through `op run --env-file=env/staging.env -- node scripts/db/apply-migrations.mjs --db-url-env STAGING_DB_URL --file <path>`. That entry point refuses non-staging refs through `writeTarget: 'staging'`.
   - Run the simulated node.
-  - End with `gh workflow run staging-refresh.yml -f holder=<login>`. Once it is green, run `node scripts/staging/lease.mjs release <login>`.
+  - End with `gh workflow run staging-refresh.yml -f holder=<lease>`. Once it is green, run `node scripts/staging/lease.mjs release <lease>`.
+  - A stranded lease (a crashed session, a lost value): post in the channel, then `node scripts/staging/lease.mjs status` and `node scripts/staging/lease.mjs break --expect <value status printed>`, adding `--holder-confirmed` only after the holder agreed in the channel.
   - After merge, confirm that day's daily backup exists, apply to production by the current method, and run a refresh.
   - One session at a time: a set variable means staging is taken.
 - [ ] **Step 2: Add the code.**
   - Add the `--file` entry point to `apply-migrations.mjs`, plus a test that `--db-url-env` pointing at the production ref is refused before connecting.
-  - Before rehearsing (Step 4), confirm on `main` that a dispatch with `-f holder=<login>` while held runs the `refresh` job, and that one with another login skips it.
+  - Before rehearsing (Step 4), confirm on `main` that a dispatch with `-f holder=<lease>` while held runs the `refresh` job, and that one with any other value skips it.
 - [ ] **Step 3: Edit AGENTS.md.**
 - [ ] **Step 4 (operator): rehearse the runbook end to end,** with a scratch project standing in for production. Record the result in the runbook. This is criterion 3.
   The scratch source is built from the repo, not from a production copy. That way its schema and ACLs match production's by construction (the drift check proves it), and no production data is held.
