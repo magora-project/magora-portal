@@ -76,6 +76,9 @@ claim finds the other value and refuses.
 
 **`status()`** prints the value (marking a malformed one), `created_at`, and its age, or "not held".
 
+**`verify(value)`** exits 0 only if the variable holds exactly `value`, and 1 otherwise, printing what
+it found. It never writes.
+
 **`break({expect, holderConfirmed})`** removes a stranded or malformed lease.
 
 1. `GET` the variable. `404`: print "not held" and exit 0.
@@ -101,12 +104,29 @@ empty. Admitting a refresh in both cases is safe: an empty variable blocks every
 can be in progress. The workflow's `holder` input is the whole value, so only the session that holds it
 can dispatch a refresh while it is held.
 
-### 3.3 Residual risk (accepted)
+### 3.3 The session around the lease
 
-`release` and `break` read and then delete; GitHub offers nothing atomic. If, between session A's read
-and delete, someone breaks A's lease and B claims, A deletes B's lease. This needs a `break` of a live
-lease at the moment its holder releases it, which `break`'s 12-hour rule and the channel agreement make
-unlikely. A deleted lease is visible: B's `release` then refuses with "not held", and B re-claims.
+The lease admits or refuses a refresh when its `admit` job runs; it does not stop a run admitted
+earlier. And `release` and `break` read and then delete, which GitHub cannot do atomically. The session
+procedure (plan Task 26's runbook) closes both gaps:
+
+1. **Drain after claiming.** Once `claim` wins, wait until no `staging-refresh.yml` run is queued,
+   waiting, pending or in progress. A run admitted before the claim finishes or is seen still running;
+   every run started after the claim reads the lease and is refused unless it carries the value.
+2. **Verify before each write.** Run `verify <lease>` before the session's refresh dispatch, before
+   applying the migration, its rollback and the migration again, before the simulated node, and before
+   the closing refresh. If it fails, stop: the lease was lost, and the session starts again from claim.
+3. **Release once.** Run `release` once and wait for it to exit; never run two releases, or a release
+   and a break, at the same time.
+
+### 3.4 Residual risk (accepted)
+
+Read-then-delete leaves one race: if a lease is deleted between a `release` or `break`'s read and its
+delete (by a second, concurrent `release` of the same value, or by a `break`) and another session claims
+in that gap, the late delete removes the new lease. §3.3 step 3 forbids the concurrent release, and
+`break`'s 12-hour rule and channel agreement make a break of a live lease unlikely. If it happens
+anyway, the new holder's next `verify` fails before its next write to staging (§3.3 step 2), so no
+write runs without the lease; that session starts again from claim.
 
 ## 4. Before Task 20: a one-time probe (operator)
 
@@ -136,6 +156,8 @@ All against the fake `gh`, which keeps one variable store and can delay or drop 
   session's claim refuses and leaves that lease in place; a malformed value is refused before any call.
 - `break`: a value mismatch refuses; a lease under 12 hours old refuses without `--holder-confirmed`
   and is deleted with it; an old lease is deleted; `expect ''` breaks an empty variable.
+- `verify` exits 0 only for the exact value, and 1 when the lease is absent, held by another value or
+  malformed; it makes no write call.
 - No code path issues `PATCH` or `PUT`: the fake fails the test on either.
 
 Each test must fail when the rule it covers is removed from `lease.mjs` (sabotage, as the plan requires

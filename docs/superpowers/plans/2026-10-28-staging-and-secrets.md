@@ -1036,7 +1036,9 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
   - `claim(login)` **creates** the variable with the value `<login>:<id>`, a fresh random `<id>` per claim, and prints that value. GitHub refuses an existing name, so one claim wins. It never overwrites (no `PATCH`, `PUT` or `gh variable set`).
   - `release(value)` deletes the variable only if it still holds exactly `value`, so a late or repeated release refuses.
   - `break({expect, holderConfirmed})` deletes a stranded or malformed lease whose value equals `expect`, once it is 12 hours old or the holder has agreed in the maintainers' channel.
+  - `verify(value)` exits 0 only while the variable holds exactly `value`.
   - `admit({event, held, holder})` follows the spec's §3.2 table; `holder` is the whole value.
+  - The runbook below follows the spec's §3.3: drain after claiming, `verify <lease>` before each write to staging, and one release at a time.
   - Before Task 20 is implemented, the spec's §4 probe confirms that GitHub refuses a duplicate name with 409.
 
 - [ ] **Step 1: Write the runbook** following §5.5, with exact commands.
@@ -1045,7 +1047,8 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
   - `gh workflow run staging-refresh.yml -f holder=<lease>`, and wait for green.
   - Apply the PR's migration, its rollback, then the migration again, through `op run --env-file=env/staging.env -- node scripts/db/apply-migrations.mjs --db-url-env STAGING_DB_URL --file <path>`. That entry point refuses non-staging refs through `writeTarget: 'staging'`.
   - Run the simulated node.
-  - End with `gh workflow run staging-refresh.yml -f holder=<lease>`. Once it is green, run `node scripts/staging/lease.mjs release <lease>`.
+  - End with `gh workflow run staging-refresh.yml -f holder=<lease>`. Once it is green, run `node scripts/staging/lease.mjs release <lease>` once, and wait for it to exit.
+  - Before each dispatch, each apply and the simulated node, run `node scripts/staging/lease.mjs verify <lease>`. If it fails, stop: the lease was lost, and the session starts again from the claim.
   - A stranded lease (a crashed session, a lost value): post in the channel, then `node scripts/staging/lease.mjs status` and `node scripts/staging/lease.mjs break --expect <value status printed>`, adding `--holder-confirmed` only after the holder agreed in the channel.
   - After merge, confirm that day's daily backup exists, apply to production by the current method, and run a refresh.
   - One session at a time: a set variable means staging is taken.
