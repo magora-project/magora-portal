@@ -601,7 +601,7 @@ This is a spec exception, for David to approve. The migration changes production
     - Its rollback grants `EXECUTE` to `PUBLIC` on exactly the same list, so applying migration, rollback and migration on staging (§5.5) returns to the reviewed state; the session's closing refresh replays the migration, which revokes again. A unit test, `scripts/db/revoke-writers.test.mjs`, parses both files and requires the same signatures.
     - Re-run Step 2's local cycle with this migration in place, and compare the state after the rollback with the state before the migration, not only after the re-apply.
   - Non-`EXECUTE` privileges reached through `PUBLIC` (`USAGE`/`CREATE` on schemas, `TEMP` on the database) are handled the same way: `USAGE` is not in §5.10's forbidden list. `CREATE` on `public` is revoked from `PUBLIC` by Supabase's defaults; if it is present, it goes to the advisory. `TEMP` is not a write to production data, and is recorded in the allowlist file's header as accepted, for David to confirm.
-  - Expected after this step: the check passes locally.
+  - Expected after this step: on route A, the check passes locally. On route B, it reports exactly the `WRITES_WITHOUT_TABLE_PRIVILEGE` violations listed above, and nothing else.
 - [ ] **Step 5: Commit** with PR D. The production application is Task 13 Step 3.
 
 ### Task 16: Refresh: reset and rebuild with drift check

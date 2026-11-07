@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "c02b0b8428e2850d96d95b597cfdd2326254324a",
+    "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "Route B deliberately retains local WRITES_WITHOUT_TABLE_PRIVILEGE violations, but Step 4 still requires the local check to pass at line 604 and forbids allowlisting them, making its completion criterion impossible; specify the exact expected violations for route B here as well.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 595
+    }
+  ],
+  "supersedes": "plan--2d71934e020d--1",
+  "createdAt": "2026-11-07T03:19:12.516Z"
+}
