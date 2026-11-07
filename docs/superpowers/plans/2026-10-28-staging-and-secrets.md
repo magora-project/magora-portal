@@ -592,7 +592,8 @@ This is a spec exception, for David to approve. The migration changes production
     - **Route A, if `postgres` can revoke:** the migration below.
     - **Route B, if it cannot:** no migration. A migration that could only pass where Supabase had already revoked would fail on every fresh Supabase database: the local stack, the rehearsal's scratch project, and staging on each refresh. Instead:
       - David asks Supabase support to revoke `EXECUTE` from `PUBLIC` on the listed signatures for **production and staging**. Production's privilege check (Task 13 Step 3) stays red until production is done; if support declines, David decides again.
-      - The local stack and a rehearsal scratch project keep the privilege. The itest's recorded baseline (Task 11 Step 5) already carries these violations, and Task 26's scratch privilege check expects exactly them, listed, instead of a clean pass.
+      - The rehearsal's scratch project needs the same revoke from support before Task 26 checks it, because every refresh's privilege gate (Task 18) must pass against its source.
+      - Only the local stack keeps the privilege. The itest's recorded baseline (Task 11 Step 5) already carries these violations, and no refresh runs against the local stack.
       - Meanwhile, the refresh (Task 18) fails if `pg_largeobject_metadata` has any row in production. Nothing comparable watches `pg_logical_emit_message`, whose writes go only to the WAL; that gap is recorded with the advisory (Task 7).
       - Task 13's `apply-setup.mjs` table and Step 3 drop the revoke migration, and this task's Files list drops it and its test.
   - **Route A, the migration:**
@@ -1082,7 +1083,8 @@ The source check confirms that all three name the scratch ref. Only the cleanup 
      - With `apply-setup.mjs --target scratch --ref <scratch-ref>`, apply `roles.sql`, then each file `listMigrationFiles` returns on `main`, once each, in order. That list starts with the baseline and includes the grants migration. Every scratch command in this step passes `--ref <scratch-ref>`.
      - Set the scratch login's password.
      - Apply `supabase/setup/rehearsal-fixture.sql` the same way. It is a fixed file (written in this task) that inserts one auth user, the steward, and two nodes, so the refresh has something to copy and remap. The simulated node is not used against scratch, because it refuses every ref but staging's.
-     - Run the privilege check against `SCRATCH_DB_URL`. Expected: pass on Task 15b's route A. On route B, exactly the `WRITES_WITHOUT_TABLE_PRIVILEGE` violations Task 15b Step 4 listed, and nothing else.
+     - On Task 15b's route B, before this check, David has Supabase support revoke the listed signatures on the scratch project too, as for production and staging; the refresh's own privilege gate (Task 18) accepts no violation.
+     - Run the privilege check against `SCRATCH_DB_URL`. Expected: pass.
   2. **Pre-merge state.**
      - On a local branch `rehearsal/probe` (never pushed), add `create table public.rehearsal_probe(id int)`, its rollback, and a manifest entry `"rehearsal_probe": {"class": "excluded", "reason": "rehearsal"}`. An excluded table needs no grant.
      - Refresh from a `main` checkout. Expected: green, including the drift check, which proves the scratch source equals the rebuilt staging.
