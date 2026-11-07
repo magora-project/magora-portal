@@ -5,7 +5,7 @@
 //     review, written as one conformance record (scripts/review/conformance.mjs, spec §5.4).
 //   check --local: judges the records in .review/records/ against this checkout, as CI's review-evidence
 //     does, with the lane, depth and fields from .review/local.json (scripts/ci/review-evidence.mjs). Exit 0 or 1.
-//   init-local --lane <lane> --depth <label> [--spec <path>] [--plan "<path> <tasks>"] [--deviation "D<n>: why"]...
+//   init-local --lane <lane> --depth <label> [--spec <path>] [--plan "<path> <tasks>"] [--deviation "<id>: why"]...
 //     writes .review/local.json (machine-local, git-ignored).
 import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -16,7 +16,7 @@ import { initLocal, localCheck } from '../ci/review-evidence.mjs'
 
 const USAGE = `usage:
   review.mjs check --local
-  review.mjs init-local --lane <lane> --depth <label> [--spec <path>] [--plan "<path> <tasks>"] [--deviation "D<n>: justification"]...`
+  review.mjs init-local --lane <lane> --depth <label> [--spec <path>] [--plan "<path> <tasks>"] [--deviation "<D<n> or <stem>#D<n>>: justification"]...`
 
 export async function reviewCli(argv, opts = {}) {
   const io = opts.io ?? { out: (s) => process.stdout.write(s), err: (s) => process.stderr.write(s) }

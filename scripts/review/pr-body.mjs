@@ -5,6 +5,13 @@ export const LANES = ['specced', 'direct', 'docs-only', 'dependency']
 const FIELD = /^\s*(?:[-*]\s+)?(?:\*\*)?(Lane|Spec|Plan|Deviations):(?:\*\*)?\s*(.*)$/
 const MAX_RANGE = 1000
 
+// A deviation ID exactly as the conformance record lists it: `D<n>` from the run that found it, or, once a re-review
+// inherited it, `<record stem>#D<n>` (possibly chained), a stem being `<slotfile>--<id12>--<n>` (records.mjs).
+export const DEVIATION_ID = '(?:[a-z]+(?:-[a-z]+)*--[0-9a-f]{12}--[1-9][0-9]*#)*D[0-9]+'
+// One Deviations entry, "<id>: justification" -> [, id, justification].
+export const DEVIATION_ENTRY = new RegExp(`^(${DEVIATION_ID}):\\s*(.*)$`)
+const ENTRY_HELP = '"- <id>: justification" line per deviation, the ID copied from the conformance record (D<n> or <stem>#D<n>)'
+
 const clean = (v) => v.replace(/\s+$/, '').trim()
 const unquote = (v) => clean(v).replace(/^`+|`+$/g, '').trim()
 const isNone = (v) => /^none$/i.test(unquote(v))
@@ -87,19 +94,19 @@ export function parseBody(body, { author } = {}) {
 
   const deviations = []
   if (!('Deviations' in fields)) {
-    if (lane !== 'dependency') problems.push('Deviations: missing (write "none" or one "- D<n>: justification" line per deviation)')
+    if (lane !== 'dependency') problems.push(`Deviations: missing (write "none" or one ${ENTRY_HELP})`)
   } else {
     const inline = fields.Deviations
     const entries = [...(inline !== '' && !isNone(inline) ? [inline] : []), ...devLines]
     if (isNone(inline)) {
       if (devLines.length) problems.push('Deviations: "none" contradicts the entries below it')
     } else if (entries.length === 0) {
-      problems.push('Deviations: empty (write "none" or one "- D<n>: justification" line per deviation)')
+      problems.push(`Deviations: empty (write "none" or one ${ENTRY_HELP})`)
     }
     const seen = new Set()
     for (const e of entries) {
-      const m = /^(D\d+):\s*(.*)$/.exec(e.trim())
-      if (!m) { problems.push(`Deviations: bullet "${e.trim()}" is not "D<n>: justification"`); continue }
+      const m = DEVIATION_ENTRY.exec(e.trim())
+      if (!m) { problems.push(`Deviations: bullet "${e.trim()}" is not "<id>: justification", the ID being D<n> or <stem>#D<n> as the conformance record lists it`); continue }
       const [, id, rest] = m
       const justification = rest.trim()
       if (seen.has(id)) { problems.push(`Deviations: duplicate ID ${id}`); continue }

@@ -16,7 +16,7 @@ process.env.GIT_CONFIG_GLOBAL = emptyConfig
 process.env.GIT_CONFIG_NOSYSTEM = '1'
 
 const { inputIdentity, mergeBase } = await import('./identity.mjs')
-const { readRecords } = await import('./records.mjs')
+const { dispositionOk, readRecords } = await import('./records.mjs')
 const { parseBody } = await import('./pr-body.mjs')
 const { evaluate } = await import('../ci/review-evidence.mjs')
 const { reviewCli } = await import('./review.mjs')
@@ -286,6 +286,31 @@ try {
     await cli(repo, conformance('T4', ['--supersedes', justified.stem]), { verdictFor: allInherited('open') })
     const head = heads(repo)[0]
     ok('a justified deviation the reviewer still sees comes back with no disposition', head.findings.map((f) => `${f.id}:${f.disposition === undefined}`).join() === `${justified.stem}#D1:true` && head.conformance.deviations.join() === `${justified.stem}#D1`)
+  }
+  // --- a deviation still open after a re-review is justified under its chained ID, verbatim ---
+  {
+    const repo = mkrepo()
+    await cli(repo, conformance('T4'), { verdictFor: () => ({ verdict: 'fail', findings: [{ id: 'F1', severity: 'P2', summary: 'one' }, { id: 'F2', severity: 'P1', summary: 'two' }], inherited: [] }) })
+    const first = readRecords({ cwd: repo })[0]
+    ok('chained: the first run has D1 and D2', first.findings.map((f) => f.id).join() === 'D1,D2')
+    // the author fixes D1; the re-review resolves D1 and leaves D2 open
+    put(repo, 'edited.mjs', 'export const e = 3\n')
+    commit(repo, 'fix D1')
+    await cli(repo, conformance('T4', ['--supersedes', first.stem]), { verdictFor: (prompt, ids) => ({ verdict: 'fail', findings: [], inherited: ids.map((id) => ({ id, status: id.endsWith('#D1') ? 'resolved' : 'open', note: '' })) }) })
+    const second = heads(repo)[0]
+    const chainedId = `${first.stem}#D2`
+    ok('chained: D2 is left open as <stem>#D2 and is the only deviation', second.conformance.deviations.join() === chainedId && second.findings.find((f) => f.id === chainedId)?.disposition === undefined)
+    const disp = await cli(repo, ['dispose', '--record', second.stem, '--finding', chainedId, '--kind', 'justified-deviation', '--reason', 'see Deviations'])
+    const head = heads(repo)[0]
+    const body = parseBody(`Lane: specced\nSpec: docs/spec.md\nPlan: ${PLAN} T4\nDeviations:\n- ${chainedId}: the plan's version is not needed; the built one is simpler`)
+    ok('chained: the PR body parses the chained ID verbatim', body.problems.length === 0 && body.deviations.map((d) => d.id).join() === chainedId)
+    ok('chained: the disposed head lists the same deviation ID set as the body', disp.code === 0 && head.supersedes === second.stem && head.conformance.deviations.join() === chainedId)
+    ok('chained: dispositionOk accepts the justified chained finding', dispositionOk(head.findings.find((f) => f.id === chainedId), { deviations: body.deviations, recordType: head.type }) === true)
+    const identity = await inputIdentity({ cwd: repo, base: 'main', head: 'HEAD' })
+    const verdict = evaluate({ records: readRecords({ cwd: repo }), required: [{ slot: 'conformance', input: { kind: 'pr' } }], identity, body })
+    ok('chained: the chain head passes review-evidence with the chained ID in Deviations', verdict.ok === true && verdict.lines.some((l) => l.startsWith('ok conformance')))
+    const without = evaluate({ records: readRecords({ cwd: repo }), required: [{ slot: 'conformance', input: { kind: 'pr' } }], identity, body: parseBody(`Lane: specced\nSpec: docs/spec.md\nPlan: ${PLAN} T4\nDeviations: none`) })
+    ok('chained: the same head fails when the body does not list the chained ID', without.ok === false)
   }
 } finally {
   rmSync(root, { recursive: true, force: true })

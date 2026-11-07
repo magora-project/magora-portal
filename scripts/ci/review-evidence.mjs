@@ -42,7 +42,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { EVIDENCE_DIR, blobIdentity, git, inputIdentity, mergeBase } from '../review/identity.mjs'
 import { addedRecordStems, chainHeads, dispositionOk, isBlockingByDefault, readRecords, repoPath, undisposedBlocking } from '../review/records.mjs'
-import { LANES, parseBody } from '../review/pr-body.mjs'
+import { DEVIATION_ENTRY, LANES, parseBody } from '../review/pr-body.mjs'
 import { DEPTH_LABELS, inferLabel, parseControlFiles } from './label-gate.mjs'
 
 export const ACTIVATION_PATH = '.github/review-activation.json'
@@ -435,7 +435,7 @@ export async function initLocal({ cwd = process.cwd(), lane, depth, spec, plan, 
   }
   if (deviations.length) {
     local.deviations = deviations.map((d) => {
-      const m = /^(D\d+):\s*(.*)$/.exec(d.trim())
+      const m = DEVIATION_ENTRY.exec(d.trim())
       return m ? { id: m[1], justification: m[2].trim() } : { id: d.trim(), justification: '' }
     })
   }
