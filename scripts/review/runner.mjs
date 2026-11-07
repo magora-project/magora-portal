@@ -378,9 +378,10 @@ const cmdRun = async (argv, ctx) => {
 
 // One review of o.slot (the parsed `run` flags), written as a record. `conf` is the conformance writer's part
 // (scripts/review/conformance.mjs), required for the conformance slot and refused for any other:
-//   { head, plan: { path, tasks, blob }, check: async ({ root, mb, head }) -> { findings, commands, context } }
+//   { head, plan: { path, tasks, blob }, check: async ({ root, mb, head }) -> { findings, commands, nextId, context } }
+// nextId: the first number for the reviewer's D IDs (after every check's position).
 // conf.head is the commit the writer read the plan at; the review refuses if HEAD is no longer that commit.
-// check() runs after every refusal and before the reviewer. Its findings (the failed postconditions, D1..Dn, each
+// check() runs after every refusal and before the reviewer. Its findings (the failed postconditions, D<position>, each
 // with source 'postcondition') lead the record; the reviewer's findings are renumbered to follow them; inherited
 // postcondition findings are dropped, because check() recomputes them on every run. The record carries
 // conformance: { tasks, deviations (the IDs of findings without a `fixed` disposition), commands, plan: { path, blob } }.
@@ -578,10 +579,10 @@ export const runReview = async (o, ctx, conf = null) => {
     if (c.outcome === 'completed') {
       const status = new Map(c.inherited.map((e) => [e.id, e.status]))
       const assessed = toAssess.map((f) => (status.get(f.id) === 'resolved' ? { ...f, disposition: { kind: 'fixed', by: newStem } } : f))
-      // Conformance deviation IDs: the postconditions' D1..Dn first, then the reviewer's findings in its order.
+      // Conformance deviation IDs: the postconditions' D<position> first, then the reviewer's from checked.nextId in its order.
       // Plan slot: `ref-N` belongs to the reference check (and is dropped on a re-review as recomputed), so a
       // reviewer finding with such an ID takes the first free F<n> instead.
-      const fresh = conf ? c.findings.map((f, i) => ({ ...f, id: `D${preFindings.length + i + 1}` })) : planRef ? awayFromRef(c.findings) : c.findings
+      const fresh = conf ? c.findings.map((f, i) => ({ ...f, id: `D${(checked.nextId ?? preFindings.length + 1) + i}` })) : planRef ? awayFromRef(c.findings) : c.findings
       findings = [...preFindings, ...fresh, ...assessed, ...carried]
     } else {
       findings = [...preFindings, ...toAssess, ...carried] // nobody reviewed: carry everything forward undisposed

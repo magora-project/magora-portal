@@ -56,6 +56,15 @@ try {
   ok('the trailing text is not part of the value (T2)', parsedThis.tasks.find((t) => t.id === 'T2').targets[0].value === '~/code/claude-config/hooks/spec_plan_threshold.sh')
   ok('this plan parses T1 to T25, once each', parsedThis.tasks.length === 25 && new Set(parsedThis.tasks.map((t) => t.id)).size === 25)
   ok('an untyped "- Create: x" line is a problem with its line number', /line \d+/.test(parsePlan('### Task 1: X\n\n**Files:**\n- Create: `x`\n').problems.join()))
+  // push-gate P2: a ./ or backslash spelling of a path is the same file as git's spelling
+  {
+    const has = setOf(['package.json', 'src/a.mjs'])
+    ok('modify ./package.json of an existing file is not reported', checkExisting({ plan: '### Task 1: X\n\n**Files:**\n- modify: `./package.json`\n', exists: has }).problems.length === 0)
+    ok('create ./package.json of an existing file is reported', checkExisting({ plan: '### Task 1: X\n\n**Files:**\n- create: `./package.json`\n', exists: has }).problems.some((p) => /already exists/.test(p)))
+    ok('a backslash path names the same file', checkExisting({ plan: '### Task 1: X\n\n**Files:**\n- modify: `src\\a.mjs`\n', exists: has }).problems.length === 0)
+    ok('create x.mjs then create ./x.mjs is a duplicate create', checkExisting({ plan: '### Task 1: X\n\n**Files:**\n- create: `x.mjs`\n\n### Task 2: Y\n\n**Files:**\n- create: `./x.mjs`\n', exists: has }).problems.some((p) => /already created by T1/.test(p)))
+    ok('delete a.mjs then modify ./src/a.mjs is reported', checkExisting({ plan: '### Task 1: X\n\n**Files:**\n- delete: `src/a.mjs`\n\n### Task 2: Y\n\n**Files:**\n- modify: `./src/a.mjs`\n', exists: has }).problems.some((p) => /T2.*not a file/.test(p)))
+  }
   // conformance D1: a list item that is not a "- " bullet is an untyped line, not the end of the Files block
   {
     const star = parsePlan('### Task 1: X\n\n**Files:**\n- create: `a.mjs`\n* `missing.mjs`\n- create: `b.mjs`\n')

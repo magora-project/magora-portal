@@ -11,16 +11,17 @@
 //   command: run now, from the repository root, with no shell; its exit status is recorded. Identical command
 //     strings run once and the result counts for each task. A command that cannot run (it needs a shell, or does
 //     not start, or is killed) is recorded with exit -1.
-// Each failed postcondition is a P1 deviation finding D1..Dn (source 'postcondition'), numbered before the
+// Each failed postcondition is a P1 deviation finding D<position of its check> (source 'postcondition'), numbered before the
 // reviewer's findings. The record is written by runner.mjs runReview; see there for the conformance block, which
 // also names the plan checked (its repo path and blob at HEAD; the plan must be committed).
 import { spawn as nodeSpawn } from 'node:child_process'
 import { win32 } from 'node:path'
 import { parseArgs } from 'node:util'
-import { EVIDENCE_DIR, blobIdentity, git } from './identity.mjs'
+import { EVIDENCE_DIR, git } from './identity.mjs'
 import { deviationIds, repoPath } from './records.mjs'
 import { filesAtRev, parsePlan, resolveTasks } from './plan-targets.mjs'
 import { UsageError, runReview, usage } from './runner.mjs'
+import { DRAIN_MS } from './adapters/codex.mjs'
 
 export { deviationIds }
 
@@ -86,19 +87,28 @@ export const commandArgv = (cmd, { platform = process.platform, execPath = proce
 }
 
 // -> { exit, detail }. The output goes to onOutput as it arrives and is not kept: a record is committed, and a
-// command's output can hold anything. exit -1 means the command did not run to an exit status.
-export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = () => {} }) => {
+// command's output can hold anything. exit -1 means the command did not run to an exit status. The result comes at
+// 'close', or drainMs after 'exit': a background descendant that inherited the pipes cannot hold the run open.
+export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = () => {}, drainMs = DRAIN_MS }) => {
   let argv
   try { argv = commandArgv(cmd) } catch (e) { return Promise.resolve({ exit: -1, detail: `not run: ${e.message}` }) }
   return new Promise((resolve) => {
-    let child, done = false
-    const finish = (r) => { if (!done) { done = true; resolve(r) } }
+    let child, done = false, drainTimer
+    const finish = (r) => { if (!done) { done = true; clearTimeout(drainTimer); resolve(r) } }
+    const result = (code, signal) => (Number.isInteger(code) ? { exit: code, detail: `exited ${code}` } : { exit: -1, detail: `killed by ${signal ?? 'a signal'}` })
     try {
       child = spawnImpl(argv.file, argv.args, { cwd, env, shell: false, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
     } catch (e) { finish({ exit: -1, detail: `could not start ${argv.file}: ${e && e.message}` }); return }
     for (const s of [child.stdout, child.stderr]) if (s) s.on('data', (d) => onOutput(d.toString()))
     child.on('error', (e) => finish({ exit: -1, detail: `could not start ${argv.file}: ${e && e.message}` }))
-    child.on('close', (code, signal) => finish(Number.isInteger(code) ? { exit: code, detail: `exited ${code}` } : { exit: -1, detail: `killed by ${signal ?? 'a signal'}` }))
+    child.on('exit', (code, signal) => {
+      drainTimer = setTimeout(() => {
+        for (const s of [child.stdout, child.stderr]) { try { s?.destroy() } catch { /* already closed */ } }
+        const r = result(code, signal)
+        finish({ ...r, detail: `${r.detail}; its output pipes were still held open ${drainMs} ms later (a background process?)` })
+      }, drainMs)
+    })
+    child.on('close', (code, signal) => finish(result(code, signal)))
   })
 }
 
@@ -136,15 +146,19 @@ export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = 
   return out
 }
 
-// The check runReview calls: the postconditions as findings D1..Dn, the commands, and a prompt section.
+// The check runReview calls: the failed postconditions as findings D<position>, the commands, nextId, and a prompt section.
 const conformanceCheck = ({ planPath, tasks, planProblems, ctx }) => async ({ root, mb, head }) => {
   const { io } = ctx
   const pc = await postconditions({ tasks, cwd: root, base: mb, head, env: ctx.env, spawnImpl: ctx.commandSpawnImpl, onOutput: (s) => io.err(s) })
   const failed = pc.filter((p) => !p.ok)
+  // Each ID is the check's position (plan problems, then every target in plan order), not its rank among the
+  // failures: fixing D1 must not turn the old D2 into D1, where a justification written for D1 would then pass.
+  // Positions hold while the plan blob and tasks hold; a change to either sends the full input (runner.mjs).
   const findings = [
-    ...planProblems.map((text) => ({ summary: `plan: ${text}`, file: planPath })),
-    ...failed.map((p) => ({ summary: `postcondition failed: ${p.task} ${p.target.type} \`${p.target.value}\`: ${p.detail}`, file: planPath, line: p.target.line })),
-  ].map((f, i) => ({ id: `D${i + 1}`, severity: 'P1', ...f, source: 'postcondition' }))
+    ...planProblems.map((text, i) => ({ id: `D${i + 1}`, summary: `plan: ${text}`, file: planPath })),
+    ...pc.map((p, i) => (p.ok ? null : { id: `D${planProblems.length + i + 1}`, summary: `postcondition failed: ${p.task} ${p.target.type} \`${p.target.value}\`: ${p.detail}`, file: planPath, line: p.target.line })).filter(Boolean),
+  ].map((f) => ({ severity: 'P1', ...f, source: 'postcondition' }))
+  const nextId = planProblems.length + pc.length + 1
   const commands = []
   for (const p of pc) if (p.target.type === 'command' && !commands.some((c) => c.cmd === p.target.value)) commands[commands.length] = { cmd: p.target.value, exit: p.exit }
   io.out(`conformance: ${pc.length} postcondition(s), ${failed.length} failed${planProblems.length ? `, ${planProblems.length} plan problem(s)` : ''}\n`)
@@ -154,13 +168,24 @@ const conformanceCheck = ({ planPath, tasks, planProblems, ctx }) => async ({ ro
     pc.length ? lines.join('\n') : 'The declared tasks have no create, modify, delete or command targets: nothing was checked mechanically.',
     '',
     findings.length
-      ? `The evidence writer recorded ${findings.map((f) => f.id).join(', ')} for these. Do not repeat them; your findings are numbered after them (D${findings.length + 1} on), in your order.`
-      : 'Every postcondition held. Your findings are numbered D1 on, in your order.',
+      ? `The evidence writer recorded ${findings.map((f) => f.id).join(', ')} for these. Do not repeat them; your findings are numbered after every check (D${nextId} on), in your order.`
+      : `Every postcondition held. Your findings are numbered D${nextId} on, in your order.`,
   ].join('\n')
-  return { findings, commands, context: [{ heading: 'Postconditions (run by the evidence writer)', text }] }
+  return { findings, commands, nextId, context: [{ heading: 'Postconditions (run by the evidence writer)', text }] }
 }
 
 // ---------- CLI ----------
+
+// -> { text, blob } of planPath at `head` (a commit sha), or null when it is not a file there. The text is read from
+// the blob, so the record's blob is the plan the tasks were resolved from.
+export const readPlanAt = async ({ root, head, planPath }) => {
+  const r = await git(['rev-parse', '--verify', '--quiet', `${head}:${planPath}`], { cwd: root })
+  if (r.code !== 0) return null
+  const blob = r.stdout.toString().trim()
+  const t = await git(['cat-file', 'blob', blob], { cwd: root })
+  if (t.code !== 0) return null
+  return { text: t.stdout.toString(), blob }
+}
 
 export async function conformanceCli(argv, ctx) {
   const { io } = ctx
@@ -173,14 +198,14 @@ export async function conformanceCli(argv, ctx) {
     if (planPath.startsWith('/') || /^[A-Za-z]:/.test(planPath) || planPath.startsWith('../')) usage('--plan must be relative to the repository root')
     // One HEAD for the plan text, its blob and the reviewed head: runReview refuses if HEAD moves before it reads it.
     const head = must(await git(['rev-parse', 'HEAD'], { cwd: root }), 'git rev-parse HEAD').trim()
-    const blob = await git(['cat-file', 'blob', `${head}:${planPath}`], { cwd: root })
-    if (blob.code !== 0) usage(`${planPath} is not a file at HEAD: commit the plan first (conformance reads it at the reviewed commit)`)
-    const planText = blob.stdout.toString()
+    const read = await readPlanAt({ root, head, planPath })
+    if (read === null) usage(`${planPath} is not a file at HEAD: commit the plan first (conformance reads it at the reviewed commit)`)
+    const planText = read.text
     // The record is bound to this plan: its path and its blob at HEAD, which must be what the work tree holds.
     const planDirty = await git(['diff', '--quiet', head, '--', `:(literal)${planPath}`], { cwd: root })
     if (planDirty.code === 1) usage(`${planPath} has uncommitted changes: commit them first, so the record names the plan it checked`)
     if (planDirty.code !== 0) throw new Error(`git diff --quiet HEAD failed (${planDirty.code}): ${planDirty.stderr.trim()}`)
-    const planBlob = await blobIdentity({ cwd: root, rev: head, path: planPath })
+    const planBlob = read.blob
     const sel = resolveTasks({ tasks: o.tasks, planExistsAtRev: true, plan: planText })
     if (sel.error) usage(sel.error)
     if (sel.tasks.length === 0) usage('conformance needs at least one task: --tasks none would check nothing')

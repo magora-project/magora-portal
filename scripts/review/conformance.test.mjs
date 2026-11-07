@@ -20,6 +20,7 @@ const { dispositionOk, readRecords, writeRecord } = await import('./records.mjs'
 const { parseBody } = await import('./pr-body.mjs')
 const { evaluate } = await import('../ci/review-evidence.mjs')
 const { reviewCli } = await import('./review.mjs')
+const { readPlanAt, runCommand } = await import('./conformance.mjs')
 const { runReview } = await import('./runner.mjs')
 const { commandArgv, declaredTasks, deviationIds, postconditions, splitCommand } = await import('./conformance.mjs')
 
@@ -200,10 +201,10 @@ try {
     ok('the identical command is run once and recorded once', r.commandSpawns.length === 1 && JSON.stringify(rec.conformance.commands) === '[{"cmd":"npm test","exit":1}]')
     ok('conformance.tasks is the declared tasks', rec.conformance.tasks.join() === 'T1,T2')
     ok('the record names the plan it checked: its repo path and its blob at HEAD', rec.conformance.plan?.path === PLAN && rec.conformance.plan?.blob === raw(repo, ['rev-parse', `HEAD:${PLAN}`]))
-    ok('failed postconditions are P1 deviations D1..D5, numbered before the reviewer finding, which becomes D6', rec.findings.map((f) => `${f.id}:${f.severity}`).join() === 'D1:P1,D2:P1,D3:P1,D4:P1,D5:P1,D6:P2' && rec.findings[5].summary === 'reviewer deviation')
+    ok('a failed postcondition is a P1 deviation numbered by its check\'s position (7 checks; 2 and 4 hold), and the reviewer finding follows every check as D8', rec.findings.map((f) => `${f.id}:${f.severity}`).join() === 'D1:P1,D3:P1,D5:P1,D6:P1,D7:P1,D8:P2' && rec.findings[5].summary === 'reviewer deviation')
     ok('a postcondition deviation names its task and target, at the plan line', /T1/.test(rec.findings[0].summary) && /new\.mjs/.test(rec.findings[0].summary) && rec.findings[0].file === PLAN && Number.isInteger(rec.findings[0].line))
     ok('no undeclared task is checked', rec.findings.every((f) => !/T3|t3\.mjs/.test(f.summary)))
-    ok('every unfixed finding is a deviation', rec.conformance.deviations.join() === 'D1,D2,D3,D4,D5,D6')
+    ok('every unfixed finding is a deviation', rec.conformance.deviations.join() === 'D1,D3,D5,D6,D7,D8')
     const prompt = r.reviewerCalls[0]?.prompt ?? ''
     ok('one reviewer call, the conformance slot prompt with the declared tasks and the PR diff', r.reviewerCalls.length === 1 && prompt.includes('SLOT PROMPT FOR conformance') && prompt.includes('Task one body.') && prompt.includes(fixtureDiffMarker) && prompt.includes(`### Plan ${PLAN}, T1`) && prompt.includes(`### Plan ${PLAN}, T2`) && prompt.includes(`### Plan ${PLAN}, T3`) === false)
     ok('the prompt carries the postcondition results', /new\.mjs/.test(prompt) && /npm test/.test(prompt))
@@ -247,6 +248,48 @@ try {
     const movedErr = await runReview({ slot: 'conformance', author: 'anthropic' }, { cwd: repo, promptFor, env: {}, io: moved.io, spawnImpl: reviewerSpawn([], () => ({ verdict: 'pass', findings: [], inherited: [] })) }, { head: '0'.repeat(40), plan: { path: PLAN, tasks: ['T4'], blob: 'e'.repeat(40) }, check: async () => { throw new Error('check ran') } }).then(() => '', (e) => e.message)
     ok('a conformance run whose plan was read at another HEAD is refused before the check runs', /HEAD moved/.test(movedErr))
     ok('...and nothing was written by any refusal', readRecords({ cwd: repo }).length === 0)
+  }
+
+  // --- follow-up: a postcondition's ID is its check's position, so fixing D1 does not renumber the rest ---
+  {
+    const repo = mkrepo()
+    await cli(repo, conformance('T1'))
+    const first = readRecords({ cwd: repo })[0]
+    ok('T1: new.mjs, untouched.mjs and npm test fail as D1, D3, D5', first.findings.map((f) => f.id).join() === 'D1,D3,D5')
+    put(repo, 'new.mjs', 'export const n = 1\n')
+    commit(repo, 'create new.mjs')
+    await cli(repo, conformance('T1', ['--supersedes', first.stem]))
+    const again = heads(repo)[0]
+    ok('after D1 is fixed the others keep their IDs (D3, D5), not D1, D2', again.supersedes === first.stem && again.findings.filter((f) => f.source === 'postcondition').map((f) => f.id).join() === 'D3,D5')
+  }
+
+  // --- push-gate P2: a command whose background descendant holds its pipes still yields a result ---
+  {
+    const child = new EventEmitter()
+    child.stdout = new PassThrough(); child.stderr = new PassThrough()
+    const pending = runCommand({ cmd: 'npm test', cwd: root, env: {}, spawnImpl: () => child, drainMs: 20 })
+    setTimeout(() => child.emit('exit', 0, null), 5) // 'exit' with no 'close': a descendant still holds the pipes
+    const r = await Promise.race([pending, new Promise((res) => setTimeout(() => res('hung'), 2000))])
+    ok('a command that exits while a descendant holds its pipes resolves with its exit status', r !== 'hung' && r.exit === 0 && /still held open/.test(r.detail))
+    ok('...and its pipes are released', child.stdout.destroyed && child.stderr.destroyed)
+    const c2 = new EventEmitter()
+    c2.stdout = new PassThrough(); c2.stderr = new PassThrough()
+    const p2 = runCommand({ cmd: 'npm test', cwd: root, env: {}, spawnImpl: () => c2, drainMs: 1000 })
+    setTimeout(() => { c2.emit('exit', 1, null); c2.emit('close', 1, null) }, 5)
+    const r2 = await p2
+    ok('a command that closes normally resolves at close with its exit status', r2.exit === 1 && r2.detail === 'exited 1')
+  }
+
+  // --- follow-up: the plan is read at the captured head, not at whatever HEAD is now ---
+  {
+    const repo = mkrepo()
+    const before = raw(repo, ['rev-parse', 'HEAD'])
+    const oldBlob = raw(repo, ['rev-parse', `HEAD:${PLAN}`])
+    put(repo, PLAN, `${planText}\nlater text\n`)
+    commit(repo, 'amend the plan')
+    const at = await readPlanAt({ root: repo, head: before, planPath: PLAN })
+    ok('readPlanAt reads the plan text and blob at the given commit, not at HEAD', at.blob === oldBlob && at.blob !== raw(repo, ['rev-parse', `HEAD:${PLAN}`]) && !at.text.includes('later text'))
+    ok('readPlanAt is null for a path that is not a file at that commit', (await readPlanAt({ root: repo, head: before, planPath: 'docs/none.md' })) === null)
   }
 
   // --- a re-run with --supersedes: postcondition deviations are recomputed, the reviewer's are inherited ---

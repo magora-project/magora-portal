@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { git } from './identity.mjs'
+import { repoPath } from './records.mjs'
 
 export const TARGET_TYPES = ['existing', 'create', 'modify', 'delete', 'command']
 
@@ -105,21 +106,23 @@ export const checkExisting = ({ plan, exists, tasks, ci = Boolean(process.env.CI
     for (const tg of t.targets) {
       considered[considered.length] = { task: t.id, type: tg.type, value: tg.value, line: tg.line }
       const at = `${t.id} line ${tg.line}`
+      // One key per file: `./a.mjs`, `a.mjs` and `a\\b` name what git lists as `a.mjs` and `a/b`.
+      const key = tg.value.startsWith('~/') ? tg.value : repoPath(tg.value)
       if (tg.type === 'existing' && tg.value.startsWith('~/')) {
         if (ci) notes[notes.length] = `${at}: ${tg.value} is outside the repository and not checked in CI`
         else if (!homeExists(tg.value)) problems[problems.length] = `${at}: existing target ${tg.value} is not on this machine`
       } else if (tg.type === 'existing' || tg.type === 'modify') {
-        if (!available(tg.value)) problems[problems.length] = `${at}: ${tg.type} target ${tg.value} is not a file at the revision under review, and no earlier task creates it`
+        if (!available(key)) problems[problems.length] = `${at}: ${tg.type} target ${tg.value} is not a file at the revision under review, and no earlier task creates it`
       } else if (tg.type === 'create') {
-        if (available(tg.value)) {
-          const by = state.get(tg.value)
+        if (available(key)) {
+          const by = state.get(key)
           problems[problems.length] = by?.present
             ? `${at}: create target ${tg.value} was already created by ${by.by}`
             : `${at}: create target ${tg.value} already exists at the revision under review`
         }
-        state.set(tg.value, { present: true, by: t.id })
+        state.set(key, { present: true, by: t.id })
       } else if (tg.type === 'delete') {
-        state.set(tg.value, { present: false, by: t.id })
+        state.set(key, { present: false, by: t.id })
       }
     }
   }
