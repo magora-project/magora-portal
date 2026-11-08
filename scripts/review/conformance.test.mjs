@@ -344,6 +344,33 @@ try {
     ok('...the reviewer is not run and no record is written', reviewerCalls.length === 0 && readRecords({ cwd: repo }).length === before)
   }
 
+  // --- PR #87 Codex P2: a command that changes the working tree stops the run; later commands never see that tree ---
+  {
+    const writing = (file, text) => {
+      const o = io(), reviewerCalls = [], commandSpawns = []
+      const spawnImpl = (f, args) => {
+        commandSpawns.push([f, ...args].join(' '))
+        const c = new EventEmitter()
+        c.stdout = new PassThrough(); c.stderr = new PassThrough()
+        setTimeout(() => { put(c.repo, file, text); c.emit('exit', 0, null); c.emit('close', 0, null) }, 5)
+        return c
+      }
+      return { o, reviewerCalls, commandSpawns, spawnImpl }
+    }
+    for (const [what, file] of [['a tracked file it rewrote', 'edited.mjs'], ['an untracked file it wrote', 'generated.mjs']]) {
+      const repo = mkrepo()
+      const before = readRecords({ cwd: repo }).length
+      const w = writing(file, 'export const changed = 1\n')
+      const spawnImpl = (f, args) => { const c = w.spawnImpl(f, args); c.repo = repo; return c }
+      const code = await reviewCli(conformance('T1,T2'), { cwd: repo, promptFor, env: {}, io: w.o.io, spawnImpl: reviewerSpawn(w.reviewerCalls, () => ({ verdict: 'pass', findings: [], inherited: [] })), commandSpawnImpl: spawnImpl })
+      ok(`a command target that leaves ${what} stops the run: exit 1, unrun, naming the file`, code === 1 && /stopped, unrun/.test(w.o.err) && /changed the working tree/.test(w.o.err) && w.o.err.includes(file))
+      ok(`...(${what}) no reviewer runs and no record is written`, w.reviewerCalls.length === 0 && readRecords({ cwd: repo }).length === before)
+    }
+    const quiet = mkrepo()
+    const r = await cli(quiet, conformance('T1'))
+    ok('a command target that leaves the tree as it was still yields a record', r.code === 0 && r.commandSpawns.length === 1)
+  }
+
   // --- the same with real processes: a foreground grandchild outlives its killed parent, so the run must stop ---
   {
     const repo = mkrepo()
@@ -365,7 +392,9 @@ try {
     let alive = false
     if (grand > 0) { try { process.kill(grand, 0); alive = true } catch { /* gone */ } }
     ok('real processes: a timed-out command stops postconditions with an error naming its pid', /stopped, unrun/.test(err) && /pid \d+/.test(err) && Date.now() - started < 10_000)
-    ok('...its foreground grandchild was still running when the run stopped (why nothing may run after it)', alive)
+    // The premise, not the guard: on macOS and Linux the grandchild outlives its parent's SIGTERM. Windows kills
+    // differently (it failed on windows-latest in PR #87), and the guard above and below holds there either way.
+    if (process.platform !== 'win32') ok('...its foreground grandchild was still running when the run stopped (why nothing may run after it)', alive)
     ok('...and the next command target never ran', !existsSync(secondRan))
     if (grand > 0) { try { process.kill(grand, 'SIGKILL') } catch { /* gone */ } }
   }

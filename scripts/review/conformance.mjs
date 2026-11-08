@@ -146,12 +146,25 @@ export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = ()
 
 // ---------- postconditions ----------
 
+// -> { tracked, untracked }: the paths outside .review/ where the working tree differs from HEAD (tracked files
+// changed, staged or not; untracked files not gitignored). Command targets need both empty: the record claims HEAD.
+export const treeChanges = async (root) => {
+  const scope = ['--', '.', `:(exclude)${EVIDENCE_DIR}`]
+  const d = await git(['diff', '--name-only', '-z', '--no-renames', 'HEAD', ...scope], { cwd: root })
+  if (d.code !== 0) throw new Error(`git diff --name-only HEAD failed (${d.code}): ${d.stderr.trim()}`)
+  const u = await git(['ls-files', '-z', '--others', '--exclude-standard', ...scope], { cwd: root })
+  if (u.code !== 0) throw new Error(`git ls-files --others failed (${u.code}): ${u.stderr.trim()}`)
+  const paths = (r) => r.stdout.toString().split('\0').filter(Boolean)
+  return { tracked: paths(d), untracked: paths(u) }
+}
+const few = (list) => `${list.slice(0, 5).join(', ')}${list.length > 5 ? `, and ${list.length - 5} more` : ''}`
+
 // The declared tasks of a plan, in plan order: [{ id, title, targets }].
 export const declaredTasks = (plan, ids) => parsePlan(plan).tasks.filter((t) => ids.includes(t.id))
 
 // -> [{ task, target, ok, detail, exit? }] for every create, modify, delete and command target of `tasks`, in order.
 // base is the merge base; head the reviewed commit. A command entry also carries its exit status.
-export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = nodeSpawn, onOutput, commandTimeoutMs = 0 }) => {
+export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = nodeSpawn, onOutput, commandTimeoutMs = 0, checkTree = false }) => {
   const present = await filesAtRev({ cwd, rev: head })
   const changed = new Set(must(await git(['diff', '--name-only', '-z', '--no-renames', base, head], { cwd }), 'git diff --name-only').split('\0').filter(Boolean))
   const ran = new Map() // command string -> { exit, detail }
@@ -164,6 +177,12 @@ export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = 
         // A timed-out command's descendants may still be running and changing files, so nothing may run after it:
         // not the next command, not the reviewer. The run stops here, unrun, and no record is written.
         if (r.timedOut) throw new Error(`conformance stopped, unrun: ${t.id} command \`${target.value}\` (pid ${r.pid ?? 'unknown'}) was ${r.detail}. No record was written and nothing else ran. Processes it started may still be running: check for them before running conformance again (raise --timeout-min if the command needs longer).`)
+        // The tree was clean before the first command (conformanceCli). A command that changed it (a regenerated or
+        // autofixed file) would let later commands, and the record, describe a tree that is not HEAD: stop, unrun.
+        if (checkTree) {
+          const { tracked, untracked } = await treeChanges(cwd)
+          if (tracked.length || untracked.length) throw new Error(`conformance stopped, unrun: ${t.id} command \`${target.value}\` changed the working tree (${few([...tracked, ...untracked])}), so later commands and the record would not describe HEAD ${head.slice(0, 12)}. No record was written and nothing else ran. Restore those files, and make the command leave committed files unchanged (or gitignore what it writes).`)
+        }
         out[out.length] = { task: t.id, target, ok: r.exit === 0, detail: r.detail, exit: r.exit }
         continue
       }
@@ -184,7 +203,7 @@ export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = 
 // The check runReview calls: the failed postconditions as findings D<position>, the commands, nextId, and a prompt section.
 const conformanceCheck = ({ planPath, tasks, planProblems, ctx, commandTimeoutMs }) => async ({ root, mb, head }) => {
   const { io } = ctx
-  const pc = await postconditions({ tasks, cwd: root, base: mb, head, env: ctx.env, spawnImpl: ctx.commandSpawnImpl, onOutput: (s) => io.err(s), commandTimeoutMs })
+  const pc = await postconditions({ tasks, cwd: root, base: mb, head, env: ctx.env, spawnImpl: ctx.commandSpawnImpl, onOutput: (s) => io.err(s), commandTimeoutMs, checkTree: true })
   const failed = pc.filter((p) => !p.ok)
   // Each ID is the check's position (plan problems, then every target in plan order), not its rank among the
   // failures: fixing D1 must not turn the old D2 into D1, where a justification written for D1 would then pass.
@@ -249,15 +268,11 @@ export async function conformanceCli(argv, ctx) {
     // A declared task's malformed Files line is a deviation too: conformance cannot check what it cannot read.
     const planProblems = parsed.problems.filter((p) => sel.tasks.includes(/\bT\d+\b/.exec(p)?.[0]))
     if (tasks.some((t) => t.targets.some((x) => x.type === 'command'))) {
-      const d = await git(['diff', '--quiet', 'HEAD', '--', '.', `:(exclude)${EVIDENCE_DIR}`], { cwd: root })
-      if (d.code === 1) usage('tracked files have uncommitted changes: commit them first, so each command target runs against the commit the record covers')
-      if (d.code !== 0) throw new Error(`git diff --quiet HEAD failed (${d.code}): ${d.stderr.trim()}`)
+      const { tracked, untracked } = await treeChanges(root)
+      if (tracked.length) usage(`tracked files have uncommitted changes: commit them first, so each command target runs against the commit the record covers (${few(tracked)})`)
       // An untracked file is on disk but not in the commit: a test runner or an import can pick it up, so a command
       // could pass here and fail at the recorded HEAD. Gitignored files (node_modules, build output) are allowed.
-      const u = await git(['ls-files', '-z', '--others', '--exclude-standard', '--', '.', `:(exclude)${EVIDENCE_DIR}`], { cwd: root })
-      if (u.code !== 0) throw new Error(`git ls-files --others failed (${u.code}): ${u.stderr.trim()}`)
-      const untracked = u.stdout.toString().split('\0').filter(Boolean)
-      if (untracked.length) usage(`untracked files are not in the commit the record covers, and a command target could use them: commit, remove or gitignore them first (${untracked.slice(0, 5).join(', ')}${untracked.length > 5 ? `, and ${untracked.length - 5} more` : ''})`)
+      if (untracked.length) usage(`untracked files are not in the commit the record covers, and a command target could use them: commit, remove or gitignore them first (${few(untracked)})`)
     }
     // Each command target gets the run's --timeout-min (the reviewer's default when unset) as its own deadline.
     const timeoutMin = o['timeout-min'] === undefined ? DEFAULT_TIMEOUT_MIN : Number(o['timeout-min'])

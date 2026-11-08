@@ -39,7 +39,7 @@ Exit 0: it ran, no findings. Exit 1: it ran and found something; print lines are
 - `--path <doc>` is required for `spec` and `plan` and refused for the other slots.
 - A substitute slot is not picked by author: add `--reviewer codex|claude|gemini` naming a vendor not already counted on the PR.
 - `--base <ref>` sets the diff base (default `origin/main` when it exists, else `main`). `--timeout-min <n>` overrides the 20-minute default.
-- A `plan` run also runs the typed reference check (`writing-plans`, `## Typed targets`). For a plan already on `main` (an amendment), name the tasks not yet landed with `--tasks <ids>`, or `--tasks none`; `--rev <sha>` sets the revision they start from (default: the merge base with `origin/main`, after `git fetch origin main`).
+- A `plan` run also runs the typed reference check (`writing-plans`, `## Typed targets`). For a plan already on `main` (an amendment), name the tasks not yet landed with `--tasks <ids>`, or `--tasks none`. `review-evidence` accepts a plan record for a PR only if its tasks cover every task in the PR's `Plan:` field (a record with no `tasks` predates the scope and counts as the whole plan); `--rev <sha>` sets the revision they start from (default: the merge base with `origin/main`, after `git fetch origin main`).
 
 Exit 0 means the outcome was `completed`. Exit 1 is any other outcome or a usage error. The run prints `outcome:` and the record path under `.review/records/`; read that record. Its `outcome` and `verdict` fields are the answer, not your impression of the console output.
 

@@ -18,6 +18,9 @@
 //      Conformance: conformance.tasks equals the Plan field's expanded tasks as a set; conformance.deviations
 //      equals the Deviations field's IDs as a set; conformance.plan names the Plan field's path and that path's
 //      blob at the head (so a changed plan, or a Plan field pointed at another plan, voids the record).
+//      Plan: a plan record of the Plan field's plan that states its task scope (`tasks`, plan Task 17) must cover
+//      every task in the Plan field; `--tasks none` or a narrower scope did not review the tasks this PR builds.
+//      A record with no `tasks` predates the scope and reviewed the whole plan.
 //   3. Only records whose slot is the required one are candidates. reviewer.vendor differs from the
 //      author's vendor (every record on one input must agree on authorVendor); for `completeness` it also
 //      differs from the vendor of a passing `correctness` head (spec: "whichever of the three vendors is
@@ -139,6 +142,10 @@ export function evaluate({ records, required, identity, body, addedStems, planDo
     else if (rec.verdict !== 'pass' && rec.verdict !== 'fail') reasons.push('completed without a recognized result (no verdict)')
     // 2
     if (rec.input.identity !== want.identity) reasons.push(`identity ${short(rec.input.identity)} is not the current ${short(want.identity)}`)
+    if (rec.slot === 'plan' && Array.isArray(rec.tasks) && planPath !== null && rec.input.path === planPath) {
+      const uncovered = setDiff(planTasks, rec.tasks)
+      if (uncovered.length) reasons.push(`plan review scope (${rec.tasks.length ? rec.tasks.join(',') : 'none'}) does not cover the Plan field's ${uncovered.join(',')}: re-review the plan with --tasks covering them`)
+    }
     if (rec.slot === 'conformance') {
       const c = rec.conformance
       if (!isObj(c)) reasons.push('conformance record has no conformance block')

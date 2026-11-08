@@ -110,6 +110,7 @@ function fx(o = {}) {
         if (o.verdict !== undefined) r.verdict = o.verdict
         if (o.findings !== undefined) r.findings = o.findings.map(finding)
       }
+      if (slot === 'plan' && o.planTasks !== undefined) r.tasks = o.planTasks
       if (slot === 'conformance') {
         const devs = o.deviations ?? []
         r.conformance = { tasks: o.conformanceTasks ?? expandTasks(bodyTasks), deviations: devs, commands: o.commands ?? [], plan: o.conformancePlan ?? { path: PLAN.path, blob: PLAN.identity } }
@@ -239,7 +240,12 @@ try {
   ok('conformance on the Plan field\'s path and its blob at the head -> ok', evaluate(fx()).ok === true)
   ok('conformance that checked another plan path -> FAIL naming both paths', failsWith(evaluate(fx({ conformancePlan: { path: 'docs/superpowers/plans/other.md', blob: PLAN.identity } })), /conformance.*other\.md.*p\.md/))
   ok('conformance that checked an older blob of the plan -> FAIL naming the blobs', failsWith(evaluate(fx({ conformancePlan: { path: PLAN.path, blob: 'f'.repeat(40) } })), /conformance.*ffffffffffff.*dddddddddddd/))
-  ok('conformance whose Plan field path is not in the head -> FAIL', (() => { const f = fx(); f.required = f.required.map((r) => (r.slot === 'plan' ? { ...r, input: { ...r.input, identity: null, error: 'x is not in the PR head' } } : r)); return failsWith(evaluate(f), /conformance.*not in the PR head/) })())
+  // PR #87 Codex P2: the plan review's stated task scope must cover the tasks this PR builds
+  ok('a plan record whose scope covers the Plan field\'s tasks (and more) -> ok', evaluate(fx({ planTasks: ['T1', 'T2', 'T3', 'T4'] })).ok === true)
+  ok('a plan record reviewed with --tasks none -> FAIL naming the uncovered tasks', failsWith(evaluate(fx({ planTasks: [] })), /plan.*scope \(none\).*T1,T2,T3/))
+  ok('a plan record whose scope misses one Plan field task -> FAIL naming it', failsWith(evaluate(fx({ planTasks: ['T1', 'T2'] })), /plan.*does not cover.*T3/))
+  ok('a plan record with no tasks (written before the scope existed) reviewed the whole plan -> ok', evaluate(fx()).ok === true && fx().records.find((r) => r.slot === 'plan').tasks === undefined)
+  ok('conformance whose Plan field path is not in the head -> FAIL',(() => { const f = fx(); f.required = f.required.map((r) => (r.slot === 'plan' ? { ...r, input: { ...r.input, identity: null, error: 'x is not in the PR head' } } : r)); return failsWith(evaluate(f), /conformance.*not in the PR head/) })())
   ok('a Plan field written ./path matches the record\'s repo path -> ok', (() => { const f = fx(); f.body = parseBody(`Lane: specced\nSpec: ${SPEC.path}\nPlan: ./${PLAN.path} T1-T3\nDeviations: none`); return evaluate(f).ok === true })())
   ok('an explicit planDoc overrides the required plan entry', failsWith(evaluate({ ...fx(), planDoc: { path: PLAN.path, identity: 'a'.repeat(40) } }), /conformance.*aaaaaaaaaaaa/))
   ok('conformance tasks are order-insensitive', evaluate(fx({ conformanceTasks: ['T3', 'T1', 'T2'] })).ok)
