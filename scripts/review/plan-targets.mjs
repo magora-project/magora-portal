@@ -40,6 +40,14 @@ const parse = (markdown) => {
       return
     }
     if (fence !== null) return
+    // A `#`-`###` heading named Files inside a task is its Files block written another way, not a new section: the
+    // branch below would end the task and drop its targets unreported, so report it here and keep the task.
+    if (cur !== null && !dup && /^#{1,3}\s+Files\b/i.test(l)) {
+      endFiles()
+      inFiles = false
+      problems[problems.length] = { task: cur.id, text: `${cur.id} line ${n}: Files heading ${JSON.stringify(l.trim())} is not "**Files:**"; its lines are not read as targets` }
+      return
+    }
     if (/^#{1,3}\s/.test(l)) {
       endFiles()
       cur = null

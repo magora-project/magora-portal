@@ -87,7 +87,7 @@ try {
     ok('a wrapped continuation line is still not a problem', parsePlan('### Task 1: X\n\n**Files:**\n- create: `x.mjs` (a long note\n  that wraps)\n').problems.length === 0)
     // fresh review P2: a heading with text after it, or a Markdown heading, dropped every target unreported
     ok('"**Files:** `a.mjs`" (a target on the heading line) is a problem, not a task with no targets', parsePlan('### Task 1: X\n\n**Files:** `a.mjs`\n').problems.some((x) => /T1 line 3: Files heading/.test(x)))
-    ok('a "#### Files" heading is a problem, not a task with no targets', parsePlan('### Task 1: X\n\n#### Files\n- create: `a.mjs`\n').problems.some((x) => /T1 line 3: Files heading/.test(x)))
+    ok('a "#".."####" Files heading is a problem, not a task with no targets (### too: it does not end the task)', ['#', '##', '###', '####'].every((h) => { const r = parsePlan(`### Task 1: X\n\n${h} Files\n- create: \`a.mjs\`\n\n### Task 2: Y\n\n**Files:**\n- create: \`b.mjs\`\n`); return r.problems.some((x) => /T1 line 3: Files heading/.test(x)) && r.tasks.find((t) => t.id === 'T2')?.targets.length === 1 }))
     ok('"**Files:** none new." says the task has no targets, and is not a problem', (() => { const r = parsePlan('### Task 1: X\n\n**Files:** none new.\n'); return r.problems.length === 0 && r.tasks[0].targets.length === 0 })())
     ok('a "**Files**:" heading is a problem, not a task with no targets',parsePlan('### Task 1: X\n\n**Files**:\n- create: `x.mjs`\n').problems.some((x) => /T1 line 3: Files heading/.test(x)))
   }
