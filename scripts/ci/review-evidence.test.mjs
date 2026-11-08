@@ -544,9 +544,15 @@ try {
     ok('init-local stores the expanded plan tasks and deviations', r.code === 0 && j.plan.path === 'docs/superpowers/plans/p.md' && j.plan.tasks.join() === 'T1,T2,T4' && j.deviations[0].id === 'D1')
     r = await cli(L.dir, ['init-local', '--lane', 'specced', '--depth', 'standard', '--spec', 'docs/superpowers/specs/s.md', '--plan', 'docs/superpowers/plans/p.md T1', '--deviation', 'conformance--abcdef012345--2#D2: still better'])
     const jc = JSON.parse(readFileSync(join(L.dir, '.review/local.json'), 'utf8'))
-    ok('init-local accepts a chained deviation ID verbatim', r.code === 0 && jc.deviations.length === 1 && jc.deviations[0].id === 'conformance--abcdef012345--2#D2' && jc.deviations[0].justification === 'still better')
+    ok('init-local accepts a chained deviation ID verbatim',r.code === 0 && jc.deviations.length === 1 && jc.deviations[0].id === 'conformance--abcdef012345--2#D2' && jc.deviations[0].justification === 'still better')
     r = await cli(L.dir, ['init-local', '--lane', 'specced', '--depth', 'standard', '--spec', 'docs/superpowers/specs/s.md', '--plan', 'docs/superpowers/plans/p.md T1', '--deviation', 'foo: bar'])
     ok('init-local rejects a deviation whose ID is neither D<n> nor <stem>#D<n>', r.code === 1 && /foo/.test(r.err) && JSON.parse(readFileSync(join(L.dir, '.review/local.json'), 'utf8')).deviations[0].id === 'conformance--abcdef012345--2#D2')
+    {
+      // push-gate P2: an evidence-only PR's records are named <slot>--empty--<n>, so its chained IDs carry `empty`
+      const re = await cli(L.dir, ['init-local', '--lane', 'specced', '--depth', 'standard', '--spec', 'docs/superpowers/specs/s.md', '--plan', 'docs/superpowers/plans/p.md T1', '--deviation', 'conformance--empty--1#D1: still better'])
+      const je = JSON.parse(readFileSync(join(L.dir, '.review/local.json'), 'utf8'))
+      ok('init-local accepts a deviation ID chained from an `empty` identity', re.code === 0 && je.deviations[0]?.id === 'conformance--empty--1#D1' && je.deviations[0].justification === 'still better')
+    }
     const lc2 = await localCheck({ cwd: L.dir })
     ok('localCheck specced: a linked spec missing at HEAD fails naming it', lc2.ok === false && /spec docs\/superpowers\/specs\/s\.md/.test(lc2.lines.join('\n')))
     writeFileSync(join(L.dir, '.review/local.json'), '{"lane":"direct"}\n')

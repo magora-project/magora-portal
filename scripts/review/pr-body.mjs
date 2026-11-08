@@ -7,7 +7,8 @@ const MAX_RANGE = 1000
 
 // A deviation ID exactly as the conformance record lists it: `D<n>` from the run that found it, or, once a re-review
 // inherited it, `<record stem>#D<n>` (possibly chained), a stem being `<slotfile>--<id12>--<n>` (records.mjs).
-export const DEVIATION_ID = '(?:[a-z]+(?:-[a-z]+)*--[0-9a-f]{12}--[1-9][0-9]*#)*D[0-9]+'
+// <id12> is 12 hex digits, or `empty` for a PR whose only change is under .review/ (identity.mjs).
+export const DEVIATION_ID = '(?:[a-z]+(?:-[a-z]+)*--(?:[0-9a-f]{12}|empty)--[1-9][0-9]*#)*D[0-9]+'
 // One Deviations entry, "<id>: justification" -> [, id, justification].
 export const DEVIATION_ENTRY = new RegExp(`^(${DEVIATION_ID}):\\s*(.*)$`)
 const ENTRY_HELP = '"- <id>: justification" line per deviation, the ID copied from the conformance record (D<n> or <stem>#D<n>)'
