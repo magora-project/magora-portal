@@ -131,7 +131,16 @@ try {
   // --- resolveTasks ---
   ok('amendment to a merged plan without --tasks is refused, naming the flag', /--tasks/.test(resolveTasks({ tasks: undefined, planExistsAtRev: true }).error))
   ok('an unknown task ID is refused, even mixed with valid ones or from a range', ['T99', 'T17,T99', 'T24-T26'].every((sel) => /T99|T26/.test(resolveTasks({ tasks: sel, planExistsAtRev: true, plan: thisPlan }).error ?? '')))
-  ok('every unknown ID is named', (() => { const e = resolveTasks({ tasks: 'T98,T17,T99', planExistsAtRev: true, plan: thisPlan }).error; return /T98/.test(e) && /T99/.test(e) && !/T17/.test(e) })())
+  {
+    // push-gate P2: past 2^53 k++ cannot advance, so an unguarded range loops forever. Run it in a child with a
+    // deadline so a regression fails here instead of hanging the suite.
+    const { spawnSync: run } = await import('node:child_process')
+    const src = `const { resolveTasks } = await import(${JSON.stringify(new URL('./plan-targets.mjs', import.meta.url).href)}); const sels = ['T9007199254740992-T9007199254740992', 'T9007199254740992', 'T1-T9007199254740993']; console.log(JSON.stringify(sels.map((tasks) => resolveTasks({ tasks, planExistsAtRev: true, plan: '### Task 1: One\\n' }).error ?? null)))`
+    const r = run(process.execPath, ['--input-type=module', '-e', src], { encoding: 'utf8', timeout: 10_000 })
+    const errs = r.status === 0 ? JSON.parse(r.stdout) : null
+    ok('a task number past 2^53 (single or range end) is refused as unreadable, not looped on', errs !== null && errs.every((e) => /cannot read/.test(e ?? '')))
+  }
+  ok('every unknown ID is named',(() => { const e = resolveTasks({ tasks: 'T98,T17,T99', planExistsAtRev: true, plan: thisPlan }).error; return /T98/.test(e) && /T99/.test(e) && !/T17/.test(e) })())
   ok('a refused selection selects nothing', resolveTasks({ tasks: 'T17,T99', planExistsAtRev: true, plan: thisPlan }).tasks === undefined)
   ok('--tasks none is accepted and distinct from an invalid selection', (() => { const r = resolveTasks({ tasks: 'none', planExistsAtRev: true, plan: thisPlan }); return r.error === undefined && r.tasks.length === 0 })())
   ok('a list and a range expand, in plan order', (() => { const r = resolveTasks({ tasks: 'T20,T17-T18', planExistsAtRev: true, plan: thisPlan }); return r.error === undefined && r.tasks.join() === 'T17,T18,T20' })())

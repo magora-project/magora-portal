@@ -157,8 +157,9 @@ export const resolveTasks = ({ tasks, planExistsAtRev, plan }) => {
     const item = raw.trim()
     const single = /^T(\d+)$/.exec(item)
     const range = /^T(\d+)-T?(\d+)$/.exec(item)
-    if (single) requested[requested.length] = Number(single[1])
-    else if (range && Number(range[1]) <= Number(range[2]) && Number(range[2]) - Number(range[1]) < 1000) {
+    // Past 2^53 a Number cannot count up by one (k++ leaves it unchanged), so a range there would never end.
+    if (single && Number.isSafeInteger(Number(single[1]))) requested[requested.length] = Number(single[1])
+    else if (range && Number.isSafeInteger(Number(range[1])) && Number.isSafeInteger(Number(range[2])) && Number(range[1]) <= Number(range[2]) && Number(range[2]) - Number(range[1]) < 1000) {
       for (let k = Number(range[1]); k <= Number(range[2]); k++) requested[requested.length] = k
     } else bad[bad.length] = item === '' ? '(empty item)' : item
   }

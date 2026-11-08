@@ -146,16 +146,21 @@ export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = ()
 
 // ---------- postconditions ----------
 
-// -> { tracked, untracked }: the paths outside .review/ where the working tree differs from HEAD (tracked files
-// changed, staged or not; untracked files not gitignored). Command targets need both empty: the record claims HEAD.
-export const treeChanges = async (root) => {
+// -> { moved, tracked, untracked }: moved is the current HEAD when it is no longer `head` (the commit the run
+// captured; a command that commits, or another session switching commits), else null. tracked and untracked are the
+// paths outside .review/ where the working tree differs from `head` (tracked files changed, staged or not;
+// untracked files not gitignored). Command targets need all three empty: the record claims `head`.
+export const treeChanges = async (root, head) => {
+  const now = await git(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: root })
+  if (now.code !== 0) throw new Error(`git rev-parse HEAD failed (${now.code}): ${now.stderr.trim()}`)
+  const cur = now.stdout.toString().trim()
   const scope = ['--', '.', `:(exclude)${EVIDENCE_DIR}`]
-  const d = await git(['diff', '--name-only', '-z', '--no-renames', 'HEAD', ...scope], { cwd: root })
-  if (d.code !== 0) throw new Error(`git diff --name-only HEAD failed (${d.code}): ${d.stderr.trim()}`)
+  const d = await git(['diff', '--name-only', '-z', '--no-renames', head, ...scope], { cwd: root })
+  if (d.code !== 0) throw new Error(`git diff --name-only ${head} failed (${d.code}): ${d.stderr.trim()}`)
   const u = await git(['ls-files', '-z', '--others', '--exclude-standard', ...scope], { cwd: root })
   if (u.code !== 0) throw new Error(`git ls-files --others failed (${u.code}): ${u.stderr.trim()}`)
   const paths = (r) => r.stdout.toString().split('\0').filter(Boolean)
-  return { tracked: paths(d), untracked: paths(u) }
+  return { moved: cur === head ? null : cur, tracked: paths(d), untracked: paths(u) }
 }
 const few = (list) => `${list.slice(0, 5).join(', ')}${list.length > 5 ? `, and ${list.length - 5} more` : ''}`
 
@@ -180,7 +185,8 @@ export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = 
         // The tree was clean before the first command (conformanceCli). A command that changed it (a regenerated or
         // autofixed file) would let later commands, and the record, describe a tree that is not HEAD: stop, unrun.
         if (checkTree) {
-          const { tracked, untracked } = await treeChanges(cwd)
+          const { moved, tracked, untracked } = await treeChanges(cwd, head)
+          if (moved) throw new Error(`conformance stopped, unrun: HEAD moved from ${head.slice(0, 12)} to ${moved.slice(0, 12)} while ${t.id} command \`${target.value}\` ran (a command that commits, or another session switching commits), so later commands and the record would not describe ${head.slice(0, 12)}. No record was written and nothing else ran.`)
           if (tracked.length || untracked.length) throw new Error(`conformance stopped, unrun: ${t.id} command \`${target.value}\` changed the working tree (${few([...tracked, ...untracked])}), so later commands and the record would not describe HEAD ${head.slice(0, 12)}. No record was written and nothing else ran. Restore those files, and make the command leave committed files unchanged (or gitignore what it writes).`)
         }
         out[out.length] = { task: t.id, target, ok: r.exit === 0, detail: r.detail, exit: r.exit }
@@ -268,7 +274,7 @@ export async function conformanceCli(argv, ctx) {
     // A declared task's malformed Files line is a deviation too: conformance cannot check what it cannot read.
     const planProblems = parsed.problems.filter((p) => sel.tasks.includes(/\bT\d+\b/.exec(p)?.[0]))
     if (tasks.some((t) => t.targets.some((x) => x.type === 'command'))) {
-      const { tracked, untracked } = await treeChanges(root)
+      const { tracked, untracked } = await treeChanges(root, head)
       if (tracked.length) usage(`tracked files have uncommitted changes: commit them first, so each command target runs against the commit the record covers (${few(tracked)})`)
       // An untracked file is on disk but not in the commit: a test runner or an import can pick it up, so a command
       // could pass here and fail at the recorded HEAD. Gitignored files (node_modules, build output) are allowed.

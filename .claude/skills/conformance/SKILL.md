@@ -12,7 +12,7 @@ Only the Specced lane has this stage. A Direct, docs-only or dependency PR skips
 ## 1. Before you run
 
 - The plan is committed, and the PR's `Plan:` field names it with the task IDs this PR implements (`Plan: docs/superpowers/plans/<plan>.md T17-T18`). A multi-PR plan is checked against the tasks each PR declares.
-- Every change is committed. The record covers the diff at `HEAD` and the plan's blob at `HEAD`; a run is refused while the plan has uncommitted changes, or, when a task has a `command` target, while any tracked file does or any untracked file is present outside `.review/` (gitignored files such as `node_modules` are fine): a command could pass on a file the commit does not have. The same check runs after each command: a command that rewrites a tracked file or leaves an untracked one stops the run, unrun, with no record. Make commands leave committed files unchanged, and gitignore what they write.
+- Every change is committed. The record covers the diff at `HEAD` and the plan's blob at `HEAD`; a run is refused while the plan has uncommitted changes, or, when a task has a `command` target, while any tracked file does or any untracked file is present outside `.review/` (gitignored files such as `node_modules` are fine): a command could pass on a file the commit does not have. The same check runs after each command, against the commit the run captured: a command that rewrites a tracked file, leaves an untracked one, or moves `HEAD` (it commits, or another session switches commits) stops the run, unrun, with no record. Make commands leave committed files unchanged, and gitignore what they write.
 - Local checks pass (`npm test`, `npm run lint:ratchet`). A failing `command` target becomes a deviation.
 
 ## 2. Run it

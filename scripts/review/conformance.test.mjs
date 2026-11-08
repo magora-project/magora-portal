@@ -366,6 +366,21 @@ try {
       ok(`a command target that leaves ${what} stops the run: exit 1, unrun, naming the file`, code === 1 && /stopped, unrun/.test(w.o.err) && /changed the working tree/.test(w.o.err) && w.o.err.includes(file))
       ok(`...(${what}) no reviewer runs and no record is written`, w.reviewerCalls.length === 0 && readRecords({ cwd: repo }).length === before)
     }
+    {
+      // push-gate P2: a command that commits leaves the tree clean, but HEAD is no longer the captured commit
+      const repo = mkrepo()
+      const before = readRecords({ cwd: repo }).length
+      const o = io(), reviewerCalls = []
+      const committing = () => {
+        const c = new EventEmitter()
+        c.stdout = new PassThrough(); c.stderr = new PassThrough()
+        setTimeout(() => { put(repo, 'edited.mjs', 'export const e = 3\n'); commit(repo, 'generated'); c.emit('exit', 0, null); c.emit('close', 0, null) }, 5)
+        return c
+      }
+      const code = await reviewCli(conformance('T1,T2'), { cwd: repo, promptFor, env: {}, io: o.io, spawnImpl: reviewerSpawn(reviewerCalls, () => ({ verdict: 'pass', findings: [], inherited: [] })), commandSpawnImpl: committing })
+      ok('a command target that commits (clean tree, HEAD moved) stops the run: exit 1, unrun, naming the move', code === 1 && /stopped, unrun/.test(o.err) && /HEAD moved/.test(o.err))
+      ok('...no reviewer runs and no record is written', reviewerCalls.length === 0 && readRecords({ cwd: repo }).length === before)
+    }
     const quiet = mkrepo()
     const r = await cli(quiet, conformance('T1'))
     ok('a command target that leaves the tree as it was still yields a record', r.code === 0 && r.commandSpawns.length === 1)
