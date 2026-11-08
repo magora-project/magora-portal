@@ -28,6 +28,14 @@ const AUTHOR_VENDORS = ['openai', 'anthropic', 'google', 'none']
 const BLOB_SLOTS = ['spec', 'plan']
 const DISPOSE_KINDS = ['pre-existing', 'reclassified-nit', 'justified-deviation']
 export const DEFAULT_TIMEOUT_MIN = 20
+// setTimeout takes at most 2^31-1 ms; past that Node fires after 1 ms, which would kill every run at once.
+export const MAX_TIMEOUT_MIN = Math.floor(2_147_483_647 / 60_000)
+// -> the --timeout-min value in minutes, or a usage error for anything not in (0, MAX_TIMEOUT_MIN].
+export const timeoutMinutes = (raw) => {
+  const m = raw === undefined ? DEFAULT_TIMEOUT_MIN : Number(raw)
+  if (!(m > 0) || !(m <= MAX_TIMEOUT_MIN)) usage(`--timeout-min must be a number above 0 and at most ${MAX_TIMEOUT_MIN} (Node's longest timer)`)
+  return m
+}
 const SCHEMA_TEXT = readFileSync(new URL('./verdict.schema.json', import.meta.url), 'utf8')
 
 const isObj = (o) => o !== null && typeof o === 'object' && !Array.isArray(o)
@@ -392,8 +400,7 @@ export const runReview = async (o, ctx, conf = null) => {
   if (!AUTHOR_VENDORS.includes(o.author)) usage(`--author must be one of ${AUTHOR_VENDORS.join('|')}`)
   if (o.reviewer !== undefined && !ORDER.includes(o.reviewer)) usage(`--reviewer must be one of ${ORDER.join('|')}`)
   if (isSubstitute(o.slot) && o.reviewer === undefined) usage(`slot ${o.slot} needs --reviewer codex|claude|gemini (substitute slots are not picked by author vendor)`)
-  const timeoutMin = o['timeout-min'] === undefined ? DEFAULT_TIMEOUT_MIN : Number(o['timeout-min'])
-  if (!(timeoutMin > 0)) usage('--timeout-min must be a positive number')
+  const timeoutMin = timeoutMinutes(o['timeout-min'])
   const blob = BLOB_SLOTS.includes(o.slot)
   if (blob && o.path === undefined) usage(`slot ${o.slot} needs --path <spec-or-plan>`)
   if (!blob && o.path !== undefined) usage(`--path is only for the ${BLOB_SLOTS.join('|')} slots`)

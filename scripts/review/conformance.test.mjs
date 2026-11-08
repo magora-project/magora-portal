@@ -366,6 +366,9 @@ try {
     const code = await reviewCli(conformance('T1,T2', ['--timeout-min', '0.0005']), { cwd: repo, promptFor, env: {}, io: o.io, spawnImpl: reviewerSpawn(reviewerCalls, () => ({ verdict: 'pass', findings: [], inherited: [] })), commandSpawnImpl: hung })
     ok('a command target that times out stops the run: exit 1, unrun, naming the command and its pid', code === 1 && /stopped, unrun/.test(o.err) && /npm test/.test(o.err) && /pid 4242/.test(o.err))
     ok('...the reviewer is not run and no record is written', reviewerCalls.length === 0 && readRecords({ cwd: repo }).length === before)
+    // fresh review P2: a --timeout-min past setTimeout's limit fired after 1 ms and killed every command at once
+    const big = await cli(repo, conformance('T1', ['--timeout-min', '100000']))
+    ok('a --timeout-min past Node\'s longest timer refuses the run before any command runs', big.code === 1 && big.spawns.length === 0 && /at most 35791/.test(big.err) && readRecords({ cwd: repo }).length === before)
   }
 
   // --- PR #87 Codex P2: a command that changes the working tree stops the run; later commands never see that tree ---

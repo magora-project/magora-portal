@@ -16,7 +16,7 @@ process.env.GIT_CONFIG_NOSYSTEM = '1'
 
 const { DIFF_ARGS, geminiDiff, git, inputIdentity, mergeBase } = await import('./identity.mjs')
 const { readRecords, undisposedBlocking, writeRecord } = await import('./records.mjs')
-const { classifyOutcome, defaultPromptFor, pickReviewer, planTaskSections, runCli } = await import('./runner.mjs')
+const { classifyOutcome, defaultPromptFor, pickReviewer, planTaskSections, runCli, timeoutMinutes } = await import('./runner.mjs')
 
 const mkOk = (counter, log = console.log) => (n, c) => {
   if (c && typeof c.then === 'function') { counter.fail++; log('  FAIL', n, '(unawaited Promise)'); c.catch(() => {}); return }
@@ -225,7 +225,15 @@ try {
     const r = await cli(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'base.txt', '--timeout-min', '0.001'], { spawnImpl: hang })
     const rec = recordsBy((x) => x.slot === 'plan')[0]
     ok('--timeout-min kills the child and records timeout', r.code === 1 && killed === 1 && rec && rec.outcome === 'timeout')
-    ok('a plan record has a blob input for the path', rec && rec.type === 'plan' && rec.input.kind === 'blob' && rec.input.path === 'base.txt' && rec.input.identity === raw(repo, ['rev-parse', 'HEAD:base.txt']))
+    // fresh review P2: past setTimeout's 2^31-1 ms Node fires after 1 ms, so a huge --timeout-min killed at once
+    let spawned = 0
+    const count = () => { spawned++; return fakeChild({ respond: () => ({}) }) }
+    const before = recordsBy(() => true).length
+    const huge = await cli(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'base.txt', '--timeout-min', '100000'], { spawnImpl: count })
+    const inf = await cli(['run', '--slot', 'plan', '--author', 'anthropic', '--path', 'base.txt', '--timeout-min', 'Infinity'], { spawnImpl: count })
+    ok('a --timeout-min past Node\'s longest timer (or Infinity) is refused before any reviewer runs or record is written', huge.code === 1 && inf.code === 1 && /at most 35791/.test(huge.err) && spawned === 0 && recordsBy(() => true).length === before)
+    ok('...the longest timer itself is accepted', timeoutMinutes('35791') === 35791 && timeoutMinutes(undefined) === 20)
+    ok('a plan record has a blob input for the path',rec && rec.type === 'plan' && rec.input.kind === 'blob' && rec.input.path === 'base.txt' && rec.input.identity === raw(repo, ['rev-parse', 'HEAD:base.txt']))
   }
   ok('a spec slot without --path is a usage error', /--path/.test(await errOfCli(['run', '--slot', 'spec', '--author', 'anthropic'])))
 

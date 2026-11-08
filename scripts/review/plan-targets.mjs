@@ -62,8 +62,9 @@ const parse = (markdown) => {
       return
     }
     if (l.trim() === '**Files:**') { endFiles(); inFiles = cur !== null || dup; filesLine = n; filesRead = 0; return }
-    // A Files heading written another way would leave the task with no targets and no problem: report it.
-    if (cur !== null && !dup && /^\s*(\*\*Files\*\*\s*:|\*\*Files\s*:\*\*|Files\s*:)\s*$/i.test(l)) {
+    // A Files heading written another way (spelled differently, with text after it on the line, or as a Markdown
+    // heading) would leave the task with no targets and no problem: report it. `**Files:** none…` says there are none.
+    if (cur !== null && !dup && /^\s*(\*\*Files\b|Files\s*:|#{1,6}\s*Files\b)/i.test(l) && !/^\s*\*\*Files:\*\*\s*none\b/i.test(l)) {
       inFiles = false
       problems[problems.length] = { task: cur.id, text: `${cur.id} line ${n}: Files heading ${JSON.stringify(l.trim())} is not "**Files:**"; its lines are not read as targets` }
       return

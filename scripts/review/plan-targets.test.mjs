@@ -85,7 +85,11 @@ try {
     ok('a numbered bullet in a Files block is an untyped-line problem', parsePlan('### Task 1: X\n\n**Files:**\n1. `x.mjs`\n').problems.some((x) => /untyped Files line .*x\.mjs/.test(x)))
     ok('an indented "- " bullet in a Files block is an untyped-line problem, not a continuation', parsePlan('### Task 1: X\n\n**Files:**\n- create:\n  - `x.mjs`\n').problems.some((x) => /line 5: untyped Files line .*x\.mjs/.test(x)))
     ok('a wrapped continuation line is still not a problem', parsePlan('### Task 1: X\n\n**Files:**\n- create: `x.mjs` (a long note\n  that wraps)\n').problems.length === 0)
-    ok('a "**Files**:" heading is a problem, not a task with no targets', parsePlan('### Task 1: X\n\n**Files**:\n- create: `x.mjs`\n').problems.some((x) => /T1 line 3: Files heading/.test(x)))
+    // fresh review P2: a heading with text after it, or a Markdown heading, dropped every target unreported
+    ok('"**Files:** `a.mjs`" (a target on the heading line) is a problem, not a task with no targets', parsePlan('### Task 1: X\n\n**Files:** `a.mjs`\n').problems.some((x) => /T1 line 3: Files heading/.test(x)))
+    ok('a "#### Files" heading is a problem, not a task with no targets', parsePlan('### Task 1: X\n\n#### Files\n- create: `a.mjs`\n').problems.some((x) => /T1 line 3: Files heading/.test(x)))
+    ok('"**Files:** none new." says the task has no targets, and is not a problem', (() => { const r = parsePlan('### Task 1: X\n\n**Files:** none new.\n'); return r.problems.length === 0 && r.tasks[0].targets.length === 0 })())
+    ok('a "**Files**:" heading is a problem, not a task with no targets',parsePlan('### Task 1: X\n\n**Files**:\n- create: `x.mjs`\n').problems.some((x) => /T1 line 3: Files heading/.test(x)))
   }
   ok('the untyped line number is the line of the bullet', /line 4:/.test(parsePlan('### Task 1: X\n\n**Files:**\n- Create: `x`\n').problems[0]))
   ok('a typed line without a backticked value is a problem', parsePlan('### Task 1: X\n\n**Files:**\n- create: x\n').problems.length === 1)

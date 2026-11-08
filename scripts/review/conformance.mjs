@@ -20,7 +20,7 @@ import { parseArgs } from 'node:util'
 import { EVIDENCE_DIR, git } from './identity.mjs'
 import { deviationIds, repoPath } from './records.mjs'
 import { filesAtRev, parsePlan, resolveTasks } from './plan-targets.mjs'
-import { DEFAULT_TIMEOUT_MIN, UsageError, runReview, usage } from './runner.mjs'
+import { UsageError, runReview, timeoutMinutes, usage } from './runner.mjs'
 import { DRAIN_MS } from './adapters/codex.mjs'
 
 export { deviationIds }
@@ -285,8 +285,7 @@ export async function conformanceCli(argv, ctx) {
       if (untracked.length) usage(`untracked files are not in the commit the record covers, and a command target could use them: commit, remove or gitignore them first (${few(untracked)})`)
     }
     // Each command target gets the run's --timeout-min (the reviewer's default when unset) as its own deadline.
-    const timeoutMin = o['timeout-min'] === undefined ? DEFAULT_TIMEOUT_MIN : Number(o['timeout-min'])
-    if (!(timeoutMin > 0)) usage('--timeout-min must be a positive number')
+    const timeoutMin = timeoutMinutes(o['timeout-min'])
     const commandTimeoutMs = timeoutMin * 60_000
     const run = { slot: 'conformance', author: o.author, reviewer: o.reviewer, supersedes: o.supersedes, base: o.base, model: o.model, 'timeout-min': o['timeout-min'] }
     return await runReview(run, ctx, { head, plan: { path: planPath, tasks: sel.tasks, blob: planBlob }, check: conformanceCheck({ planPath, tasks, planProblems, ctx, commandTimeoutMs }) })
