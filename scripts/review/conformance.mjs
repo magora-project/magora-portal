@@ -96,7 +96,8 @@ export const commandArgv = (cmd, { platform = process.platform, execPath = proce
 
 // -> { exit, detail }. The output goes to onOutput as it arrives and is not kept: a record is committed, and a
 // command's output can hold anything. exit -1 means the command did not run to an exit status. The result comes at
-// 'close', or drainMs after 'exit': a background descendant that inherited the pipes cannot hold the run open.
+// 'close', or drainMs after 'exit': a background descendant that inherited the pipes cannot hold the run open. That
+// result carries heldOpen: true, because the descendant is still running and postconditions() stops the run there.
 // A command still running timeoutMs after it started is killed (child.kill(), then SIGKILL after killGraceMs; never a
 // process-name match) and the result carries timedOut: true and its pid. Only the direct process is signalled:
 // processes it started (npm's test runner and its tests) may outlive it, so postconditions() stops the run there.
@@ -137,7 +138,7 @@ export const runCommand = ({ cmd, cwd, env, spawnImpl = nodeSpawn, onOutput = ()
       later(drainMs, () => {
         release()
         const r = result(code, signal)
-        finish({ ...r, detail: `${r.detail}; its output pipes were still held open ${drainMs} ms later (a background process?)` })
+        finish({ ...r, heldOpen: true, pid: child.pid, detail: `${r.detail}; its output pipes were still held open ${drainMs} ms later (a background process?)` })
       })
     })
     child.on('close', (code, signal) => finish(timedOut ? killed(killedDetail()) : result(code, signal)))
@@ -182,6 +183,9 @@ export const postconditions = async ({ tasks, cwd, base, head, env, spawnImpl = 
         // A timed-out command's descendants may still be running and changing files, so nothing may run after it:
         // not the next command, not the reviewer. The run stops here, unrun, and no record is written.
         if (r.timedOut) throw new Error(`conformance stopped, unrun: ${t.id} command \`${target.value}\` (pid ${r.pid ?? 'unknown'}) was ${r.detail}. No record was written and nothing else ran. Processes it started may still be running: check for them before running conformance again (raise --timeout-min if the command needs longer).`)
+        // A command that exited while something it started still holds its pipes left a process running that can
+        // change files while the next command or the reviewer runs (and restore them before a later tree check).
+        if (r.heldOpen) throw new Error(`conformance stopped, unrun: ${t.id} command \`${target.value}\` (pid ${r.pid ?? 'unknown'}) ${r.detail}. No record was written and nothing else ran. Find and stop what it left running, and make the command wait for every process it starts.`)
         // The tree was clean before the first command (conformanceCli). A command that changed it (a regenerated or
         // autofixed file) would let later commands, and the record, describe a tree that is not HEAD: stop, unrun.
         if (checkTree) {

@@ -292,6 +292,30 @@ try {
     setTimeout(() => { c2.emit('exit', 1, null); c2.emit('close', 1, null) }, 5)
     const r2 = await p2
     ok('a command that closes normally resolves at close with its exit status', r2.exit === 1 && r2.detail === 'exited 1')
+    ok('...the held-open result says so (heldOpen); a normal close does not', r.heldOpen === true && r2.heldOpen === undefined)
+  }
+
+  // --- push-gate P2: a command that exits leaving a process on its pipes stops the run; nothing runs after it ---
+  {
+    const exitsHoldingPipes = (spawned) => (file, args) => {
+      spawned.push([file, ...args].join(' '))
+      const c = new EventEmitter()
+      c.stdout = new PassThrough(); c.stderr = new PassThrough(); c.pid = 4343
+      setTimeout(() => c.emit('exit', 0, null), 5) // exit 0, never 'close': a background process holds the pipes
+      return c
+    }
+    const repo = mkrepo()
+    const head = raw(repo, ['rev-parse', 'HEAD'])
+    const spawned = []
+    const tasks = [{ id: 'T1', targets: [{ type: 'command', value: 'node first.mjs' }, { type: 'command', value: 'node second.mjs' }] }]
+    let err = ''
+    try { await postconditions({ tasks, cwd: repo, base: head, head, env: {}, spawnImpl: exitsHoldingPipes(spawned) }) } catch (e) { err = e.message }
+    ok('a command that exits 0 while a process holds its pipes stops postconditions, naming its pid', /stopped, unrun/.test(err) && /still held open/.test(err) && /pid 4343/.test(err))
+    ok('...and the next command target never runs', spawned.length === 1 && spawned[0].endsWith('first.mjs'))
+    const before = readRecords({ cwd: repo }).length
+    const o = io(), reviewerCalls = []
+    const code = await reviewCli(conformance('T1'), { cwd: repo, promptFor, env: {}, io: o.io, spawnImpl: reviewerSpawn(reviewerCalls, () => ({ verdict: 'pass', findings: [], inherited: [] })), commandSpawnImpl: exitsHoldingPipes([]) })
+    ok('...through the CLI: exit 1, no reviewer, no record', code === 1 && /still held open/.test(o.err) && reviewerCalls.length === 0 && readRecords({ cwd: repo }).length === before)
   }
 
   // --- push-gate P2s (round 2): expansion inside double quotes; a command that never ends ---
