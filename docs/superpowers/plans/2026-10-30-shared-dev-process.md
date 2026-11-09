@@ -779,6 +779,7 @@ Settled, not open: chained verification (Task 11, `inherit` copies fixed gate-ID
 - modify: `.github/workflows/gemini-review.yml`
 - modify: `scripts/review/gemini_review.py`
 - modify: `AGENTS.md`
+- modify: `.github/pull_request_template.md`
 - modify: `docs/superpowers/specs/2026-10-29-shared-dev-process-design.md`
 - modify: `docs/superpowers/plans/2026-10-30-shared-dev-process.md` (Task 0's ruling, recorded under V2–V5)
 - existing: `scripts/review/identity.mjs`
@@ -790,7 +791,7 @@ Settled, not open: chained verification (Task 11, `inherit` copies fixed gate-ID
 - [ ] **Step 1:** `.coderabbit.yaml` `path_filters` gains `"!.review/**"`.
 - [ ] **Step 2:** `gemini-review.yml`'s diff is built by the trusted base's `scripts/review/identity.mjs` `geminiDiff` (Task 10) instead of an inline `git diff`, so it excludes `.review/` and matches the gate's size check byte for byte. Update the decision-3 comment that says "never by path": the one exclusion is the evidence directory, which no change depends on.
 - [ ] **Step 3:** a new step before "Run the Gemini pass", from the trusted base checkout (sparse-checkout adds `scripts/review/identity.mjs`; add `actions/setup-node` with the `ci.yml` pin): compute the identity, list the PR's comments from `github-actions[bot]`, and if one carries a marker with the same identity and a verdict other than `could-not-run` and `skipped-same-identity`, set `skip=true`. When skipping, post a short comment with verdict `skipped-same-identity` naming the earlier comment, and do not call the model (V5).
-- [ ] **Step 3a:** add `run-name: Gemini review PR #${{ github.event.pull_request.number || inputs.pr_number }}` to `gemini-review.yml`. A `workflow_dispatch` run (label-gate's dispatch, issue #58, or a maintainer's) runs on `main` and has no PR association, so its `display_title` is the only place the API shows which PR it reviews. Task 22's hold and Task 23's re-trigger match dispatched runs by it.
+- [ ] **Step 3a:** add `run-name: 'Gemini review PR #${{ github.event.pull_request.number || inputs.pr_number }}'` to `gemini-review.yml`, quoted whole: unquoted, YAML reads ` #` as the start of a comment and the title would be `Gemini review PR`. A `workflow_dispatch` run (label-gate's dispatch, issue #58, or a maintainer's) runs on `main` and has no PR association, so its `display_title` is the only place the API shows which PR it reviews. Task 22's hold and Task 23's re-trigger match dispatched runs by it.
 - [ ] **Step 3b:** bound Task 22's in-flight hold (gate point 2). "Run the Gemini pass" gets `timeout-minutes: 20`, so a stalled model call fails that step and the post step (`if: (success() || failure()) && …`) still writes `could-not-run`. The job gets `timeout-minutes: 25` as a backstop. A job timeout is a cancellation, so the post step does not run; Task 22 treats that case as a terminal failure: no `Gemini review` run on the head is in flight, the latest completed one concluded `cancelled`, `failure` or `timed_out`, and no Gemini verdict names the head.
 - [ ] **Step 4:** the post step writes the marker for every outcome. `gemini_review.py` numbers each finding line it emits (`1. P1 …`), so indices are stable within one comment.
 - [ ] **Step 5:** `AGENTS.md`, byte-neutral: one line, "Reviewers: skip `.review/`; findings located only there are outside the gate." Add `.coderabbit.yaml` to the control-file list in `AGENTS.md` and the PR template (§5.7: its evidence exclusion is a control; `gemini-review.yml` is already covered by `.github/**`).
@@ -805,6 +806,7 @@ Settled, not open: chained verification (Task 11, `inherit` copies fixed gate-ID
 - create: `scripts/review/github.test.mjs`
 - create: `scripts/review/severity.mjs`
 - create: `scripts/review/severity.test.mjs`
+- create: `scripts/review/fixtures/bot-formats.json`
 - command: `npm test`
 
 **Interfaces:**
@@ -822,7 +824,7 @@ Settled, not open: chained verification (Task 11, `inherit` copies fixed gate-ID
   - `outsideDiffFindings({reviews, comments}) -> [{id: 'cr:<marker>', severity, path, reportedCommit}]`: CodeRabbit's outside-diff findings, read from **review bodies** (where CodeRabbit places its "Outside diff range" section) and from its issue comments, from `coderabbitai[bot]` only. `reportedCommit` is the review's `commitId`, or `null` for a finding read from an issue comment, which names no commit
 - Produces (`severity.mjs`): `severityOf({login, body}) -> {label: string | null, blocking: boolean}`. Codex: the `P0`–`P3` badge; CodeRabbit: the `🔴 Critical` / `🟠 Major` / `🟡 Minor` / `🔵 Trivial` / `Nitpick` label; unparseable → `{label: null, blocking: true}` (§5.6).
 
-- [ ] **Step 1 (read-only):** pin the formats from live data: one Codex inline comment's badge, one CodeRabbit inline comment's severity line, one CodeRabbit outside-diff finding's marker, from PRs #43, #44 and #46 (`gh api …/pulls/<n>/comments --paginate`, `…/issues/<n>/comments --paginate`). Save trimmed copies as fixtures under `scripts/review/fixtures/`, with any token-like strings removed.
+- [ ] **Step 1 (read-only):** pin the formats from live data: one Codex inline comment's badge, one CodeRabbit inline comment's severity line, one CodeRabbit outside-diff finding's marker, from PRs #43, #44 and #46 (`gh api …/pulls/<n>/comments --paginate`, `…/issues/<n>/comments --paginate`). Save trimmed copies in one file, `scripts/review/fixtures/bot-formats.json`, as an object keyed by fixture name, with any token-like strings removed. Synthetic fixtures (pagination pages, spoofed logins) stay in the test files.
 - [ ] **Step 2: Write the failing tests** against those fixtures:
 
 ```js
