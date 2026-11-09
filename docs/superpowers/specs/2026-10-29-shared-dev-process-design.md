@@ -481,7 +481,8 @@ verified only by a substitute.
 fix that a later commit reverts can still pass. The gate cannot tell a review that answered a
 full-review request from one that merely came after it, and Codex exposes only its latest review
 marker. This review layer is discipline, not the control (AGENTS.md), so the limitation is
-accepted rather than worked around.
+accepted rather than worked around. It covers CodeRabbit's outside-diff findings as it covers
+threads (David, 2026-11-09; plan gate point 4).
 
 **Accepted limitation (David, 2026-11-03): an unsplittable diff.** The 400,000-byte limit (§5.5)
 applies to every PR, and a lockfile cannot be split. `package-lock.json` is 292,316 bytes, and the
