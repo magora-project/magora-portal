@@ -1,12 +1,12 @@
 # AGENTS.md: magora-portal
 
-For agents and contributors (Claude Code via `CLAUDE.md`, Codex CLI directly). Design: `docs/superpowers/specs/2026-10-15-repo-harness-design.md`.
+For agents and contributors (Claude Code via `CLAUDE.md`, Codex directly). Design: `docs/superpowers/specs/2026-10-15-repo-harness-design.md`.
 
 ## Commands
 
 - `npm ci`: install
-- `npm test`: all `*.test.mjs`; fails if none
-- `npm run lint:ratchet`: ESLint; fails if a rule's count exceeds `.github/lint-baseline.json`; if one falls, lower it in the same PR
+- `npm test`: all `*.test.mjs`, fails if none
+- `npm run lint:ratchet`: ESLint; fails if a rule's count exceeds `.github/lint-baseline.json`. If one falls, lower it in the same PR
 - `npm run build`: prod build, no env vars
 - `npm run check:migrations`: new migrations have rollbacks
 - `npm run check:deno`: type-check, lint Edge Functions (Deno 2.9.5)
@@ -15,10 +15,10 @@ For agents and contributors (Claude Code via `CLAUDE.md`, Codex CLI directly). D
 ## Flow
 
 - Trunk: branch from and PR to `main`. No long-lived branches.
-- Squash merge only. Maintainers merge own PRs once required checks are green; no approval needed. A maintainer reviews then merges fork/Dependabot PRs.
+- Squash merge only. Maintainers merge own PRs once required checks pass, no approval. A maintainer reviews then merges fork/Dependabot PRs.
 - Resolve each review thread before merge, after reading bot findings.
 - **Agents never push, merge, or change repo settings without their operator's explicit approval.**
-- Process: `.claude/rules/process.md`. Every agent follows it; Claude Code loads the repo skills from `.claude/skills/`.
+- Every agent follows `.claude/rules/process.md`; Claude Code loads skills from `.claude/skills/`.
 
 ## Depth labels (exactly one per PR)
 
@@ -28,16 +28,17 @@ For agents and contributors (Claude Code via `CLAUDE.md`, Codex CLI directly). D
 | `standard` | ordinary changes |
 | `subtle-correctness` | **any PR that touches `supabase/migrations/`, an `api/` auth path, or a control file**; concurrency; anything subtle |
 
-Review before pushing: `.claude/rules/process.md` § Review slots and dispatch. This review layer is discipline; the required CI checks are the control.
+Review before push: `.claude/rules/process.md` § Review slots and dispatch. This review layer is discipline; the required CI checks are the control.
 
-Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`; for those, the merging maintainer's control-file read replaces the depth rule.
+Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`, where the merging maintainer's control-file read replaces the depth rule.
 
 ## Control files
 
 `.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`,
 `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`,
-`scripts/review/**`, `.claude/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`.
-A PR can weaken a check by editing these. Say so in the PR description when you change one. On fork and Dependabot PRs the merging maintainer reads each control-file change first.
+`scripts/review/**`, `.claude/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`, `.coderabbit.yaml`.
+A PR can weaken a check by editing these: say so in the PR description. The merging maintainer reads each such change first on fork and Dependabot PRs.
+Reviewers: skip `.review/`; findings located only there are outside the gate.
 
 ## Migrations
 
@@ -53,4 +54,4 @@ A PR can weaken a check by editing these. Say so in the PR description when you 
 
 ## Secrets
 
-Agents use `op run` and `op inject` only, never `op read`, `op item get` or anything else that prints a secret value. Local env files hold `op://` references only (`env/*.env`); run commands via `op run --env-file=env/staging.env -- <cmd>`.
+Agents use `op run` and `op inject` only, never `op read`, `op item get` or anything else that prints a secret. Env files hold `op://` references only (`env/*.env`); run `op run --env-file=env/staging.env -- <cmd>`.

@@ -52,6 +52,10 @@
 # every job rounded UP to a whole minute. This adds one job per PR head, and the
 # `concurrency` cancel is what keeps a rapid push sequence from paying per push.
 name: Gemini review
+# Quoted whole: unquoted, YAML reads ` #` as a comment and the title would be `Gemini review PR`. A
+# dispatched run (label-gate, a maintainer) runs on `main` with no PR association, so this
+# `display_title` is the only place the API shows which PR it reviews (Tasks 22 and 23 match on it).
+run-name: 'Gemini review PR #${{ github.event.pull_request.number || inputs.pr_number }}'
 
 on:
   pull_request:
@@ -94,6 +98,9 @@ jobs:
   gemini-review:
     name: gemini-review
     runs-on: ubuntu-latest
+    # Backstop for the step timeout below. A job timeout is a cancellation, so the post step does not
+    # run; Task 22 treats that as a terminal failure.
+    timeout-minutes: 25
     # A draft PR is parked by intent; `ready_for_review` above is what fires when it
     # is unparked. The fork predicate is decision 1: a fork PR has no secret, so
     # it is skipped explicitly rather than failing on an empty key.
@@ -194,6 +201,13 @@ jobs:
           # Cone mode always includes root files, so `AGENTS.md` comes with it.
           sparse-checkout: scripts/review
 
+      # Node comes from the trusted base's `.nvmrc` (root files ride along with the cone-mode
+      # sparse-checkout, as does `scripts/review/identity.mjs`).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.pr.outputs.run == 'true'
+        with:
+          node-version-file: trusted/.nvmrc
+
       - name: Build the review diff
         if: steps.pr.outputs.run == 'true'
         id: diff
@@ -203,16 +217,95 @@ jobs:
         run: |
           set -euo pipefail
           # Three dots: the changes THIS PR introduces, not everything the base
-          # gained since the branch was cut. Scoped by COMMIT RANGE and never by
-          # path -- a path filter hides a file the change depends on and yields a
-          # confident finding about wiring that is present all along (measured
-          # in method-project, 2026-09-20).
-          git diff "$BASE_SHA...$HEAD_SHA" > /tmp/review.diff
+          # gained since the branch was cut. Scoped by COMMIT RANGE, with ONE path exclusion: the
+          # `.review/` evidence directory, which no change depends on. Any other path filter hides a
+          # file the change depends on and yields a confident finding about wiring that is present
+          # all along (measured in method-project, 2026-09-20).
+          # The diff is built by the TRUSTED base's `geminiDiff`, the one builder the gate's size
+          # check also uses, so both measure the same bytes. The PR tree is only the git repo it
+          # reads; none of its code runs. Both commits are present (fetch-depth 0).
+          node --input-type=module -e "
+            import { pathToFileURL } from 'node:url'
+            import { writeFileSync } from 'node:fs'
+            const { geminiDiff } = await import(pathToFileURL(process.env.GITHUB_WORKSPACE + '/trusted/scripts/review/identity.mjs').href)
+            writeFileSync('/tmp/review.diff', await geminiDiff({ cwd: process.env.GITHUB_WORKSPACE, base: process.env.BASE_SHA, head: process.env.HEAD_SHA }))
+          "
           echo "bytes=$(wc -c < /tmp/review.diff)" >> "$GITHUB_OUTPUT"
 
-      - name: Run the Gemini pass
+      - name: Skip a repeat of an earlier verdict
         if: steps.pr.outputs.run == 'true'
+        id: skip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ steps.pr.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          set -uo pipefail
+          # V5: the same input identity (the trusted base's `inputIdentity`) with a completed verdict
+          # already on the PR means the model is not called again. Every failure here falls through
+          # to a normal review: a wasted call is cheaper than a missing one.
+          identity="$(node --input-type=module -e "
+            import { pathToFileURL } from 'node:url'
+            const { inputIdentity } = await import(pathToFileURL(process.env.GITHUB_WORKSPACE + '/trusted/scripts/review/identity.mjs').href)
+            process.stdout.write(await inputIdentity({ cwd: process.env.GITHUB_WORKSPACE, base: process.env.BASE_SHA, head: process.env.HEAD_SHA }))
+          ")" || identity=""
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$identity" ]; then echo "no identity; reviewing"; exit 0; fi
+          # Comments come from the API, newest page included, and only `github-actions[bot]`'s count.
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]") | {url: .html_url, body: .body}' \
+            > "$RUNNER_TEMP/comments.jsonl" || { echo "could not list comments; reviewing"; exit 0; }
+          # `-I`: the cwd is the PR checkout and GH_TOKEN is in the env.
+          IDENTITY="$identity" python3 -I - <<'PY'
+          import json, os, re
+          env = os.environ
+          marker = re.compile(r"^<!-- gemini-review:v1 (\{.*\}) -->$", re.MULTILINE)
+          earlier = None
+          with open(os.path.join(env["RUNNER_TEMP"], "comments.jsonl"), encoding="utf-8") as fh:
+              for raw in fh:
+                  try:
+                      c = json.loads(raw)
+                  except ValueError:
+                      continue
+                  found = marker.findall(c.get("body") or "")
+                  if len(found) != 1:
+                      continue
+                  try:
+                      m = json.loads(found[0])
+                  except ValueError:
+                      continue
+                  if (isinstance(m, dict) and m.get("identity") == env["IDENTITY"]
+                          and m.get("verdict") in ("no-findings", "findings")):
+                      earlier = c["url"]
+          if earlier is None:
+              print("no earlier verdict for this identity; reviewing")
+              raise SystemExit(0)
+          sha, ident = env["HEAD_SHA"], env["IDENTITY"]
+          meta = {"head": sha, "identity": ident, "verdict": "skipped-same-identity", "findings": []}
+          body = (
+              "## Gemini review: skipped\n\n"
+              f"Head `{sha}` has the same input identity as an earlier Gemini verdict, {earlier}, "
+              "so the model was not called again. That comment's findings still apply.\n\n"
+              "---\n_Posted by gemini-review.yml (Gemini, advisory; not a required check)_\n"
+              "<!-- gemini-review:v1 " + json.dumps(meta, separators=(",", ":")) + " -->"
+          )
+          with open(os.path.join(env["RUNNER_TEMP"], "skip.json"), "w", encoding="utf-8") as fh:
+              json.dump({"body": body}, fh)
+          with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write("skip=true\n")
+          PY
+          if grep -qx 'skip=true' "$GITHUB_OUTPUT"; then
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              --input "$RUNNER_TEMP/skip.json" > /dev/null
+          fi
+
+      - name: Run the Gemini pass
+        if: steps.pr.outputs.run == 'true' && steps.skip.outputs.skip != 'true'
         id: review
+        # A stalled model call fails THIS step, so the post step still writes `could-not-run`.
+        timeout-minutes: 20
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           BASE_SHA: ${{ steps.pr.outputs.base_sha }}
@@ -261,13 +354,14 @@ jobs:
         # `steps.pr.outputs.run`: a dispatched run that decided not to review posts nothing. If
         # the resolve step itself failed, that output is unset, so nothing posts and the job is
         # red -- visible on the Actions tab, not on the PR.
-        if: (success() || failure()) && steps.pr.outputs.run == 'true'
+        if: (success() || failure()) && steps.pr.outputs.run == 'true' && steps.skip.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REVIEW_RC: ${{ steps.review.outputs.rc }}
           DIFF_BYTES: ${{ steps.diff.outputs.bytes }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
+          IDENTITY: ${{ steps.skip.outputs.identity }}
         run: |
           set -uo pipefail
           # python3 + curl rather than actions/github-script. method-project never
@@ -282,7 +376,7 @@ jobs:
           # be imported by the line below and run with the token (measured).
           # Isolated mode drops the cwd from sys.path and ignores PYTHON* env.
           python3 -I - <<'PY' > /tmp/comment.json
-          import json, os
+          import json, os, re
           rc = os.environ["REVIEW_RC"]
           sha = os.environ["HEAD_SHA"]
           nbytes = os.environ["DIFF_BYTES"]
@@ -293,6 +387,11 @@ jobs:
               except OSError:
                   return ""
           out, err = read("/tmp/review.out"), read("/tmp/review.err")
+          # Model and stderr text must not carry a marker of its own (a diff can steer the model
+          # into emitting one): defang the opener so the one real marker below is the only one.
+          out, err = out.replace("<!--", "<! --"), err.replace("<!--", "<! --")
+          findings = []
+          verdict = "could-not-run"
 
           # The SHA is named in EVERY outcome. A verdict is a property of a
           # commit; a comment that does not say which one cannot be told apart
@@ -305,8 +404,13 @@ jobs:
                   "```\n" + (err[-1500:] or "(no stderr)") + "\n```"
               )
           elif out == "NO FINDINGS":
+              verdict = "no-findings"
               body = (f"## Gemini review: no findings\n\nHead `{sha}`, {nbytes} byte diff.")
           else:
+              verdict = "findings"
+              # `gemini_review.py` numbers each finding line `N. P1 | ...`.
+              findings = [{"index": int(i), "severity": sev.upper()}
+                          for i, sev in re.findall(r"^(\d+)\. (P[01])\b", out, re.MULTILINE | re.IGNORECASE)]
               body = (
                   "## Gemini review\n\n"
                   f"Head `{sha}`, {nbytes} byte diff. Advisory: this posts no commit status, and is not a required check. "
@@ -315,6 +419,9 @@ jobs:
                   "an oracle.\n\n```\n" + out[:55000] + "\n```"
               )
           body += "\n\n---\n_Posted by gemini-review.yml (Gemini, advisory; not a required check)_"
+          # Exactly one marker, last, for every outcome (Task 21 parses it).
+          meta = {"head": sha, "identity": os.environ.get("IDENTITY", ""), "verdict": verdict, "findings": findings}
+          body += "\n<!-- gemini-review:v1 " + json.dumps(meta, separators=(",", ":")) + " -->"
           print(json.dumps({"body": body}))
           PY
 

@@ -15,6 +15,7 @@ reviews:
     - "!**/package-lock.json"
     - "!**/dist/**"
     - "!src/generated/**"
+    - "!.review/**"
   path_instructions:
     - path: "**/*.{js,jsx,mjs}"
       instructions: >-

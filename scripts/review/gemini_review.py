@@ -184,6 +184,29 @@ def classify_verdict(text: str) -> str | None:
     return None
 
 
+_SEVERITY_RE = re.compile(r"P[01]\b.*", re.IGNORECASE | re.DOTALL)
+
+
+def number_findings(text: str) -> str:
+    """Rewrite each finding line as `N. P1 | ...`, counting from 1.
+
+    `gemini-review.yml` reads the verdict marker's `findings` indices off these
+    numbers, so they are stable within one comment. A line is a finding by the
+    same predicate `classify_verdict` uses (`FINDING_LINE_RE`); its decoration
+    (list marker, table-cell edge, emphasis) is replaced by the number.
+    """
+    out: list[str] = []
+    n = 0
+    for line in text.splitlines():
+        if FINDING_LINE_RE.match(line):
+            n += 1
+            m = _SEVERITY_RE.search(line[FINDING_LINE_RE.match(line).end() - 2:])
+            out.append(f"{n}. {m.group(0)[:2].upper()}{m.group(0)[2:]}" if m else line)
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 def build_prompt(title: str, rules: str, diff: str) -> str:
     """Assemble the review prompt. Pure, so the tests can pin its shape."""
     return PROMPT_TEMPLATE.format(title=title, rules=rules, diff=diff)
@@ -416,7 +439,7 @@ def main(argv: list[str] | None = None) -> int:
         # The workflow keys its clean heading on the EXACT sentinel, so a
         # tolerated variant (`no findings.`, `**NO FINDINGS**`) is normalised
         # here rather than posted under the findings heading.
-        print(NO_FINDINGS if verdict == VERDICT_NO_FINDINGS else text.strip())
+        print(NO_FINDINGS if verdict == VERDICT_NO_FINDINGS else number_findings(text.strip()))
         return 0
 
     if unrecognised:
