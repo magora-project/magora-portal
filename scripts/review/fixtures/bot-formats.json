@@ -1,0 +1,118 @@
+{
+  "codexP2": {
+    "source": "PR #44 pulls comment 4419298162 (chatgpt-codex-connector[bot], original_commit_id 6df86b4)",
+    "login": "chatgpt-codex-connector[bot]",
+    "body": "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Preserve non-uppercase variable names in the table fallback**\n\nWhen an older Vercel CLI triggers the table-output fallback, this filter silently drops variable names containing lowercase letters or starting with an underscore. Vercel's [table renderer](https://github.com/vercel/vercel/blob/main/packages/cli/src/commands/env/ls.ts) puts `chalk.bold(env.key)` in the first column without uppercasing it. A listing containing the inventoried `EXPECTED_KEY` plus an unrecorded `legacy_key` therefore produces no problems, defeating the check for unrecorded secrets. Parse all valid variable names while excluding the table header explicitly, and add a regression test covering this case."
+  },
+  "crMinorInline": {
+    "source": "PR #43 pulls comment 4408087916 (coderabbitai[bot])",
+    "login": "coderabbitai[bot]",
+    "body": "<!-- coderabbit-ai-generated:v1 -->\n\n**<picture><img src=\"https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/amber-16.svg\" width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> Minor** · **Data Integrity & Integration** · **Quick win**\n\n**Scope the staging-only success criterion.**\n\nCriterion 2 says Preview and local `vite dev` reach staging only. Section 5.4 later says that they can still call production's public endpoints directly. Define the criterion as configured Supabase and proxied `/api` traffic reaching staging, and keep criterion 8 for production write paths. ([raw.githubusercontent.com](https://raw.githubusercontent.com/magora-project/magora-portal/711b7c48c8e5cde3e8314bfc8af4bf3527d9199b/docs/superpowers/specs/2026-10-28-staging-and-secrets-design.md))\n\n\n<!-- fingerprinting:phantom:triton:caracal -->\n\n<!-- cr-indicator-types:potential_issue -->\n\n<!-- cr-comment:v1:74ad3b9c6ff68f0bdadf6407 -->\n"
+  },
+  "crMajorInline": {
+    "source": "PR #44 pulls comment 4419159947 (coderabbitai[bot]); body cut after the header line",
+    "login": "coderabbitai[bot]",
+    "body": "<!-- coderabbit-ai-generated:v1 -->\n\n**<picture><img src=\"https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/major-16.svg\" width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> Major** · **Data Integrity & Integration** · **Heavy lift**"
+  },
+  "crReviewOutsideDiff": {
+    "source": "PR #43 review 5703932408 (coderabbitai[bot], commit_id ed7a13a); prompt blocks and review-info section removed",
+    "id": 5703932408,
+    "login": "coderabbitai[bot]",
+    "commitId": "ed7a13ad32562362ff6b212fadbb11228c8ade39",
+    "submittedAt": "2026-10-29T19:41:15Z",
+    "body": "<!-- coderabbit-ai-generated:v1 -->\n\n\n\n> [!CAUTION]\n> Some comments are outside the diff and can’t be posted inline due to GitHub limitations.\n> \n> **⚠️ Outside diff range comments (3)**\n> \n> <details>\n> <summary><strong><picture><img src=\"https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/major-16.svg\" width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> Major</strong> · Validate completion markers against retained… · <code>2026-10-28-staging-and-secrets.md:225-226</code></summary><blockquote>\n> <dl>\n> <dd>\n> \n> `docs/superpowers/plans/2026-10-28-staging-and-secrets.md:225-226`\n> **🗄️ Data Integrity & Integration** | **🟠 Major** | **⚡ Quick win**\n> \n> **Validate completion markers against retained prefixes.**\n> \n> The plan stores `complete/<date>` outside `nightly/`, but the `nightly/` objects expire after 14 days. A picker that selects the newest marked date can select a marker whose backup prefix no longer exists. Require the picker to verify that the marked prefix exists and is within retention, or expire markers with the same policy. ([github.com](https://github.com/magora-project/magora-portal/blob/ed7a13ad32562362ff6b212fadbb11228c8ade39/docs/superpowers/plans/2026-10-28-staging-and-secrets.md))\n> \n> <!-- cr-comment:v1:956d1b3cd90766315da30417 -->\n> \n> </dd>\n> </dl>\n> </blockquote></details>\n> <details>\n> <summary><strong><picture><img src=\"https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/amber-16.svg\" width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> Minor</strong> · Freeze the backup date for the entire run. · <code>2026-10-28-staging-and-secrets.md:224</code></summary><blockquote>\n> <dl>\n> <dd>\n> \n> `docs/superpowers/plans/2026-10-28-staging-and-secrets.md:224`\n> **🗄️ Data Integrity & Integration** | **🟡 Minor** | **⚡ Quick win**\n> \n> **Freeze the backup date for the entire run.**\n> \n> When this command runs once per bucket, `$(date -u +%F)` can change at UTC midnight. Different buckets can then be written to different prefixes, while one completion marker claims a complete backup. Compute `BACKUP_DATE` once before the loop and reuse it for every copy, check, previous-prefix lookup, and marker. ([github.com](https://github.com/magora-project/magora-portal/blob/ed7a13ad32562362ff6b212fadbb11228c8ade39/docs/superpowers/plans/2026-10-28-staging-and-secrets.md))\n> \n> <!-- cr-comment:v1:97bc58def15aba789b90adc0 -->\n> \n> </dd>\n> </dl>\n> </blockquote></details>\n> <details>\n> <summary><strong><picture><img src=\"https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/amber-16.svg\" width=\"16\" height=\"16\" align=\"absmiddle\" alt=\"\"></picture> Minor</strong> · Define the restore ACL scope. · <code>2026-10-28-staging-and-secrets.md:238</code></summary><blockquote>\n> <dl>\n> <dd>\n> \n> `docs/superpowers/plans/2026-10-28-staging-and-secrets.md:238`\n> **🗄️ Data Integrity & Integration** | **🟡 Minor** | **⚡ Quick win**\n> \n> **Define the restore ACL scope.**\n> \n> `--no-privileges` correctly excludes production `GRANT` and `REVOKE` statements. However, “revoking every privilege” does not identify the affected roles, privilege classes, or scratch defaults. The referenced runbook is not present yet; Task 5 only says to create it. Specify the exact role-scoped revokes and preserve the scratch owner’s required access. Do not imply that the scratch project has no access controls.\n> \n> <!-- cr-comment:v1:611baf72100b6a3cb565075e -->\n> \n> </dd>\n> </dl>\n> </blockquote></details>\n\n---\n"
+  },
+  "codexStateComment": {
+    "source": "PR #44 issue comment 6485998706 (chatgpt-codex-connector[bot]); About-Codex footer removed",
+    "id": 6485998706,
+    "login": "chatgpt-codex-connector[bot]",
+    "body": "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 {\"code_review\":{\"commit_sha\":\"fc4c90cffba12716c1b3dee3737174359251e2e6\",\"has_any_findings\":false,\"has_unresolved_findings\":false,\"status\":\"completed\"},\"security_review\":{\"commit_sha\":\"fc4c90cffba12716c1b3dee3737174359251e2e6\",\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":\"completed\"}} -->\n<!-- codex-security-review:v1 {\"blockingSeverityThreshold\":\"P0\",\"headSha\":\"fc4c90cffba12716c1b3dee3737174359251e2e6\",\"mergeGateEnabled\":false,\"pullRequestNumber\":44,\"repository\":\"magora-project/magora-portal\",\"status\":\"completed\"} -->\n## Codex Review Summary\n\nThis comment shows the latest Codex review activity on this pull request.\n\n| Review | Status | Commit | Review trigger |\n| --- | --- | --- | --- |\n| 📝 **Code Review** | ✅ **Completed** <relative-time datetime=\"2026-11-02T01:14:51.733276Z\">2026-11-02T01:14:51.733276Z</relative-time> | `fc4c90c` | New commits |\n| 🔒 **Security Review** | ✅ **Completed** <relative-time datetime=\"2026-11-02T01:15:54.238625Z\">2026-11-02T01:15:54.238625Z</relative-time> | `fc4c90c` | New commits |\n\n\n\n",
+    "createdAt": "2026-10-29T02:13:41Z",
+    "updatedAt": "2026-11-02T01:15:56Z"
+  },
+  "pr43RawReviews": {
+    "source": "PR #43 GET pulls/43/reviews, measured 2026-11-09: 8 reviews, 6 with an empty body (3 coderabbitai[bot], 3 david-magoraproject); non-empty bodies replaced by a placeholder",
+    "reviews": [
+      {
+        "id": 5692122090,
+        "user": {
+          "login": "coderabbitai[bot]"
+        },
+        "commit_id": "711b7c48c8e5cde3e8314bfc8af4bf3527d9199b",
+        "submitted_at": "2026-10-29T02:23:37Z",
+        "state": "COMMENTED",
+        "body": "(non-empty body omitted)"
+      },
+      {
+        "id": 5703810021,
+        "user": {
+          "login": "david-magoraproject"
+        },
+        "commit_id": "ed7a13ad32562362ff6b212fadbb11228c8ade39",
+        "submitted_at": "2026-10-29T19:31:37Z",
+        "state": "COMMENTED",
+        "body": ""
+      },
+      {
+        "id": 5703810604,
+        "user": {
+          "login": "david-magoraproject"
+        },
+        "commit_id": "ed7a13ad32562362ff6b212fadbb11228c8ade39",
+        "submitted_at": "2026-10-29T19:31:41Z",
+        "state": "COMMENTED",
+        "body": ""
+      },
+      {
+        "id": 5703811309,
+        "user": {
+          "login": "david-magoraproject"
+        },
+        "commit_id": "ed7a13ad32562362ff6b212fadbb11228c8ade39",
+        "submitted_at": "2026-10-29T19:31:44Z",
+        "state": "COMMENTED",
+        "body": ""
+      },
+      {
+        "id": 5703932408,
+        "user": {
+          "login": "coderabbitai[bot]"
+        },
+        "commit_id": "ed7a13ad32562362ff6b212fadbb11228c8ade39",
+        "submitted_at": "2026-10-29T19:41:15Z",
+        "state": "COMMENTED",
+        "body": "(non-empty body omitted)"
+      },
+      {
+        "id": 5703937261,
+        "user": {
+          "login": "coderabbitai[bot]"
+        },
+        "commit_id": "ed7a13ad32562362ff6b212fadbb11228c8ade39",
+        "submitted_at": "2026-10-29T19:41:42Z",
+        "state": "COMMENTED",
+        "body": ""
+      },
+      {
+        "id": 5703950421,
+        "user": {
+          "login": "coderabbitai[bot]"
+        },
+        "commit_id": "ed7a13ad32562362ff6b212fadbb11228c8ade39",
+        "submitted_at": "2026-10-29T19:42:51Z",
+        "state": "COMMENTED",
+        "body": ""
+      },
+      {
+        "id": 5703960536,
+        "user": {
+          "login": "coderabbitai[bot]"
+        },
+        "commit_id": "ed7a13ad32562362ff6b212fadbb11228c8ade39",
+        "submitted_at": "2026-10-29T19:43:42Z",
+        "state": "COMMENTED",
+        "body": ""
+      }
+    ]
+  }
+}
