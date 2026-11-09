@@ -62,6 +62,8 @@ export const validateRecord = (r) => {
     if (!nonEmpty(f.summary)) p.push(`${n}.summary: must be a non-empty string`)
     if (f.file !== undefined && typeof f.file !== 'string') p.push(`${n}.file: must be a string when present`)
     if (f.line !== undefined && !Number.isInteger(f.line)) p.push(`${n}.line: must be an integer when present`)
+    // A finding the evidence writer computed itself (a conformance postcondition, plan Task 18), not a reviewer.
+    if (f.source !== undefined && f.source !== 'postcondition') p.push(`${n}.source: must be postcondition when present`)
     if (f.disposition !== undefined) {
       const d = f.disposition
       if (!isObj(d)) p.push(`${n}.disposition: must be an object when present`)
@@ -73,6 +75,9 @@ export const validateRecord = (r) => {
   })
   if (r.supersedes !== null && typeof r.supersedes !== 'string') p.push('supersedes: must be a string or null')
   if (typeof r.createdAt !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)$/.test(r.createdAt) || Number.isNaN(Date.parse(r.createdAt))) p.push('createdAt: must be an ISO 8601 timestamp')
+  // A plan record's reference-check scope (plan Task 17): the revision the in-scope tasks start from, and those tasks.
+  if (r.rev !== undefined && !nonEmpty(r.rev)) p.push('rev: must be a non-empty string when present')
+  if (r.tasks !== undefined && !(Array.isArray(r.tasks) && r.tasks.every((t) => typeof t === 'string'))) p.push('tasks: must be an array of strings when present')
   if (r.conformance !== undefined) {
     const c = r.conformance
     const strs = (a) => Array.isArray(a) && a.every((s) => typeof s === 'string')
@@ -81,6 +86,8 @@ export const validateRecord = (r) => {
       if (!strs(c.tasks)) p.push('conformance.tasks: must be an array of strings')
       if (!strs(c.deviations)) p.push('conformance.deviations: must be an array of strings')
       if (!Array.isArray(c.commands) || !c.commands.every((x) => isObj(x) && typeof x.cmd === 'string' && Number.isInteger(x.exit))) p.push('conformance.commands: must be an array of { cmd: string, exit: integer }')
+      // The plan it checked: its repo path and blob at the reviewed HEAD (review-evidence binds the record to them).
+      if (!isObj(c.plan) || !nonEmpty(c.plan.path) || !nonEmpty(c.plan.blob)) p.push('conformance.plan: must be { path: string, blob: string }, the plan checked and its blob')
     }
   }
   return p
@@ -166,18 +173,26 @@ export const undisposedBlocking = (rec, { deviations = [] } = {}) =>
 
 // Findings to carry into a re-review. Ordinary IDs are prefixed with the old record's stem; a gate ID keeps
 // its ID and is always carried: one with an acceptable disposition (or a P3) is copied as is, so it stays verifiable at the chain head.
-// A justified-deviation on a conformance record is copied as is too (ID and disposition): whether it is
-// acceptable depends on the PR body's Deviations field, which only the review-evidence check reads, at the chain head.
+// On a conformance record every finding not disposed `fixed` is a deviation (deviationIds), and spec §5.4 lets a
+// deviation leave the chain only fixed by a re-review or justified in the Deviations field. So each one, P3 included and
+// whatever its disposition (justified-deviation, or a pre-existing / reclassified-nit on a legacy record: dispose now
+// refuses those kinds on conformance), is reopened like an undisposed finding (prefixed, disposition dropped). The
+// re-review reassesses it: one the author has since fixed is marked fixed and leaves the Deviations field; one still
+// present comes back for the author to justify again. The runner drops the inherited postcondition findings, which
+// it recomputes. Other record types keep the rule above: acceptable dispositions and P3s are not carried.
 export const inherit = (old, { deviations = [] } = {}) => {
   const out = []
   const opts = { deviations, recordType: old.type }
+  const conformance = old.type === 'conformance'
   for (const f of old.findings || []) {
     const gate = isGateId(f.id)
     if (gate && dispositionOk(f, opts)) { out.push({ ...f }); continue } // every gate ID stays visible at the chain head
-    if (old.type === 'conformance' && isObj(f.disposition) && f.disposition.kind === 'justified-deviation') { out.push({ ...f }); continue }
-    if (!isBlockingByDefault(f) || dispositionOk(f, opts)) continue
+    if (conformance ? isObj(f.disposition) && f.disposition.kind === 'fixed' : (!isBlockingByDefault(f) || dispositionOk(f, opts))) continue
     const { disposition: _d, ...rest } = f // eslint-disable-line no-unused-vars
     out.push({ ...rest, id: gate ? f.id : `${old.stem}#${f.id}` })
   }
   return out
 }
+
+// A conformance record's deviations (plan Task 18): the IDs of its findings without a `fixed` disposition.
+export const deviationIds = (findings) => (findings || []).filter((f) => !(isObj(f.disposition) && f.disposition.kind === 'fixed')).map((f) => f.id)

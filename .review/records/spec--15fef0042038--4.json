@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "15fef00420381b574f50ed5e74e968daf99b88e9",
+    "path": "docs/superpowers/specs/2026-10-29-shared-dev-process-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "Conformance validity binds only to the PR diff identity and task IDs, so merging a changed plan from main under unchanged task IDs can retain conformance evidence that never checked the current requirements.",
+      "file": "docs/superpowers/specs/2026-10-29-shared-dev-process-design.md",
+      "line": 300,
+      "disposition": {
+        "kind": "pre-existing",
+        "reason": "Present in the spec on main; conformance binding is fixed in code in PR C and the spec text is amended in PR D",
+        "issue": "https://github.com/magora-project/magora-portal/issues/81"
+      }
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "Requiring all three vendors to substitute when all bots fail necessarily includes the author's vendor, contradicting §5.3's independence predicate unless substitute records receive an explicit exception.",
+      "file": "docs/superpowers/specs/2026-10-29-shared-dev-process-design.md",
+      "line": 403,
+      "disposition": {
+        "kind": "pre-existing",
+        "reason": "Present in the spec on main; substitution/independence is PR D scope (Tasks 20-22), resolved in its spec amendment",
+        "issue": "https://github.com/magora-project/magora-portal/issues/82"
+      }
+    },
+    {
+      "id": "F3",
+      "severity": "P1",
+      "summary": "Excluding evidence files does not establish the promised no-loop guarantee because Gemini still reruns the whole code diff on evidence-only pushes and can emit fresh findings requiring another record commit.",
+      "file": "docs/superpowers/specs/2026-10-29-shared-dev-process-design.md",
+      "line": 368,
+      "disposition": {
+        "kind": "pre-existing",
+        "reason": "Present in the spec on main; Gemini loop behaviour is PR D scope (Tasks 20-21), resolved in its spec amendment",
+        "issue": "https://github.com/magora-project/magora-portal/issues/83"
+      }
+    },
+    {
+      "id": "F4",
+      "severity": "P2",
+      "summary": "The required invalidation of a passing gate after a late Gemini finding remains delegated to unresolved Plan OPEN point 2, while the specified triggers cannot observe that verdict, leaving a merge-blocking requirement undefined.",
+      "file": "docs/superpowers/specs/2026-10-29-shared-dev-process-design.md",
+      "line": 441
+    }
+  ],
+  "supersedes": "spec--15fef0042038--3",
+  "createdAt": "2026-11-07T03:08:47.984Z"
+}

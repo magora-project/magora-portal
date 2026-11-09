@@ -16,7 +16,11 @@
 //   1. outcome === 'completed' and verdict is 'pass' or 'fail' (a null verdict is not a recognized result).
 //   2. input.identity equals the current PR identity (or, for spec/plan, the doc's blob at head, same path).
 //      Conformance: conformance.tasks equals the Plan field's expanded tasks as a set; conformance.deviations
-//      equals the Deviations field's IDs as a set.
+//      equals the Deviations field's IDs as a set; conformance.plan names the Plan field's path and that path's
+//      blob at the head (so a changed plan, or a Plan field pointed at another plan, voids the record).
+//      Plan: a plan record of the Plan field's plan that states its task scope (`tasks`, plan Task 17) must cover
+//      every task in the Plan field; `--tasks none` or a narrower scope did not review the tasks this PR builds.
+//      A record with no `tasks` predates the scope and reviewed the whole plan.
 //   3. Only records whose slot is the required one are candidates. reviewer.vendor differs from the
 //      author's vendor (every record on one input must agree on authorVendor); for `completeness` it also
 //      differs from the vendor of a passing `correctness` head (spec: "whichever of the three vendors is
@@ -42,7 +46,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { EVIDENCE_DIR, blobIdentity, git, inputIdentity, mergeBase } from '../review/identity.mjs'
 import { addedRecordStems, chainHeads, dispositionOk, isBlockingByDefault, readRecords, repoPath, undisposedBlocking } from '../review/records.mjs'
-import { LANES, parseBody } from '../review/pr-body.mjs'
+import { DEVIATION_ENTRY, LANES, parseBody } from '../review/pr-body.mjs'
 import { DEPTH_LABELS, inferLabel, parseControlFiles } from './label-gate.mjs'
 
 export const ACTIVATION_PATH = '.github/review-activation.json'
@@ -103,7 +107,9 @@ export function authorVendorFromRecords(recs) {
 }
 
 // addedStems: the stems of the records this PR adds (see the header). Omitted, every record counts as added.
-export function evaluate({ records, required, identity, body, addedStems, authorVendorOf = authorVendorFromRecords }) {
+// planDoc ({ path, identity, error? }): the Plan field's plan blob at the head. Omitted, it is the specced lane's
+// required plan entry for that path (docsFor reads it at the head, as for the plan slot).
+export function evaluate({ records, required, identity, body, addedStems, planDoc, authorVendorOf = authorVendorFromRecords }) {
   const lines = []
   const added = addedStems === undefined ? null : new Set(addedStems)
   let ok = true
@@ -125,6 +131,8 @@ export function evaluate({ records, required, identity, body, addedStems, author
   }
   const devIds = (body?.deviations ?? []).map((d) => d.id)
   const planTasks = body?.plan?.tasks ?? []
+  const planPath = body?.plan?.path ? repoPath(body.plan.path) : null
+  const planAtHead = planDoc ?? required.find((r) => r.slot === 'plan' && r.input.kind === 'blob' && r.input.path === planPath)?.input
   const passingCorrectness = new Map() // input key -> vendors of passing correctness heads
 
   const judge = (rec, want) => {
@@ -134,6 +142,10 @@ export function evaluate({ records, required, identity, body, addedStems, author
     else if (rec.verdict !== 'pass' && rec.verdict !== 'fail') reasons.push('completed without a recognized result (no verdict)')
     // 2
     if (rec.input.identity !== want.identity) reasons.push(`identity ${short(rec.input.identity)} is not the current ${short(want.identity)}`)
+    if (rec.slot === 'plan' && Array.isArray(rec.tasks) && planPath !== null && rec.input.path === planPath) {
+      const uncovered = setDiff(planTasks, rec.tasks)
+      if (uncovered.length) reasons.push(`plan review scope (${rec.tasks.length ? rec.tasks.join(',') : 'none'}) does not cover the Plan field's ${uncovered.join(',')}: re-review the plan with --tasks covering them`)
+    }
     if (rec.slot === 'conformance') {
       const c = rec.conformance
       if (!isObj(c)) reasons.push('conformance record has no conformance block')
@@ -142,6 +154,12 @@ export function evaluate({ records, required, identity, body, addedStems, author
         if (missing.length || extra.length) reasons.push(`tasks differ from the Plan field (${[missing.length ? `not covered: ${missing.join(',')}` : '', extra.length ? `not in the Plan field: ${extra.join(',')}` : ''].filter(Boolean).join('; ')})`)
         const unlisted = setDiff(c.deviations, devIds), unknown = setDiff(devIds, c.deviations)
         if (unlisted.length || unknown.length) reasons.push(`unfixed deviations differ from the Deviations field (${[unlisted.length ? `not in the Deviations field: ${unlisted.join(',')}` : '', unknown.length ? `not in the record: ${unknown.join(',')}` : ''].filter(Boolean).join('; ')})`)
+        // The plan it checked must be the Plan field's, at its blob at the head: a changed path or plan voids it.
+        if (!isObj(c.plan)) reasons.push('conformance record names no plan it checked')
+        else if (planPath === null) reasons.push('the PR has no Plan field to bind the conformance record to')
+        else if (c.plan.path !== planPath) reasons.push(`checked plan ${c.plan.path}, but the Plan field names ${planPath}`)
+        else if (!planAtHead || planAtHead.path !== planPath || typeof planAtHead.identity !== 'string') reasons.push(`${planPath}: ${planAtHead?.error ?? 'its blob at the head is unknown'}`)
+        else if (c.plan.blob !== planAtHead.identity) reasons.push(`checked ${c.plan.path} at blob ${short(c.plan.blob)}, but the plan at the head is blob ${short(planAtHead.identity)}`)
       }
     }
     // 3
@@ -172,9 +190,9 @@ export function evaluate({ records, required, identity, body, addedStems, author
     if (input.error) { fail(`FAIL ${label}: ${input.error}`); continue }
     const candidates = heads.filter((r) => r.slot === slot && r.input.kind === input.kind && (input.kind !== 'blob' || r.input.path === input.path))
     if (candidates.length === 0) {
-      // Conformance records come from `review.mjs conformance` (plan Task 18, PR C); `run --slot conformance` refuses.
+      // Conformance records come from `review.mjs conformance` (plan Task 18); `run --slot conformance` refuses.
       const how = slot === 'conformance'
-        ? 'conformance records come from npm run review -- conformance, which arrives with plan Task 18'
+        ? 'write one with npm run review -- conformance --plan <path> --tasks <ids> --author <vendor>'
         : `write one with npm run review -- run --slot ${slot}${input.kind === 'blob' ? ` --path ${input.path}` : ''}`
       fail(`FAIL ${label}: no record (${how})`)
       continue
@@ -435,7 +453,7 @@ export async function initLocal({ cwd = process.cwd(), lane, depth, spec, plan, 
   }
   if (deviations.length) {
     local.deviations = deviations.map((d) => {
-      const m = /^(D\d+):\s*(.*)$/.exec(d.trim())
+      const m = DEVIATION_ENTRY.exec(d.trim())
       return m ? { id: m[1], justification: m[2].trim() } : { id: d.trim(), justification: '' }
     })
   }

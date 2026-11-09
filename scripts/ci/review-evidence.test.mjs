@@ -110,9 +110,10 @@ function fx(o = {}) {
         if (o.verdict !== undefined) r.verdict = o.verdict
         if (o.findings !== undefined) r.findings = o.findings.map(finding)
       }
+      if (slot === 'plan' && o.planTasks !== undefined) r.tasks = o.planTasks
       if (slot === 'conformance') {
         const devs = o.deviations ?? []
-        r.conformance = { tasks: o.conformanceTasks ?? expandTasks(bodyTasks), deviations: devs, commands: o.commands ?? [] }
+        r.conformance = { tasks: o.conformanceTasks ?? expandTasks(bodyTasks), deviations: devs, commands: o.commands ?? [], plan: o.conformancePlan ?? { path: PLAN.path, blob: PLAN.identity } }
         if (devs.includes('D1')) r.findings = [finding({ id: 'D1', severity: 'P1', ...(o.d1Disposition ? { disposition: { kind: o.d1Disposition, reason: 'see Deviations' } } : {}) })]
       }
       return r
@@ -235,11 +236,23 @@ try {
   ok('justified-deviation on a non-conformance record -> FAIL', failsWith(evaluate(fx({ findings: [{ id: 'D1', severity: 'P1', disposition: { kind: 'justified-deviation', reason: 'x' } }], bodyDeviations: ['D1'], deviations: ['D1'], d1Disposition: 'justified-deviation' })), /D1/))
   ok('an unfixed deviation with no disposition -> FAIL', failsWith(evaluate(fx({ deviations: ['D1'], bodyDeviations: ['D1'] })), /D1/))
   ok('a Deviations entry with no conformance deviation -> FAIL naming it', failsWith(evaluate(fx({ deviations: [], bodyDeviations: ['D3'] })), /D3/))
+  // a conformance record is bound to the plan it checked (path and blob)
+  ok('conformance on the Plan field\'s path and its blob at the head -> ok', evaluate(fx()).ok === true)
+  ok('conformance that checked another plan path -> FAIL naming both paths', failsWith(evaluate(fx({ conformancePlan: { path: 'docs/superpowers/plans/other.md', blob: PLAN.identity } })), /conformance.*other\.md.*p\.md/))
+  ok('conformance that checked an older blob of the plan -> FAIL naming the blobs', failsWith(evaluate(fx({ conformancePlan: { path: PLAN.path, blob: 'f'.repeat(40) } })), /conformance.*ffffffffffff.*dddddddddddd/))
+  // PR #87 Codex P2: the plan review's stated task scope must cover the tasks this PR builds
+  ok('a plan record whose scope covers the Plan field\'s tasks (and more) -> ok', evaluate(fx({ planTasks: ['T1', 'T2', 'T3', 'T4'] })).ok === true)
+  ok('a plan record reviewed with --tasks none -> FAIL naming the uncovered tasks', failsWith(evaluate(fx({ planTasks: [] })), /plan.*scope \(none\).*T1,T2,T3/))
+  ok('a plan record whose scope misses one Plan field task -> FAIL naming it', failsWith(evaluate(fx({ planTasks: ['T1', 'T2'] })), /plan.*does not cover.*T3/))
+  ok('a plan record with no tasks (written before the scope existed) reviewed the whole plan -> ok', evaluate(fx()).ok === true && fx().records.find((r) => r.slot === 'plan').tasks === undefined)
+  ok('conformance whose Plan field path is not in the head -> FAIL',(() => { const f = fx(); f.required = f.required.map((r) => (r.slot === 'plan' ? { ...r, input: { ...r.input, identity: null, error: 'x is not in the PR head' } } : r)); return failsWith(evaluate(f), /conformance.*not in the PR head/) })())
+  ok('a Plan field written ./path matches the record\'s repo path -> ok', (() => { const f = fx(); f.body = parseBody(`Lane: specced\nSpec: ${SPEC.path}\nPlan: ./${PLAN.path} T1-T3\nDeviations: none`); return evaluate(f).ok === true })())
+  ok('an explicit planDoc overrides the required plan entry', failsWith(evaluate({ ...fx(), planDoc: { path: PLAN.path, identity: 'a'.repeat(40) } }), /conformance.*aaaaaaaaaaaa/))
   ok('conformance tasks are order-insensitive', evaluate(fx({ conformanceTasks: ['T3', 'T1', 'T2'] })).ok)
   ok('a conformance record covering extra tasks -> FAIL naming them', failsWith(evaluate(fx({ conformanceTasks: ['T1', 'T2', 'T3', 'T5'] })), /T5/))
   ok('body problems fail the check, one line each', (() => { const f = fx(); f.body = parseBody('Lane: specced\nSpec: s.md\nDeviations: none'); return failsWith(evaluate(f), /Plan: required/) })())
   ok('a stale spec blob -> FAIL', (() => { const f = fx(); f.records.find((r) => r.slot === 'spec').input.identity = 'e'.repeat(40); return failsWith(evaluate(f), /spec.*identity/) })())
-  ok('a missing conformance record names review.mjs conformance (Task 18), not run --slot conformance, which refuses', (() => { const f = fx(); f.records = f.records.filter((r) => r.slot !== 'conformance'); const t = evaluate(f).lines.join('\n'); return /conformance.*no record/.test(t) && /Task 18/.test(t) && /run --slot conformance/.test(t) === false })())
+  ok('a missing conformance record names the conformance command, not run --slot conformance, which refuses', (() => { const f = fx(); f.records = f.records.filter((r) => r.slot !== 'conformance'); const t = evaluate(f).lines.join('\n'); return /conformance.*no record/.test(t) && /npm run review -- conformance --plan/.test(t) && /arrives with/.test(t) === false && /run --slot conformance/.test(t) === false })())
   ok('a spec record for another path does not count',(() => { const f = fx(); f.records.find((r) => r.slot === 'spec').input.path = 'docs/superpowers/specs/other.md'; return failsWith(evaluate(f), /spec .*no record/) })())
   ok('records on one input that disagree on authorVendor -> FAIL naming them', (() => { const f = fx(); f.records.push(rec({ slot: 'correctness', stem: 'correctness--y--1', vendor: 'google', authorVendor: 'openai', input: { kind: 'pr', identity: ID } })); return failsWith(evaluate(f), /authorVendor.*correctness--y--1/) })())
   ok('two independent chains: one passing head is enough (decision)', (() => { const f = fx(); f.records.push(rec({ slot: 'correctness', stem: 'correctness--z--1', outcome: 'timeout', verdict: null, input: { kind: 'pr', identity: ID } })); return evaluate(f).ok })())
@@ -529,6 +542,17 @@ try {
     r = await cli(L.dir, ['init-local', '--lane', 'specced', '--depth', 'standard', '--spec', 'docs/superpowers/specs/s.md', '--plan', 'docs/superpowers/plans/p.md T1-T2,T4', '--deviation', 'D1: simpler'])
     const j = JSON.parse(readFileSync(join(L.dir, '.review/local.json'), 'utf8'))
     ok('init-local stores the expanded plan tasks and deviations', r.code === 0 && j.plan.path === 'docs/superpowers/plans/p.md' && j.plan.tasks.join() === 'T1,T2,T4' && j.deviations[0].id === 'D1')
+    r = await cli(L.dir, ['init-local', '--lane', 'specced', '--depth', 'standard', '--spec', 'docs/superpowers/specs/s.md', '--plan', 'docs/superpowers/plans/p.md T1', '--deviation', 'conformance--abcdef012345--2#D2: still better'])
+    const jc = JSON.parse(readFileSync(join(L.dir, '.review/local.json'), 'utf8'))
+    ok('init-local accepts a chained deviation ID verbatim',r.code === 0 && jc.deviations.length === 1 && jc.deviations[0].id === 'conformance--abcdef012345--2#D2' && jc.deviations[0].justification === 'still better')
+    r = await cli(L.dir, ['init-local', '--lane', 'specced', '--depth', 'standard', '--spec', 'docs/superpowers/specs/s.md', '--plan', 'docs/superpowers/plans/p.md T1', '--deviation', 'foo: bar'])
+    ok('init-local rejects a deviation whose ID is neither D<n> nor <stem>#D<n>', r.code === 1 && /foo/.test(r.err) && JSON.parse(readFileSync(join(L.dir, '.review/local.json'), 'utf8')).deviations[0].id === 'conformance--abcdef012345--2#D2')
+    {
+      // push-gate P2: an evidence-only PR's records are named <slot>--empty--<n>, so its chained IDs carry `empty`
+      const re = await cli(L.dir, ['init-local', '--lane', 'specced', '--depth', 'standard', '--spec', 'docs/superpowers/specs/s.md', '--plan', 'docs/superpowers/plans/p.md T1', '--deviation', 'conformance--empty--1#D1: still better'])
+      const je = JSON.parse(readFileSync(join(L.dir, '.review/local.json'), 'utf8'))
+      ok('init-local accepts a deviation ID chained from an `empty` identity', re.code === 0 && je.deviations[0]?.id === 'conformance--empty--1#D1' && je.deviations[0].justification === 'still better')
+    }
     const lc2 = await localCheck({ cwd: L.dir })
     ok('localCheck specced: a linked spec missing at HEAD fails naming it', lc2.ok === false && /spec docs\/superpowers\/specs\/s\.md/.test(lc2.lines.join('\n')))
     writeFileSync(join(L.dir, '.review/local.json'), '{"lane":"direct"}\n')
