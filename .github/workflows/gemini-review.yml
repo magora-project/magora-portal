@@ -145,9 +145,9 @@ jobs:
           if env["EVENT_NAME"] == "pull_request":
               number, base, head, title = env["EV_NUMBER"], env["EV_BASE_SHA"], env["EV_HEAD_SHA"], env["EV_TITLE"]
           else:
-              number = env["INPUT_PR"].strip()
+              number = env["INPUT_PR"]
               if not re.fullmatch(r"[1-9][0-9]{0,9}", number):
-                  sys.exit(f"pr_number must be a positive integer, got {number!r}")
+                  sys.exit(f"pr_number must be a positive integer with no spaces, got {number!r}")
               req = urllib.request.Request(
                   f"{env.get('GITHUB_API_URL', 'https://api.github.com')}/repos/{repo}/pulls/{number}",
                   headers={"Authorization": f"Bearer {env['GH_TOKEN']}", "Accept": "application/vnd.github+json"})
@@ -207,6 +207,9 @@ jobs:
         if: steps.pr.outputs.run == 'true'
         with:
           node-version-file: trusted/.nvmrc
+          # No package-manager cache: its default can run npm in the PR checkout (when the PR's
+          # package.json names npm in `packageManager`) with a token in the environment.
+          package-manager-cache: false
 
       - name: Build the review diff
         if: steps.pr.outputs.run == 'true'
@@ -243,62 +246,89 @@ jobs:
         run: |
           set -uo pipefail
           # V5: the same input identity (the trusted base's `inputIdentity`) with a completed verdict
-          # already on the PR means the model is not called again. Every failure here falls through
-          # to a normal review: a wasted call is cheaper than a missing one.
+          # already on the PR means the model is not called again.
+          # Every failure to DECIDE (identity, comment listing, a crash in the parser) prints a
+          # notice and falls through to a normal review with skip=false and exit 0: a wasted model
+          # call is cheaper than a missing review. `skip` and `identity` are written to
+          # $GITHUB_OUTPUT exactly once, below. The one failure that is not swallowed is posting the
+          # skip comment: the earlier same-identity verdict still exists, so skip stays true, the
+          # model is not called, and the job goes RED with no new comment.
+          skip=false
+          rm -f "$RUNNER_TEMP/skip.json"
           identity="$(node --input-type=module -e "
             import { pathToFileURL } from 'node:url'
             const { inputIdentity } = await import(pathToFileURL(process.env.GITHUB_WORKSPACE + '/trusted/scripts/review/identity.mjs').href)
             process.stdout.write(await inputIdentity({ cwd: process.env.GITHUB_WORKSPACE, base: process.env.BASE_SHA, head: process.env.HEAD_SHA }))
           ")" || identity=""
-          echo "identity=$identity" >> "$GITHUB_OUTPUT"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-          if [ -z "$identity" ]; then echo "no identity; reviewing"; exit 0; fi
-          # Comments come from the API, newest page included, and only `github-actions[bot]`'s count.
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
-            --jq '.[] | select(.user.login == "github-actions[bot]") | {url: .html_url, body: .body}' \
-            > "$RUNNER_TEMP/comments.jsonl" || { echo "could not list comments; reviewing"; exit 0; }
-          # `-I`: the cwd is the PR checkout and GH_TOKEN is in the env.
-          IDENTITY="$identity" python3 -I - <<'PY'
-          import json, os, re
-          env = os.environ
-          marker = re.compile(r"^<!-- gemini-review:v1 (\{.*\}) -->$", re.MULTILINE)
-          earlier = None
-          with open(os.path.join(env["RUNNER_TEMP"], "comments.jsonl"), encoding="utf-8") as fh:
-              for raw in fh:
-                  try:
-                      c = json.loads(raw)
-                  except ValueError:
-                      continue
-                  found = marker.findall(c.get("body") or "")
-                  if len(found) != 1:
-                      continue
-                  try:
-                      m = json.loads(found[0])
-                  except ValueError:
-                      continue
-                  if (isinstance(m, dict) and m.get("identity") == env["IDENTITY"]
-                          and m.get("verdict") in ("no-findings", "findings")):
-                      earlier = c["url"]
-          if earlier is None:
-              print("no earlier verdict for this identity; reviewing")
-              raise SystemExit(0)
-          sha, ident = env["HEAD_SHA"], env["IDENTITY"]
-          meta = {"head": sha, "identity": ident, "verdict": "skipped-same-identity", "findings": []}
-          body = (
-              "## Gemini review: skipped\n\n"
-              f"Head `{sha}` has the same input identity as an earlier Gemini verdict, {earlier}, "
-              "so the model was not called again. That comment's findings still apply.\n\n"
-              "---\n_Posted by gemini-review.yml (Gemini, advisory; not a required check)_\n"
-              "<!-- gemini-review:v1 " + json.dumps(meta, separators=(",", ":")) + " -->"
-          )
-          with open(os.path.join(env["RUNNER_TEMP"], "skip.json"), "w", encoding="utf-8") as fh:
-              json.dump({"body": body}, fh)
-          with open(env["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-              fh.write("skip=true\n")
+          if [ -z "$identity" ]; then
+            echo "no identity; reviewing"
+          # Only `github-actions[bot]`'s comments count, read from the API (all pages).
+          elif ! gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]") | {url: .html_url, body: .body, created: .created_at, updated: .updated_at}' \
+            > "$RUNNER_TEMP/comments.jsonl"; then
+            echo "could not list comments; reviewing"
+          else
+            # `-I`: the cwd is the PR checkout and GH_TOKEN is in the env. Any crash is a notice,
+            # not a failed step; it leaves no skip.json, so the review runs.
+            IDENTITY="$identity" python3 -I - <<'PY' || echo "skip check failed; reviewing"
+          import json, os, re, sys
+          try:
+              env = os.environ
+              marker = re.compile(r"^<!-- gemini-review:v1 (\{.*\}) -->$", re.MULTILINE)
+              earlier = None
+              with open(os.path.join(env["RUNNER_TEMP"], "comments.jsonl"), encoding="utf-8") as fh:
+                  for raw in fh:
+                      try:
+                          c = json.loads(raw)
+                      except ValueError:
+                          continue
+                      # A comment edited after posting is ignored: a maintainer can rewrite a bot
+                      # comment's marker without its login changing, so only an unedited one
+                      # (updated_at == created_at) counts as the bot's own verdict.
+                      if c.get("updated") != c.get("created"):
+                          continue
+                      found = marker.findall(c.get("body") or "")
+                      if len(found) != 1:
+                          continue
+                      try:
+                          m = json.loads(found[0])
+                      except ValueError:
+                          continue
+                      if (isinstance(m, dict) and m.get("identity") == env["IDENTITY"]
+                              and m.get("verdict") in ("no-findings", "findings")):
+                          earlier = c["url"]
+              if earlier is None:
+                  print("no earlier verdict for this identity; reviewing")
+                  sys.exit(0)
+              sha, ident = env["HEAD_SHA"], env["IDENTITY"]
+              meta = {"head": sha, "identity": ident, "verdict": "skipped-same-identity", "findings": []}
+              body = (
+                  "## Gemini review: skipped\n\n"
+                  f"Head `{sha}` has the same input identity as an earlier Gemini verdict, {earlier}, "
+                  "so the model was not called again. That comment's findings still apply.\n\n"
+                  "---\n_Posted by gemini-review.yml (Gemini, advisory; not a required check)_\n"
+                  "<!-- gemini-review:v1 " + json.dumps(meta, separators=(",", ":")) + " -->"
+              )
+              with open(os.path.join(env["RUNNER_TEMP"], "skip.json"), "w", encoding="utf-8") as fh:
+                  json.dump({"body": body}, fh)
+          except SystemExit:
+              raise
+          except Exception as exc:
+              print(f"skip check crashed ({exc!r}); reviewing")
+              try:
+                  os.unlink(os.path.join(os.environ["RUNNER_TEMP"], "skip.json"))
+              except OSError:
+                  pass
           PY
-          if grep -qx 'skip=true' "$GITHUB_OUTPUT"; then
+            if [ -s "$RUNNER_TEMP/skip.json" ]; then skip=true; fi
+          fi
+          { echo "identity=$identity"; echo "skip=$skip"; } >> "$GITHUB_OUTPUT"
+          if [ "$skip" = true ]; then
             gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
-              --input "$RUNNER_TEMP/skip.json" > /dev/null
+              --input "$RUNNER_TEMP/skip.json" > /dev/null || {
+              echo "could not post the skip comment; the earlier verdict stands, the model is not called" >&2
+              exit 1
+            }
           fi
 
       - name: Run the Gemini pass
@@ -408,7 +438,9 @@ jobs:
               body = (f"## Gemini review: no findings\n\nHead `{sha}`, {nbytes} byte diff.")
           else:
               verdict = "findings"
-              # `gemini_review.py` numbers each finding line `N. P1 | ...`.
+              # `gemini_review.py` numbers each finding line `N. P1 | ...`. Parsed from the SAME
+              # truncated text that is posted, so the marker never names an index the comment omits.
+              out = out[:55000]
               findings = [{"index": int(i), "severity": sev.upper()}
                           for i, sev in re.findall(r"^(\d+)\. (P[01])\b", out, re.MULTILINE | re.IGNORECASE)]
               body = (
@@ -416,7 +448,7 @@ jobs:
                   f"Head `{sha}`, {nbytes} byte diff. Advisory: this posts no commit status, and is not a required check. "
                   "It gates nothing. Verify each finding against source before acting on it -- "
                   "a measured false positive rate is why this is a second opinion and not "
-                  "an oracle.\n\n```\n" + out[:55000] + "\n```"
+                  "an oracle.\n\n```\n" + out + "\n```"
               )
           body += "\n\n---\n_Posted by gemini-review.yml (Gemini, advisory; not a required check)_"
           # Exactly one marker, last, for every outcome (Task 21 parses it).

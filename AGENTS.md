@@ -30,14 +30,14 @@ For agents and contributors (Claude Code via `CLAUDE.md`, Codex directly). Desig
 
 Review before push: `.claude/rules/process.md` § Review slots and dispatch. This review layer is discipline; the required CI checks are the control.
 
-Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`, where the merging maintainer's control-file read replaces the depth rule.
+Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`; for those, the maintainer's control-file read replaces the depth rule.
 
 ## Control files
 
 `.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`,
 `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`,
 `scripts/review/**`, `.claude/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`, `.coderabbit.yaml`.
-A PR can weaken a check by editing these: say so in the PR description. The merging maintainer reads each such change first on fork and Dependabot PRs.
+A PR can weaken a check by editing these; name any you change in the PR description. The merging maintainer reads each such change first on fork/Dependabot PRs.
 Reviewers: skip `.review/`; findings located only there are outside the gate.
 
 ## Migrations
@@ -54,4 +54,4 @@ Reviewers: skip `.review/`; findings located only there are outside the gate.
 
 ## Secrets
 
-Agents use `op run` and `op inject` only, never `op read`, `op item get` or anything else that prints a secret. Env files hold `op://` references only (`env/*.env`); run `op run --env-file=env/staging.env -- <cmd>`.
+Agents use `op run` and `op inject` only, never `op read`, `op item get` or anything that prints a secret. Env files hold `op://` references only (`env/*.env`); run `op run --env-file=env/staging.env -- <cmd>`.
