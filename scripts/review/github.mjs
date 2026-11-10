@@ -341,7 +341,8 @@ export function fullReviewRequests(comments) {
 // the heading to the first line that is not quoted. Blocks that follow (Duplicate comments,
 // Nitpicks, prompts) are not quoted and are not read. Each finding ends with
 // `<!-- cr-comment:v1:<id> -->` and starts with a summary holding the severity and a `path:lines`
-// line. The parsed count must equal the heading's N, else this throws (the gate cannot judge).
+// line. The parsed count must equal the heading's N, else this throws (the gate cannot judge). `text` is the
+// finding's own text (from the previous marker, or the heading, to its marker): what a substitute reviewer is shown.
 // The heading is matched as its whole line, and must be the only such line: echoed text (a PR
 // description CodeRabbit quotes) could otherwise put a fake `(0)` heading first and hide the real
 // section. Two headings, or the phrase with no heading line (a format change), throw: the gate
@@ -371,7 +372,7 @@ function findingsIn(body, reportedCommit, what) {
     const chunk = section.slice(from, m.index)
     from = m.index + m[0].length
     const path = /^`([^`\s]+?)(?::\d[\d-]*)?`$/m.exec(chunk)?.[1] ?? null
-    out.push({ id: `cr:${m[1]}`, severity: crLabelIn(chunk), path, reportedCommit })
+    out.push({ id: `cr:${m[1]}`, severity: crLabelIn(chunk), path, reportedCommit, text: chunk.replace(/^[^\n]*Outside diff range comments[^\n]*\n/, '').trim() })
   }
   const declared = /Outside diff range comments \((\d+)\)/.exec(section)?.[1]
   if (declared === undefined || Number(declared) !== out.length) {

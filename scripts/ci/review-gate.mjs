@@ -92,6 +92,12 @@ const summaryOf = (body) => {
   const line = String(body ?? '').split('\n').map((l) => l.replace(/<[^>]*>|!\[[^\]]*\]\([^)]*\)|[*_`#>]/g, '').trim()).find((l) => l !== '')
   return (line ?? '').slice(0, 200)
 }
+// The finding's full text, for the substitute's prompt (a summary line cannot show the defect). Never judged.
+export const DETAIL_MAX = 8000
+const detailOf = (text) => {
+  const t = String(text ?? '').trim()
+  return t.length > DETAIL_MAX ? `${t.slice(0, DETAIL_MAX)}\n[truncated at ${DETAIL_MAX} characters]` : t
+}
 
 // ---------------------------------------------------------------- blocking findings
 
@@ -116,7 +122,7 @@ const addressedClaims = (t) => {
 }
 
 // Every finding that blocks by default on the PR (§5.6): [{ id, source, severity, raisedAt, kind, reported, resolved,
-// path, summary }]. `source` is the bot ('coderabbit' | 'codex' | 'gemini'); `reported` lists the commit(s) it was
+// path, summary, detail }]. `detail` is the finding's full text (a substitute reviewer must see the defect). `source` is the bot ('coderabbit' | 'codex' | 'gemini'); `reported` lists the commit(s) it was
 // reported on (null when unknown). Throws when CodeRabbit's outside-diff section cannot be parsed (could not judge).
 export function blockingFindings(state) {
   const out = []
@@ -132,7 +138,7 @@ export function blockingFindings(state) {
     const botResolved = t.isResolved === true && BOT_RESOLVERS.has(t.resolvedBy)
     out.push({
       id: `thread:${t.id}`, source: bot, severity: sev.label ?? 'unlabelled', raisedAt: null, kind: 'thread', reported: [c.originalCommit ?? null],
-      resolved: t.isResolved === true, path: t.path ?? null, summary: summaryOf(c.body),
+      resolved: t.isResolved === true, path: t.path ?? null, summary: summaryOf(c.body), detail: detailOf(c.body),
       ...(botResolved ? { botResolved: true, resolvedBy: t.resolvedBy, addressed: addressedClaims(t) } : {}),
     })
   }
@@ -144,7 +150,7 @@ export function blockingFindings(state) {
     if (!(f.severity === null || CR_BLOCKING.has(f.severity))) return
     const seen = cr.get(f.id)
     if (seen) { seen.reported.push(f.reportedCommit); return }
-    cr.set(f.id, { id: f.id, source: 'coderabbit', severity: f.severity ?? 'unlabelled', raisedAt: at ?? null, kind: 'cr', reported: [f.reportedCommit], resolved: false, path: f.path, summary: `CodeRabbit outside-diff finding (${f.severity ?? 'no label'})${f.path ? ` in ${f.path}` : ''}` })
+    cr.set(f.id, { id: f.id, source: 'coderabbit', severity: f.severity ?? 'unlabelled', raisedAt: at ?? null, kind: 'cr', reported: [f.reportedCommit], resolved: false, path: f.path, summary: `CodeRabbit outside-diff finding (${f.severity ?? 'no label'})${f.path ? ` in ${f.path}` : ''}`, detail: detailOf(f.text) })
   }
   for (const r of state.reviews ?? []) for (const f of outsideDiffFindings({ reviews: [r], comments: [] })) addCr(f, r.submittedAt)
   for (const c of state.comments ?? []) for (const f of outsideDiffFindings({ reviews: [], comments: [c] })) addCr(f, c.createdAt)
@@ -153,8 +159,11 @@ export function blockingFindings(state) {
   const bodyOf = new Map((state.comments ?? []).map((c) => [c.id, c.body]))
   for (const v of state.geminiVerdicts ?? []) {
     for (const f of v.findings ?? []) {
-      const line = new RegExp(`^${f.index}\\. (.*)$`, 'm').exec(bodyOf.get(v.commentId) ?? '')?.[1]
-      out.push({ id: `gemini:${v.commentId}:${f.index}`, source: 'gemini', severity: f.severity, raisedAt: v.at ?? null, kind: 'gemini', reported: [v.head ?? null], resolved: false, path: null, summary: line ? summaryOf(line) : `Gemini finding ${f.index} (${f.severity}) in comment ${v.commentId}` })
+      const body = bodyOf.get(v.commentId) ?? ''
+      const line = new RegExp(`^${f.index}\\. (.*)$`, 'm').exec(body)?.[1]
+      // The numbered item through the line before the next numbered item, the marker, or the end of the comment.
+      const item = new RegExp(`^${f.index}\\. [\\s\\S]*?(?=^\\d+\\. |^<!-- gemini-review:v1 |(?![\\s\\S]))`, 'm').exec(body)?.[0]
+      out.push({ id: `gemini:${v.commentId}:${f.index}`, source: 'gemini', severity: f.severity, raisedAt: v.at ?? null, kind: 'gemini', reported: [v.head ?? null], resolved: false, path: null, summary: line ? summaryOf(line) : `Gemini finding ${f.index} (${f.severity}) in comment ${v.commentId}`, detail: detailOf(item) })
     }
   }
   return out

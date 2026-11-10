@@ -335,7 +335,12 @@ ok('all three live findings are read with marker id, severity and path (no line 
   return f.length === 3 &&
     f[0].id === 'cr:956d1b3cd90766315da30417' && f[0].severity === 'Major' && f[0].path === 'docs/superpowers/plans/2026-10-28-staging-and-secrets.md' &&
     f[1].id === 'cr:97bc58def15aba789b90adc0' && f[1].severity === 'Minor' && f[2].id === 'cr:611baf72100b6a3cb565075e' && f[2].severity === 'Minor' &&
-    f.every((x) => x.reportedCommit === crReview.commitId) && JSON.stringify(Object.keys(f[0])) === '["id","severity","path","reportedCommit"]'
+    f.every((x) => x.reportedCommit === crReview.commitId) && JSON.stringify(Object.keys(f[0])) === '["id","severity","path","reportedCommit","text"]'
+})())
+ok('each live finding\'s text is its own block: its own defect, no marker, not its neighbour\'s', (() => {
+  const f = outsideDiffFindings({ reviews: [review], comments: [] })
+  const own = ['Validate completion markers against retained prefixes.', 'Freeze the backup date for the entire run.', 'Define the restore ACL scope.']
+  return f.every((x, i) => x.text.includes(own[i]) && own.every((o, j) => j === i || !x.text.includes(o)) && !/cr-comment|Outside diff range comments/.test(x.text))
 })())
 ok('a finding in an unlabeled block has severity null (the consumer treats it as blocking)', (() => {
   const body = oneFinding.replace(/Major<\/strong>/, 'Whatever</strong>').replace(/\*\*🟠 Major\*\*/, '**x**')

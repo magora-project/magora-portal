@@ -138,7 +138,7 @@ export async function substituteCarries({ state, record, bot }) {
   const out = []
   for (const f of (await gateFindings(state)).blocking) {
     if (f.source !== bot || await settledWithoutSubstitute(f, record, state)) continue
-    out.push({ id: f.id, severity: f.severity, summary: f.summary || `${bot} finding ${f.id}`, ...(f.path ? { file: f.path } : {}) })
+    out.push({ id: f.id, severity: f.severity, summary: f.summary || `${bot} finding ${f.id}`, ...(f.detail ? { detail: f.detail } : {}), ...(f.path ? { file: f.path } : {}) })
   }
   return out
 }

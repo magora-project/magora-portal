@@ -131,6 +131,12 @@ try {
   fresh(fixedG)
   ok('substitute run, end to end: stubbed live readers -> record -> gate ok', await (async () => { const rec = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); return rec.findings.some((f) => f.id === 'thread:PRRT_1' && f.disposition?.kind === 'fixed') && (await evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(rec), depth: 'subtle-correctness' })).ok })())
   fresh(prRecord([fixedAt('thread:PRRT_1', sha.F), fixedAt('thread:PRRT_2', sha.F)]))
+  // Correctness review 24003aa3e6f2 F1: the substitute's prompt holds each carried finding's full text.
+  ok('substitute prompt carries the finding\'s full text, not only its summary line', await (async () => {
+    const withDetail = readers(liveAtU({ threads: [thread('PRRT_1', CODEX_LOGIN, sha.R, { resolved: true, resolvedBy: 'dev', body: 'P1 Badge headline\n\nXYZZY the actual defect.' })] }))
+    const r = await runSubstitute({ bot: 'codex', readersImpl: withDetail, reviewerImpl: captures })
+    return r.prompt.includes('XYZZY the actual defect.')
+  })())
   ok('substitute run carries a fixed-but-unverified finding, not a verified one', (await runSubstitute({ bot: 'codex', readersImpl: oneVerifiedOneNot, reviewerImpl: captures })).sentInherited.join() === 'thread:PRRT_2')
   fresh(fixedG)
   ok('R1 resolves G, R2 chains from R1: R2 persists G as fixed with R1 as by, never sends G to the reviewer, and the gate passes on R2', await (async () => { const r1 = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); const sent = []; const r2 = await runSubstitute({ bot: 'codex', supersedes: r1.stem, readersImpl: liveAfterR1, reviewerImpl: rejectsIds(['thread:PRRT_1'], sent) }); const g = (r2.findings ?? []).find((f) => f.id === 'thread:PRRT_1'); return g && g.disposition?.kind === 'fixed' && g.disposition?.by === r1.stem && !sent.includes('thread:PRRT_1') && (await evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(r1, r2), depth: 'subtle-correctness' })).ok })())

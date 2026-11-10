@@ -10,7 +10,7 @@ import {
   AGENTS, CODERABBIT_LOGIN, CODEX_LOGIN, CODEX_P1, CR_FINDING_END, CR_MAJOR_HEADER, CR_MINOR, CR_OK, T, addressedIn, buildGateRepo, crOk, crStatus, codexCovers, fixedAt, g, gateState,
   outsideDiffBody, prRecord, review, subRecord, thread, verdict,
 } from '../review/fixtures/gate-repo.mjs'
-import { BOT_RESOLVERS, blockingFindings, evaluateGate, judgedDepth, main, makeResolveCommit, readGateState } from './review-gate.mjs'
+import { BOT_RESOLVERS, DETAIL_MAX, blockingFindings, evaluateGate, judgedDepth, main, makeResolveCommit, readGateState } from './review-gate.mjs'
 
 let pass = 0, fail = 0
 // A thenable condition is a failure: a Promise is truthy even when it resolves to false.
@@ -217,6 +217,25 @@ try {
   ok('fixed cr: finding from a review body, fix commit strictly descends from its reported commit and changes the identity, later usable CodeRabbit review on the fix -> ok (gate point 4)', (await evaluateGate({ state: crReviewFixedReReviewed, record: crFixedRec, depth: 'standard' })).ok)
   ok('the same cr: finding repeated in the review on the fix is reported there too -> FAIL', (await evaluateGate({ state: st(sha.E, { ...crOk(sha.R, sha.E), reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), outsideDiffBody('abc123')), review(2, CODERABBIT_LOGIN, sha.E, T(40), outsideDiffBody('abc123'))] }), record: crFixedRec, depth: 'standard' })).ok === false)
   ok('an outside-diff section whose count does not match -> could not judge', await (async () => { const bad = outsideDiffBody('abc123').replace('comments (1)', 'comments (2)'); const r = await evaluateGate({ state: st(sha.E, { ...crOk(sha.R), reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), bad)] }), record: crFixedRec, depth: 'standard' }); return r.ok === false && /could not judge/.test(r.lines.join()) })())
+  // Correctness review 24003aa3e6f2 F1: a substitute reviewer must see the defect, not only a summary line.
+  ok('an outside-diff finding carries its own text as detail', await (async () => {
+    const [f] = blockingFindings(st(sha.E, { comments: [{ ...crCommentWithFinding, body: outsideDiffBody('abc123') }] }))
+    return f.id === 'cr:abc123' && f.detail.includes('The return is wrong.') && f.detail.includes('app.js:3') && !/Outside diff range/.test(f.detail) && !/cr-comment/.test(f.detail)
+  })())
+  ok('a thread finding carries its whole first comment as detail', await (async () => {
+    const [f] = blockingFindings(st(sha.E, { threads: [codexThreadOnR('PRRT_D', { body: 'P1 header\n\nThe defect is on line two.' })] }))
+    return f.summary !== f.detail && f.detail.includes('The defect is on line two.')
+  })())
+  ok('a Gemini finding carries its numbered item, through its continuation lines, as detail', await (async () => {
+    const body = 'Review\n\n1. First finding\n   with a second line\n2. Second finding\n\n<!-- gemini-review:v1 {} -->'
+    const f = blockingFindings(st(sha.E, { comments: [{ id: 77, login: 'github-actions[bot]', body }], geminiVerdicts: [verdict(77, sha.E, id.E, 'findings', [1, 2])] }))
+    const d = Object.fromEntries(f.map((x) => [x.id, x.detail]))
+    return d['gemini:77:1'] === '1. First finding\n   with a second line' && d['gemini:77:2'] === '2. Second finding'
+  })())
+  ok('a long detail is cut at DETAIL_MAX and says so', await (async () => {
+    const [f] = blockingFindings(st(sha.E, { threads: [codexThreadOnR('PRRT_L', { body: `P1\n${'x'.repeat(DETAIL_MAX + 50)}` })] }))
+    return f.detail.length < DETAIL_MAX + 100 && /truncated at/.test(f.detail)
+  })())
   ok('an outside-diff finding located in .review/ is outside the gate', blockingFindings(st(sha.E, { comments: [{ ...crCommentWithFinding, body: outsideDiffBody('abc123', '.review/pr/1.json') }] })).length === 0)
 
   // ---------------------------------------------------------------- who opened the thread
