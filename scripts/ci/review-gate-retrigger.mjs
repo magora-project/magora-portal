@@ -51,7 +51,7 @@ export function makeApi({ repo, token, fetchImpl = fetch, sleepImpl = (ms) => ne
     pr: (n) => call(`/pulls/${n}`),
     openPrs: () => pages('/pulls?state=open'),
     gateRuns: async ({ headSha }) => (await pages(`/actions/workflows/${GATE_WORKFLOW_FILE}/runs?event=pull_request&head_sha=${headSha}`, 'workflow_runs'))
-      .map((r) => ({ id: r.id, status: r.status, createdAt: r.created_at })),
+      .map((r) => ({ id: r.id, status: r.status, createdAt: r.created_at, prNumbers: (r.pull_requests ?? []).map((p) => p?.number).filter((x) => Number.isInteger(x)) })),
     run: async (id) => { const r = await call(`/actions/runs/${id}`); return { id: r.id, status: r.status } },
     rerun: (id) => call(`/actions/runs/${id}/rerun`, 'POST'),
     sleep: sleepImpl,
@@ -93,7 +93,9 @@ export async function retrigger({ event, payload, api }) {
   if (pr?.state !== 'open') return none(`PR #${n} is not open`)
   const head = pr.head?.sha
   if (typeof head !== 'string' || !/^[0-9a-f]{40}$/.test(head)) throw new Error(`PR #${n}: the API reply has no head SHA`)
-  const runs = await api.gateRuns({ headSha: head })
+  // Only this PR's runs: two PRs can share a head commit. A run that names no PR (a fork PR's run lists none) cannot be
+  // told apart, so it stays a candidate.
+  const runs = (await api.gateRuns({ headSha: head })).filter((r) => !Array.isArray(r.prNumbers) || r.prNumbers.length === 0 || r.prNumbers.includes(n))
   if (runs.length === 0) return none(`no review-gate run on PR #${n}'s head ${head.slice(0, 12)}: the next push runs it`)
   const latest = runs.reduce((a, b) => (b.id > a.id ? b : a))
   let status = latest.status

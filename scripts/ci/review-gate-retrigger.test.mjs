@@ -63,14 +63,29 @@ const fetchStub = async (url, init = {}) => {
   const u = new URL(url)
   const json = (b, status = 200) => ({ ok: status < 300, status, json: async () => b })
   if (u.pathname === '/repos/o/r/pulls/44') return json({ number: 44, state: 'open', head: { sha: HEAD, ref: 'feat', repo: { full_name: 'o/r' } } })
-  if (u.pathname === '/repos/o/r/actions/workflows/review-gate.yml/runs') return json({ total_count: 1, workflow_runs: [{ id: 501, status: 'completed', created_at: '2026-11-05T10:00:00Z', head_sha: HEAD, event: 'pull_request' }] })
+  if (u.pathname === '/repos/o/r/actions/workflows/review-gate.yml/runs') return json({ total_count: 1, workflow_runs: [{ id: 501, status: 'completed', created_at: '2026-11-05T10:00:00Z', head_sha: HEAD, event: 'pull_request', pull_requests: [{ number: 44 }] }] })
   if (u.pathname === '/repos/o/r/actions/runs/501/rerun') return { ok: true, status: 201, json: async () => ({}) }
   return json({ message: 'nope' }, 404)
 }
 const api = makeApi({ repo: 'o/r', token: 't', fetchImpl: fetchStub, sleepImpl: async () => {} })
-ok('makeApi: gateRuns reads review-gate.yml runs for the head SHA, event pull_request', await (async () => { const r = await api.gateRuns({ headSha: HEAD }); return r.length === 1 && r[0].id === 501 && calls.some((c) => c.includes('/actions/workflows/review-gate.yml/runs') && c.includes(`head_sha=${HEAD}`) && c.includes('event=pull_request')) })())
+ok('makeApi: gateRuns reads review-gate.yml runs for the head SHA, event pull_request', await (async () => { const r = await api.gateRuns({ headSha: HEAD }); return r.length === 1 && r[0].id === 501 && r[0].prNumbers.join() === '44' && calls.some((c) => c.includes('/actions/workflows/review-gate.yml/runs') && c.includes(`head_sha=${HEAD}`) && c.includes('event=pull_request')) })())
 ok('makeApi: rerun POSTs to the run\'s rerun endpoint', await (async () => { await api.rerun(501); return calls.includes('POST /repos/o/r/actions/runs/501/rerun') })())
 ok('makeApi: an API error throws', await (async () => { try { await makeApi({ repo: 'o/r', token: 't', fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({}) }) }).pr(44); return false } catch (e) { return /403/.test(e.message) } })())
+
+// Correctness review 7abdac72c3eb F1: two PRs sharing a head commit. Only PR #44's run is re-run, even when another
+// PR's run on the same commit is newer; a run naming no PR (a fork's) stays a candidate.
+ok('a newer gate run of another PR on the same head is not re-run', await (async () => {
+  const s = makeStub()
+  s.gateRuns = async () => [{ id: 501, status: 'completed', createdAt: '2026-11-05T10:00:00Z', prNumbers: [44] }, { id: 600, status: 'completed', createdAt: '2026-11-05T11:00:00Z', prNumbers: [45] }]
+  const r = await retrigger({ event: 'issue_comment', payload: codexMarkerComment, api: s })
+  return r.action === 'rerun' && s.reruns.join() === '501'
+})())
+ok('a gate run naming no PR (a fork PR\'s) is still re-run', await (async () => {
+  const s = makeStub()
+  s.gateRuns = async () => [{ id: 700, status: 'completed', createdAt: '2026-11-05T10:00:00Z', prNumbers: [] }]
+  const r = await retrigger({ event: 'issue_comment', payload: codexMarkerComment, api: s })
+  return r.action === 'rerun' && s.reruns.join() === '700'
+})())
 
 // The workflow's trust boundary, read from the file: it is what keeps PR code away from the write token.
 const wf = readFileSync(new URL('../../.github/workflows/review-gate-retrigger.yml', import.meta.url), 'utf8')
