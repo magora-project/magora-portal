@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "c835c4c9d59cfc159cfee1f0f458a85cc9ae5cea",
+    "mergeBase": "6ecffba570f3cdc698cf5b9eda994f1e64aa13ca",
+    "head": "e0853030d91340e88f767f200909b38e647818d5"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--9f27026ed414--4#D13",
+      "severity": "P3",
+      "summary": "D13: The plan says blockingFindings excludes accepted bot-resolved threads, but it returns them and delegates exclusion to gateFindings, so the exported interface differs although the gate behaves correctly.",
+      "file": "scripts/ci/review-gate.mjs",
+      "line": 114,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "blockingFindings stays synchronous because the plan's own tests call it synchronously; the async bot-resolution check lives in gateFindings, which every caller (gate, pr-record draft, substitute carry list) uses, so accepted bot-resolved threads never reach the gate as blocking."
+      }
+    },
+    {
+      "id": "conformance--9f27026ed414--4#D14",
+      "severity": "P3",
+      "summary": "D14: The plan says each recorded slot identifies the review it relies on, but the gate accepts any non-empty by value and even a different bot's slot entry, weakening record traceability while live coverage still controls passage.",
+      "file": "scripts/ci/review-gate.mjs",
+      "line": 427,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "Live coverage is the control (spec 5.5); the record's slot list is the author's statement, checked for presence and a non-empty by. Matching by against live evidence would duplicate the coverage judgement and could disagree with it."
+      }
+    },
+    {
+      "id": "conformance--9f27026ed414--4#D15",
+      "severity": "P3",
+      "summary": "D15: Task 23 does not propose changing control-file parsing, but the diff relocates the reviewers instruction and adds a label-gate regression test to exclude .review/ from parsed control files, a harmless additional fix.",
+      "file": "AGENTS.md",
+      "line": 32
+    }
+  ],
+  "supersedes": "conformance--c835c4c9d59c--2",
+  "conformance": {
+    "tasks": [
+      "T23"
+    ],
+    "deviations": [
+      "conformance--9f27026ed414--4#D13",
+      "conformance--9f27026ed414--4#D14",
+      "conformance--9f27026ed414--4#D15"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "5280ea3b62356eb4803b30728235b18e401e3367"
+    }
+  },
+  "createdAt": "2026-11-10T13:43:54.290Z"
+}

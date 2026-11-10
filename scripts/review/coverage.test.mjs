@@ -10,7 +10,7 @@ import {
   BOT_VENDOR, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, coderabbitFailedOn, diffTooLarge, headPushedAt, makeIdentityOf, makeIsAncestor, requiredMet,
   slotState, substituteOk, substitutionClockStart,
 } from './coverage.mjs'
-import { geminiDispatchRuns } from './github.mjs'
+import { codexHistory, geminiDispatchRuns } from './github.mjs'
 import { geminiDiff, inputIdentity } from './identity.mjs'
 
 let pass = 0, fail = 0
@@ -255,6 +255,39 @@ try {
   ok('a marker without an edit history -> pending naming the edit history', await (async () => {
     const r = await s({ ...codexFx({ head: A2, current: 'I2', history: [hist(A2, '10:05')] }), codexHistory: null })
     return r.status === 'pending' && /edit history/.test(r.reason)
+  })())
+  // Issue #93: Codex edits one comment and re-emits an unchanged code_review block on every edit. After an
+  // identity-changing rewrite, code review on F1 completes at 10:02, "@codex review" is asked at 10:03, and a
+  // security-review-only edit at 10:04 must not answer it. Run end to end through codexHistory's edit reader.
+  const codexBody = (sha, cr, sec) => `<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 {"code_review":{"commit_sha":"${sha}","status":"${cr}"},"security_review":{"commit_sha":"${sha}","status":"${sec}"}} -->\n## Codex Review Summary\n`
+  const CODEX_EDITOR = { login: 'chatgpt-codex-connector', __typename: 'Bot' }
+  // edits: [[hhmm, body]] oldest first; the current body is the newest edit's, at its time (as measured on PR #87).
+  const codexComment = (edits) => async (url) => {
+    if (new URL(url).pathname !== '/graphql') return { ok: true, status: 200, json: async () => ({ node_id: 'IC_n' }) }
+    const nodes = edits.map(([at, diff]) => ({ editedAt: T(at), diff, editor: CODEX_EDITOR })).reverse()
+    const [newestAt, newestBody] = edits.at(-1)
+    return { ok: true, status: 200, json: async () => ({ data: { node: { body: newestBody, updatedAt: T(newestAt), lastEditedAt: T(newestAt), editor: CODEX_EDITOR,
+      userContentEdits: { totalCount: nodes.length, pageInfo: { hasNextPage: false, endCursor: null }, nodes } } } }) }
+  }
+  const codexFromEdits = async (edits, requests) => {
+    const h = await codexHistory({ repo: 'o/r', token: 't', commentId: 9, fetchImpl: codexComment(edits) })
+    const c = h.current
+    return { bot: 'codex', head: F1, current: 'IF1', requests, codexHistory: h, codexState: c ? { ...c, commentId: 9 } : null }
+  }
+  const edits93 = [['09:30', codexBody(A2, 'completed', 'completed')], ['10:02', codexBody(F1, 'completed', 'running')], ['10:04', codexBody(F1, 'completed', 'completed')]]
+  ok('#93: a security-review-only edit at 10:04 does not answer a 10:03 "@codex review" (code review completed 10:02)', await (async () => {
+    const r = await s(await codexFromEdits(edits93, [req('codex', '10:03')]))
+    return is(r, 'pending', /waiting for a usable review answering the full review request/)
+  })())
+  ok('#93: the re-emitted state keeps its first time, in the history and in the current marker', await (async () => {
+    const h = (await codexFromEdits(edits93, [])).codexHistory
+    const f1 = h.reviews.filter((e) => e.sha === F1)
+    return h.complete === true && f1.length === 1 && f1[0].at === T('10:02') && h.current.at === T('10:02')
+  })())
+  ok('#93: a code review that runs again and completes after the request does answer it (control)', await (async () => {
+    const more = [...edits93, ['10:05', codexBody(F1, 'running', 'completed')], ['10:07', codexBody(F1, 'completed', 'completed')]]
+    const r = await s(await codexFromEdits(more, [req('codex', '10:03')]))
+    return r.status === 'covered'
   })())
   // Rewrite rule details.
   ok('a rebase after an unanswered identity-changing force-push does not launder it', await (async () => {

@@ -280,7 +280,9 @@ ok('a running and a completed marker for the same sha are both kept, with their 
   const h = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 2, pages: [[edit('2026-11-03T00:00:00Z', mk(A)), edit('2026-11-02T00:00:00Z', mk(A, 'running'))]] }) })
   const forA = h.reviews.filter((r) => r.sha === A)
   const running = forA.filter((r) => r.status === 'running'), completed = forA.filter((r) => r.status === 'completed')
-  return h.complete === true && forA.length === 3 && running.length === 1 && running[0].at === '2026-11-02T00:00:00Z' && completed.length === 2 &&
+  // The body at 11-04 re-emits the 11-03 completed state, so it is one review timed at 11-03 (issue #93).
+  return h.complete === true && forA.length === 2 && running.length === 1 && running[0].at === '2026-11-02T00:00:00Z' &&
+    completed.length === 1 && completed[0].at === '2026-11-03T00:00:00Z' &&
     JSON.stringify(Object.keys(forA[0])) === '["sha","at","status"]'
 })())
 ok('a marker with no status has status null', (await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], current: '<!-- codex-review-state:v1 {"code_review":{"commit_sha":"' + A + '"}} -->' }) })).reviews[0].status === null)
@@ -335,7 +337,12 @@ ok('all three live findings are read with marker id, severity and path (no line 
   return f.length === 3 &&
     f[0].id === 'cr:956d1b3cd90766315da30417' && f[0].severity === 'Major' && f[0].path === 'docs/superpowers/plans/2026-10-28-staging-and-secrets.md' &&
     f[1].id === 'cr:97bc58def15aba789b90adc0' && f[1].severity === 'Minor' && f[2].id === 'cr:611baf72100b6a3cb565075e' && f[2].severity === 'Minor' &&
-    f.every((x) => x.reportedCommit === crReview.commitId) && JSON.stringify(Object.keys(f[0])) === '["id","severity","path","reportedCommit"]'
+    f.every((x) => x.reportedCommit === crReview.commitId) && JSON.stringify(Object.keys(f[0])) === '["id","severity","path","reportedCommit","text"]'
+})())
+ok('each live finding\'s text is its own block: its own defect, no marker, not its neighbour\'s', (() => {
+  const f = outsideDiffFindings({ reviews: [review], comments: [] })
+  const own = ['Validate completion markers against retained prefixes.', 'Freeze the backup date for the entire run.', 'Define the restore ACL scope.']
+  return f.every((x, i) => x.text.includes(own[i]) && own.every((o, j) => j === i || !x.text.includes(o)) && !/cr-comment|Outside diff range comments/.test(x.text))
 })())
 ok('a finding in an unlabeled block has severity null (the consumer treats it as blocking)', (() => {
   const body = oneFinding.replace(/Major<\/strong>/, 'Whatever</strong>').replace(/\*\*🟠 Major\*\*/, '**x**')

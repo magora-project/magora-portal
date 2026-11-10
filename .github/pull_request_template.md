@@ -26,6 +26,11 @@ Deviations:
 
 <!-- Commands you ran and what they printed (npm test, npm run lint:ratchet, npm run build, …) -->
 
+## PR review record
+
+<!-- After triaging the bot reviews: npm run review -- pr-record --pr <n>, fill each disposition in .review/pr/<n>.json, commit. The commit fires synchronize and review-gate re-runs. Rules: .claude/rules/process.md (Evidence). -->
+- [ ] `.review/pr/<n>.json` committed, every blocking finding disposed (or none needed: `mechanical` with no blocking finding)
+
 ## Migrations
 
 - [ ] No migration in this PR

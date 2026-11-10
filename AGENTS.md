@@ -29,6 +29,7 @@ For agents and contributors (Claude Code via `CLAUDE.md`, Codex directly). Desig
 | `subtle-correctness` | **any PR that touches `supabase/migrations/`, an `api/` auth path, or a control file**; concurrency; anything subtle |
 
 Review before push: `.claude/rules/process.md` § Review slots and dispatch. This review layer is discipline; the required CI checks are the control.
+Reviewers: skip `.review/`; findings located only there are outside the gate.
 
 Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`; for those, the maintainer's control-file read replaces the depth rule.
 
@@ -38,7 +39,6 @@ Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing 
 `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`,
 `scripts/review/**`, `.claude/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`, `.coderabbit.yaml`.
 A PR can weaken a check by editing these; name any you change in the PR description. The merging maintainer reads each such change first on fork/Dependabot PRs.
-Reviewers: skip `.review/`; findings located only there are outside the gate.
 
 ## Migrations
 

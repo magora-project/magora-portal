@@ -52,6 +52,10 @@ ok('parseControlFiles reads the real AGENTS.md', (() => {
   const real = parseControlFiles(readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8'))
   return real.includes('.github/**') && real.includes('scripts/ci/**') && real.includes('AGENTS.md')
 })())
+ok('the real AGENTS.md lists no .review/ entry as a control file (the reviewers line sits outside the section)', (() => {
+  const real = parseControlFiles(readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8'))
+  return real.length > 0 && !real.some((e) => e === '.review/' || e.startsWith('.review'))
+})())
 const CF = parseControlFiles(AGENTS)
 ok('infer: src only -> standard', inferLabel(['src/pages/MapPage.jsx', 'docs/x.md'], CF) === 'standard')
 ok('infer: migration -> subtle', inferLabel(['src/a.js', 'supabase/migrations/2026_x.sql'], CF) === 'subtle-correctness')
