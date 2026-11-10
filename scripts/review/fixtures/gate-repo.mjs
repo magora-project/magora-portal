@@ -114,11 +114,18 @@ export const outsideDiffBody = (marker, path = 'app.js') => [
   'Nothing else.',
 ].join('\n')
 
+// The CodeRabbit check of each commit a CodeRabbit review is on (state.coderabbitChecks): a successful check on every
+// `sha`, so a CodeRabbit review there is usable. A fixture with a CodeRabbit review and no entry for its commit has an
+// unknown check, and the review is not usable (coverage.mjs coderabbitFailedOn).
+export const CR_OK = { conclusion: 'success', title: 'Review completed' }
+export const crOk = (...shas) => ({ coderabbitChecks: Object.fromEntries(shas.map((s) => [s, CR_OK])) })
+
 // The gate's state aggregate for `head` in repo `repo`, with a pull_request run on the head two hours before `now`
 // (so a bot with nothing usable is past its 30-minute wait). `extra` overrides any field.
 export const gateState = (repo, head, extra = {}) => ({
   pr: { number: 1, head, headRef: 'pr', headRepo: 'o/r', base: repo.sha.M0, draft: false, fork: false, dependabot: false, createdAt: T(-60) },
   reviews: [], comments: [], threads: [], requests: [], codexState: null, codexHistory: null, geminiVerdicts: [], coderabbitCheck: null,
+  coderabbitChecks: {},
   runs: [{ id: 1, name: 'ci', event: 'pull_request', status: 'completed', conclusion: 'success', headSha: head, headRepo: 'o/r', createdAt: T(0), prNumbers: [1] }],
   geminiDispatchRuns: [], records: [],
   currentIdentity: repo.id[Object.keys(repo.sha).find((k) => repo.sha[k] === head)],

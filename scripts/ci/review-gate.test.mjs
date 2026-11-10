@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  AGENTS, CODERABBIT_LOGIN, CODEX_LOGIN, CODEX_P1, CR_FINDING_END, CR_MAJOR_HEADER, CR_MINOR, T, addressedIn, buildGateRepo, crStatus, codexCovers, fixedAt, g, gateState,
+  AGENTS, CODERABBIT_LOGIN, CODEX_LOGIN, CODEX_P1, CR_FINDING_END, CR_MAJOR_HEADER, CR_MINOR, CR_OK, T, addressedIn, buildGateRepo, crOk, crStatus, codexCovers, fixedAt, g, gateState,
   outsideDiffBody, prRecord, review, subRecord, thread, verdict,
 } from '../review/fixtures/gate-repo.mjs'
 import { blockingFindings, evaluateGate, judgedDepth, main, makeResolveCommit, readGateState } from './review-gate.mjs'
@@ -138,26 +138,37 @@ try {
   // ---------------------------------------------------------------- fixed: rule (a)
   const fixedRec = prRecord([fixedAt('thread:PRRT_1', sha.F)], { slots: STD_SLOTS })
   const crThreadResolved = crThreadOnR('PRRT_1', { resolved: true, resolvedBy: 'dev' })
-  const fixedNoReReview = st(sha.E, { ...codexCovers(sha.E), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5))] })
-  const fixedReReviewed = st(sha.E, { threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5)), review(2, CODERABBIT_LOGIN, sha.E, T(40))] })
+  const fixedNoReReview = st(sha.E, { ...codexCovers(sha.E), ...crOk(sha.R), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5))] })
+  const fixedReReviewed = st(sha.E, { ...crOk(sha.R, sha.E), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5)), review(2, CODERABBIT_LOGIN, sha.E, T(40))] })
   ok('fixed + SHA with no bot evidence after the fix -> FAIL', (await evaluateGate({ state: fixedNoReReview, record: fixedRec, depth: 'standard' })).ok === false)
   ok('fixed + SHA with a covering review after the fix and the thread resolved -> ok (fixture: the fix commit strictly descends from the reported commit and changes the identity)', (await evaluateGate({ state: fixedReReviewed, record: fixedRec, depth: 'standard' })).ok)
   // F1 (the D30 rule on the fix-evidence path, coverage.mjs coderabbitFailedOn): a CodeRabbit review on the head whose
-  // CodeRabbit check concluded a terminal failure is no fix evidence, even when Codex covers the slot.
-  const fixedOnFailedHead = (conclusion) => ({ ...fixedReReviewed, ...codexCovers(sha.E), coderabbitCheck: { conclusion, title: 'x' } })
+  // CodeRabbit check concluded a terminal failure is no fix evidence, even when Codex covers the slot. The head's check
+  // is both state.coderabbitCheck and its state.coderabbitChecks entry, as readGateState fills them.
+  const fixedOnFailedHead = (conclusion) => ({ ...fixedReReviewed, ...codexCovers(sha.E), coderabbitCheck: { conclusion, title: 'x' }, coderabbitChecks: { [sha.R]: CR_OK, [sha.E]: { conclusion, title: 'x' } } })
   ok('F1: fixed thread, the only later CodeRabbit review is on the head and the head check failed, Codex covers the slot -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: fixedOnFailedHead('failure'), record: fixedRec, depth: 'standard' }); return r.ok === false && r.lines.some((l) => /^ok slot codex\b/.test(l)) && r.lines.some((l) => /^FAIL thread:PRRT_1\b.*no usable coderabbit review/.test(l)) })())
   ok('F1: the same with a successful head check -> ok', (await evaluateGate({ state: fixedOnFailedHead('success'), record: fixedRec, depth: 'standard' })).ok)
+  // F2 on the fix-evidence path: a CodeRabbit review is judged by its OWN commit's check, not the head's. The head is E;
+  // the only later CodeRabbit review is on F (the fix commit, E's identity), and the head's own check succeeded.
+  const fixVerifiedOnF = (checkOfF) => st(sha.E, {
+    ...codexCovers(sha.E), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5)), review(2, CODERABBIT_LOGIN, sha.F, T(40))],
+    coderabbitCheck: CR_OK, coderabbitChecks: { [sha.R]: CR_OK, [sha.E]: CR_OK, ...(checkOfF === undefined ? {} : { [sha.F]: checkOfF }) },
+  })
+  ok('F2: fix verified only by a CodeRabbit review on a non-head commit whose own check failed -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: fixVerifiedOnF({ conclusion: 'failure', title: 'x' }), record: fixedRec, depth: 'standard' }); return r.ok === false && r.lines.some((l) => /^FAIL thread:PRRT_1\b.*no usable coderabbit review/.test(l)) })())
+  ok('F2: ... and with no check entry for that commit (unknown) -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: fixVerifiedOnF(undefined), record: fixedRec, depth: 'standard' }); return r.ok === false && r.lines.some((l) => /^FAIL thread:PRRT_1\b.*no usable coderabbit review/.test(l)) })())
+  ok('F2: ... the same with that commit\'s check successful -> ok (control)', (await evaluateGate({ state: fixVerifiedOnF(CR_OK), record: fixedRec, depth: 'standard' })).ok)
+  ok('F2: ... and with that commit fetched and carrying no CodeRabbit check (null) -> ok', (await evaluateGate({ state: fixVerifiedOnF(null), record: fixedRec, depth: 'standard' })).ok)
   ok('the same, with the thread still open -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: { ...fixedReReviewed, threads: [crThreadOnR('PRRT_1')] }, record: fixedRec, depth: 'standard' }); return r.ok === false && r.lines.some((l) => /^FAIL thread:PRRT_1\b.*resolved/.test(l)) })())
   ok('the same, with a fix commit that is not in the head\'s history -> FAIL', (await evaluateGate({ state: fixedReReviewed, record: prRecord([fixedAt('thread:PRRT_1', sha.Y)], { slots: STD_SLOTS }), depth: 'standard' })).ok === false)
   ok('a fix commit off the head\'s history fails even with a review on it at the current identity', await (async () => {
-    const s = { ...fixedReReviewed, reviews: [...fixedReReviewed.reviews, review(4, CODERABBIT_LOGIN, sha.Y, T(60))] }
+    const s = { ...fixedReReviewed, ...crOk(sha.R, sha.E, sha.Y), reviews: [...fixedReReviewed.reviews, review(4, CODERABBIT_LOGIN, sha.Y, T(60))] }
     const r = await evaluateGate({ state: s, record: prRecord([fixedAt('thread:PRRT_1', sha.Y)], { slots: STD_SLOTS }), depth: 'standard' })
     return r.ok === false && r.lines.some((l) => /^FAIL thread:PRRT_1\b.*head's history/.test(l))
   })())
   ok('the same, with an abbreviated fix SHA -> FAIL', (await evaluateGate({ state: fixedReReviewed, record: prRecord([fixedAt('thread:PRRT_1', sha.F.slice(0, 12))], { slots: STD_SLOTS }), depth: 'standard' })).ok === false)
   ok('a Codex thread is verified by the Codex marker on the fix (V2), not by a CodeRabbit review', await (async () => {
     const s = st(sha.E, { ...codexCovers(sha.E), threads: [codexThreadOnR('PRRT_1', { resolved: true, resolvedBy: 'dev' })] })
-    const crOnly = st(sha.E, { threads: s.threads, reviews: [review(2, CODERABBIT_LOGIN, sha.E, T(40))] })
+    const crOnly = st(sha.E, { ...crOk(sha.E), threads: s.threads, reviews: [review(2, CODERABBIT_LOGIN, sha.E, T(40))] })
     return (await evaluateGate({ state: s, record: fixedRec, depth: 'standard' })).ok && (await evaluateGate({ state: crOnly, record: fixedRec, depth: 'standard' })).ok === false
   })())
 
@@ -173,7 +184,7 @@ try {
   const threadFixedSameIdentity = fixedReReviewed
   const fixedSameIdentityRec = prRecord([fixedAt('thread:PRRT_1', sha.S)], { slots: STD_SLOTS })
   ok('fixed naming a later commit that leaves the identity unchanged -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: threadFixedSameIdentity, record: fixedSameIdentityRec, depth: 'standard' }); return r.ok === false && /thread:/.test(r.lines.join()) })())
-  const reviewOffFixLaterDate = st(sha.E, { ...codexCovers(sha.E), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5)), review(3, CODERABBIT_LOGIN, sha.Y, T(90))] })
+  const reviewOffFixLaterDate = st(sha.E, { ...codexCovers(sha.E), ...crOk(sha.R, sha.Y), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5)), review(3, CODERABBIT_LOGIN, sha.Y, T(90))] })
   ok('fixed thread whose only later review is on a commit off the fix commit, dated after it -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: reviewOffFixLaterDate, record: fixedRec, depth: 'standard' }); return r.ok === false && /thread:/.test(r.lines.join()) })())
   ok('a reported commit that cannot be fetched fails (a) closed, naming the finding', await (async () => { const s = { ...fixedReReviewed, threads: [thread('PRRT_1', CODERABBIT_LOGIN, 'f'.repeat(40), { resolved: true, resolvedBy: 'dev' })] }; const r = await evaluateGate({ state: s, record: fixedRec, depth: 'standard' }); return r.ok === false && r.lines.some((l) => /^FAIL thread:PRRT_1\b/.test(l)) })())
 
@@ -190,10 +201,10 @@ try {
     return r.ok === false && r.lines.some((l) => /^FAIL cr:abc123\b.*does not hold/.test(l))
   })())
   ok('a substitute for another bot does not verify a cr: finding', (await evaluateGate({ state: { ...crIssueCommentFixed, records: [{ ...crSub, slot: 'substitute:gemini' }] }, record: crFixedWithSub, depth: 'standard' })).ok === false)
-  const crReviewFixedReReviewed = st(sha.E, { reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), outsideDiffBody('abc123')), review(2, CODERABBIT_LOGIN, sha.E, T(40))] })
+  const crReviewFixedReReviewed = st(sha.E, { ...crOk(sha.R, sha.E), reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), outsideDiffBody('abc123')), review(2, CODERABBIT_LOGIN, sha.E, T(40))] })
   ok('fixed cr: finding from a review body, fix commit strictly descends from its reported commit and changes the identity, later usable CodeRabbit review on the fix -> ok (gate point 4)', (await evaluateGate({ state: crReviewFixedReReviewed, record: crFixedRec, depth: 'standard' })).ok)
-  ok('the same cr: finding repeated in the review on the fix is reported there too -> FAIL', (await evaluateGate({ state: st(sha.E, { reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), outsideDiffBody('abc123')), review(2, CODERABBIT_LOGIN, sha.E, T(40), outsideDiffBody('abc123'))] }), record: crFixedRec, depth: 'standard' })).ok === false)
-  ok('an outside-diff section whose count does not match -> could not judge', await (async () => { const bad = outsideDiffBody('abc123').replace('comments (1)', 'comments (2)'); const r = await evaluateGate({ state: st(sha.E, { reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), bad)] }), record: crFixedRec, depth: 'standard' }); return r.ok === false && /could not judge/.test(r.lines.join()) })())
+  ok('the same cr: finding repeated in the review on the fix is reported there too -> FAIL', (await evaluateGate({ state: st(sha.E, { ...crOk(sha.R, sha.E), reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), outsideDiffBody('abc123')), review(2, CODERABBIT_LOGIN, sha.E, T(40), outsideDiffBody('abc123'))] }), record: crFixedRec, depth: 'standard' })).ok === false)
+  ok('an outside-diff section whose count does not match -> could not judge', await (async () => { const bad = outsideDiffBody('abc123').replace('comments (1)', 'comments (2)'); const r = await evaluateGate({ state: st(sha.E, { ...crOk(sha.R), reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), bad)] }), record: crFixedRec, depth: 'standard' }); return r.ok === false && /could not judge/.test(r.lines.join()) })())
   ok('an outside-diff finding located in .review/ is outside the gate', blockingFindings(st(sha.E, { comments: [{ ...crCommentWithFinding, body: outsideDiffBody('abc123', '.review/pr/1.json') }] })).length === 0)
 
   // ---------------------------------------------------------------- who opened the thread
@@ -205,7 +216,7 @@ try {
   // ---------------------------------------------------------------- fixed: rule (b) and D-7
   const subCodex = subRecord({ bot: 'codex', vendor: 'anthropic', identity: id.U, stem: 'substitute-codex--u--1', fixedIds: ['thread:PRRT_1'] })
   const fixUnrelatedThenFail = st(sha.U, {
-    reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))],
+    reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U),
     codexState: { commitSha: sha.F, status: 'completed', at: T(10), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.F, at: T(10), status: 'completed' }], complete: true },
     geminiVerdicts: [verdict(80, sha.U, id.U, 'no-findings')],
     threads: [codexThreadOnR('PRRT_1', { resolved: true, resolvedBy: 'dev' })], records: [subCodex],
@@ -215,13 +226,13 @@ try {
   ok('the same without the substitute record -> FAIL', (await evaluateGate({ state: { ...fixUnrelatedThenFail, records: [] }, record: withSubResolving, depth: 'subtle-correctness' })).ok === false)
   ok('the same with a substitute by a counted vendor (google, Gemini covered) -> FAIL', (await evaluateGate({ state: { ...fixUnrelatedThenFail, records: [{ ...subCodex, reviewer: { vendor: 'google', model: 'm' } }] }, record: withSubResolving, depth: 'subtle-correctness' })).ok === false)
   const geminiFixedThenFailed = st(sha.U, {
-    reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...codexCovers(sha.U),
+    reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U), ...codexCovers(sha.U),
     geminiVerdicts: [verdict(61, sha.R, id.R, 'findings', [1], T(5)), verdict(81, sha.U, '', 'could-not-run', [], T(30))],
     records: [subRecord({ bot: 'gemini', vendor: 'anthropic', identity: id.U, stem: 'substitute-gemini--u--1', fixedIds: ['gemini:61:1'] })],
   })
   ok('Gemini finding -> fix -> Gemini could-not-run -> substitute resolves it -> ok', (await evaluateGate({ state: geminiFixedThenFailed, record: withSubResolving, depth: 'subtle-correctness' })).ok)
   const geminiRepeats = st(sha.U, {
-    reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...codexCovers(sha.U),
+    reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U), ...codexCovers(sha.U),
     geminiVerdicts: [verdict(62, sha.R, id.R, 'findings', [1], T(5)), verdict(63, sha.U, id.U, 'findings', [1, 2], T(50))],
   })
   const fixedFirstOnly = prRecord([fixedAt('gemini:62:1', sha.F)], { slots: SUBTLE_SLOTS, reclassified: [{ id: 'gemini:63:1', reason: 'a different, cosmetic point' }] })
@@ -232,15 +243,15 @@ try {
   const failsOn = (r, re) => r.ok === false && r.lines.some((l) => re.test(l))
   // review-gate.mjs ruleA "with the current identity": the head is U (a new identity); the only CodeRabbit review after
   // the fix is on E, a descendant of the fix whose identity (E's) is no longer the current one.
-  const fixedThenStaleReview = st(sha.U, { ...codexCovers(sha.U), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5)), review(2, CODERABBIT_LOGIN, sha.E, T(40))] })
+  const fixedThenStaleReview = st(sha.U, { ...codexCovers(sha.U), ...crOk(sha.R, sha.E), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5)), review(2, CODERABBIT_LOGIN, sha.E, T(40))] })
   ok('I-2 rule (a): a review on a descendant of the fix whose identity is not the current one does not verify it', failsOn(await evaluateGate({ state: fixedThenStaleReview, record: fixedRec, depth: 'standard' }), /^FAIL thread:PRRT_1\b.*no usable coderabbit review/))
-  ok('I-2 rule (a): ... a review on the current head does (control)', (await evaluateGate({ state: { ...fixedThenStaleReview, reviews: [...fixedThenStaleReview.reviews, review(3, CODERABBIT_LOGIN, sha.U, T(50))] }, record: fixedRec, depth: 'standard' })).ok)
+  ok('I-2 rule (a): ... a review on the current head does (control)', (await evaluateGate({ state: { ...fixedThenStaleReview, ...crOk(sha.R, sha.E, sha.U), reviews: [...fixedThenStaleReview.reviews, review(3, CODERABBIT_LOGIN, sha.U, T(50))] }, record: fixedRec, depth: 'standard' })).ok)
   // botEvidence: an empty CodeRabbit review is never fix evidence (V4).
-  const fixedEmptyReReview = st(sha.E, { ...codexCovers(sha.E), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5)), review(2, CODERABBIT_LOGIN, sha.E, T(40), '')] })
+  const fixedEmptyReReview = st(sha.E, { ...codexCovers(sha.E), ...crOk(sha.R, sha.E), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5)), review(2, CODERABBIT_LOGIN, sha.E, T(40), '')] })
   ok('I-2: an empty CodeRabbit review on the fix is not fix evidence', failsOn(await evaluateGate({ state: fixedEmptyReReview, record: fixedRec, depth: 'standard' }), /^FAIL thread:PRRT_1\b.*no usable coderabbit review/))
   // botEvidence: a `running` Codex marker is never fix evidence (gate point 3).
   const codexRunningOnFix = st(sha.E, {
-    reviews: [review(2, CODERABBIT_LOGIN, sha.E, T(40))], threads: [codexThreadOnR('PRRT_1', { resolved: true, resolvedBy: 'dev' })],
+    reviews: [review(2, CODERABBIT_LOGIN, sha.E, T(40))], ...crOk(sha.E), threads: [codexThreadOnR('PRRT_1', { resolved: true, resolvedBy: 'dev' })],
     codexState: { commitSha: sha.E, status: 'running', at: T(20), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.E, at: T(20), status: 'running' }], complete: true },
   })
   ok('I-2: a running Codex marker on the fix is not fix evidence', failsOn(await evaluateGate({ state: codexRunningOnFix, record: fixedRec, depth: 'standard' }), /^FAIL thread:PRRT_1\b.*no usable codex review/))
@@ -295,7 +306,9 @@ try {
   ok('workflow: concurrency on PR and head, not cancelled', /group: review-gate-\$\{\{ github\.event\.pull_request\.number \}\}-\$\{\{ github\.event\.pull_request\.head\.sha \}\}\n {2}cancel-in-progress: false/.test(wf))
 
   // ---------------------------------------------------------------- main(): the CI entry
-  // A stubbed GitHub API for PR #1 in o/r. scen: { pr, threads, reviews, comments, activation } ; status 403 everywhere with stub403.
+  // A stubbed GitHub API for PR #1 in o/r. scen: { pr, threads, reviews, comments, checks, checkReads } ; status 403 everywhere
+  // with stub403. checks: { [sha]: raw check runs, or an HTTP status to fail that commit's check-run read with } (default:
+  // no check runs); when scen.checkReads is an array, each commit whose check runs are read is appended to it.
   const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body })
   const prObj = (createdAt, extra = {}) => ({
     number: 1, state: 'open', draft: false, created_at: createdAt, body: '', user: { login: 'dev' }, labels: [{ name: 'standard' }],
@@ -316,7 +329,12 @@ try {
       if (/reviewThreads/.test(q)) return res(200, { data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: (scen.threads ?? []).map(gqlThread) } } } } })
       return res(200, { errors: [{ message: 'unexpected query' }] })
     }
-    if (/\/check-runs$/.test(p)) return res(200, { total_count: 0, check_runs: [] })
+    const cr = /^\/repos\/o\/r\/commits\/([0-9a-f]+)\/check-runs$/.exec(p)
+    if (cr) {
+      if (Array.isArray(scen.checkReads)) scen.checkReads[scen.checkReads.length] = cr[1]
+      const c = scen.checks?.[cr[1]] ?? []
+      return typeof c === 'number' ? res(c, { message: 'boom' }) : res(200, { total_count: c.length, check_runs: c })
+    }
     if (p === '/repos/o/r/actions/runs') return res(200, { total_count: 1, workflow_runs: [{ id: 1, name: 'ci', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: sha.E, head_repository: { full_name: 'o/r' }, created_at: T(0), pull_requests: [{ number: 1 }] }] })
     if (p === '/repos/o/r/actions/workflows/gemini-review.yml/runs') return res(200, { total_count: 0, workflow_runs: [] })
     return res(404, { message: `no stub for ${p}` })
@@ -340,6 +358,31 @@ try {
     const scen = { pr: prObj('2026-11-05T00:00:01Z', { labels: [{ name: 'mechanical' }] }), threads: [] }
     const r = await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({})(scen) }))
     return r.code === 0 && /review-gate: ok/.test(r.out)
+  })())
+  // Each CodeRabbit review is judged by its own commit's check (coverage.mjs coderabbitChecks): main() reads the check
+  // runs of the head and of every commit a non-empty CodeRabbit review is on, and a failed read is "could not judge".
+  const crRun = (conclusion) => ({ id: 7, name: 'CodeRabbit', app: { slug: 'coderabbitai' }, conclusion, output: { title: 'Review completed' } })
+  const rawReview = (id, login, commit, body = 'Review body') => ({ id, user: { login }, commit_id: commit, submitted_at: T(40), body })
+  const crReviewedScen = (checks) => ({
+    pr: prObj('2026-11-05T00:00:01Z', { labels: [{ name: 'mechanical' }] }), threads: [], checks, checkReads: [],
+    reviews: [rawReview(1, CODERABBIT_LOGIN, sha.F), rawReview(2, CODERABBIT_LOGIN, sha.F), rawReview(3, CODERABBIT_LOGIN, sha.Q0, ''), rawReview(4, CODEX_LOGIN, sha.R)],
+  })
+  ok('main: reads the check runs of the head and of each commit a non-empty CodeRabbit review is on, once each', await (async () => {
+    const scen = crReviewedScen({ [sha.F]: [crRun('success')] })
+    const r = await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({})(scen) }))
+    return r.code === 0 && /review-gate: ok/.test(r.out) && [...scen.checkReads].sort().join() === [sha.E, sha.F].sort().join()
+  })())
+  ok('main: a check-run read error for a reviewed (non-head) commit -> exit 1 "could not judge"', await (async () => {
+    const scen = crReviewedScen({ [sha.F]: 500 })
+    const r = await quiet(() => main({ env: goodEnv, fetchImpl: activationFile({})(scen) }))
+    return r.code === 1 && /could not judge/.test(r.out) && scen.checkReads.includes(sha.F)
+  })())
+  ok('readGateState: coderabbitChecks holds each reviewed commit\'s check as read, and the head\'s (null: no check run)', await (async () => {
+    const scen = crReviewedScen({ [sha.F]: [crRun('failure')] })
+    const s = await readGateState({ repo: 'o/r', token: 't', fetchImpl: activationFile({})(scen), pr: scen.pr, cwd: repo.dir, now: Date.parse(T(120)) })
+    const keys = Object.keys(s.coderabbitChecks).sort().join()
+    return keys === [sha.E, sha.F].sort().join() && s.coderabbitChecks[sha.E] === null && s.coderabbitCheck === null
+      && s.coderabbitChecks[sha.F]?.conclusion === 'failure' && s.coderabbitChecks[sha.F]?.title === 'Review completed'
   })())
   // Minor 6: main moved after the checkout, so the PR's base (read from the API afterwards) is not in the clone. The
   // gate fetches it from origin; an unfetchable base fails "could not judge", naming it.

@@ -6,8 +6,9 @@
 // What it reads, all live from the API when the job runs (never the event payload): the PR (labels, head, base,
 // draft, creation time), reviews and their commit_ids, issue comments (Codex's state marker and its edit history,
 // Gemini's verdict markers, CodeRabbit's outside-diff findings, full-review requests), review threads, CodeRabbit's
-// check run, and the PR's workflow runs. From the PR-head checkout: the PR review record and the substitute records
-// under .review/records/ that this PR adds. Every read error fails the job "could not judge" (fail closed).
+// check run on the head and on every commit a CodeRabbit review is on, and the PR's workflow runs. From the PR-head
+// checkout: the PR review record and the substitute records under .review/records/ that this PR adds. Every read error
+// fails the job "could not judge" (fail closed).
 //
 // The PR review record (schema 1):
 //   { schema: 1, pr, slots: [{ bot, status: 'covered' | 'substituted', by }], findings: [{ id, source, severity,
@@ -242,8 +243,9 @@ export function readPrRecord({ cwd, pr }) {
 // ---------------------------------------------------------------- dispositions
 
 // The bot's usable evidence: [{ sha, identity? }] (identity known only for Gemini, whose marker carries it). A CodeRabbit
-// review on the head whose CodeRabbit check concluded a terminal failure is not usable (coverage.mjs coderabbitFailedOn,
-// the same rule slotState applies).
+// review is usable only when its OWN commit's CodeRabbit check is known and not a terminal failure: a failed or unknown
+// check (no entry in state.coderabbitChecks) makes it unusable (coverage.mjs coderabbitFailedOn, the same rule slotState
+// applies).
 function botEvidence(bot, state) {
   const reviewsBy = (login) => (state.reviews ?? []).filter((r) => r.login === login && r.empty !== true && typeof r.commitId === 'string').map((r) => ({ sha: r.commitId }))
   if (bot === 'coderabbit') return reviewsBy(CODERABBIT_LOGIN).filter((e) => !coderabbitFailedOn(state, e.sha))
@@ -466,6 +468,12 @@ export async function readGateState({ repo, token, fetchImpl = fetch, pr, cwd, r
     listReviews(args), listIssueComments(args), listThreads(args), prRuns({ ...args, headRef: pr.head.ref }),
     geminiDispatchRuns(args), coderabbitCheck({ ...args, sha: head }),
   ])
+  // Each CodeRabbit review is judged by its OWN commit's CodeRabbit check (coverage.mjs coderabbitChecks): read it for
+  // every distinct commit carrying a non-empty CodeRabbit review, plus the head. A read error throws (could not judge).
+  // A commitId that is not a SHA is not read: it has no entry, so its review is not usable (fail closed).
+  const crShas = [...new Set([head, ...reviews.filter((r) => r.login === CODERABBIT_LOGIN && r.empty !== true && typeof r.commitId === 'string' && SHA.test(r.commitId)).map((r) => r.commitId)])]
+  const coderabbitChecks = {}
+  for (const sha of crShas) coderabbitChecks[sha] = sha === head ? crCheck : await coderabbitCheck({ ...args, sha })
   const cs = codexState(comments)
   const history = cs ? await codexHistory({ ...args, commentId: cs.commentId }) : null
   const currentIdentity = await inputIdentity({ cwd, base, head })
@@ -479,7 +487,7 @@ export async function readGateState({ repo, token, fetchImpl = fetch, pr, cwd, r
       fork: headRepo === null || headRepo !== pr.base.repo?.full_name, dependabot: pr.user?.login === 'dependabot[bot]', createdAt: pr.created_at,
     },
     reviews, comments, threads, requests: fullReviewRequests(comments), codexState: cs, codexHistory: history,
-    geminiVerdicts: geminiVerdicts(comments), coderabbitCheck: crCheck, runs, geminiDispatchRuns: dispatched, records,
+    geminiVerdicts: geminiVerdicts(comments), coderabbitCheck: crCheck, coderabbitChecks, runs, geminiDispatchRuns: dispatched, records,
     currentIdentity, identityOf: makeIdentityOf({ cwd, base }), isAncestor: makeIsAncestor({ cwd }), resolveCommit: makeResolveCommit({ cwd }), now,
     tooLarge: await diffTooLarge({ cwd, base, head }),
   }

@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  CODERABBIT_LOGIN, CODEX_LOGIN, T, addressedIn, buildGateRepo, codexCovers, fixedAt, g, gateState, prRecord, put, review, thread, verdict,
+  CODERABBIT_LOGIN, CODEX_LOGIN, T, addressedIn, buildGateRepo, codexCovers, crOk, fixedAt, g, gateState, prRecord, put, review, thread, verdict,
 } from './fixtures/gate-repo.mjs'
 import { blockingFindings, evaluateGate } from '../ci/review-gate.mjs'
 import { draftRecord, prRecordCli, runSubstitute as runSubstituteImpl } from './pr-record.mjs'
@@ -41,7 +41,7 @@ try {
   })())
   ok('D31: a subtle-correctness draft lists all three met slots and passes the gate once disposed', await (async () => {
     const live = gateState(repo, sha.U, {
-      reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...codexCovers(sha.U), geminiVerdicts: [verdict(80, sha.U, id.U, 'no-findings')],
+      reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U), ...codexCovers(sha.U), geminiVerdicts: [verdict(80, sha.U, id.U, 'no-findings')],
       threads: [thread('PRRT_1', CODEX_LOGIN, sha.R)],
     })
     const d = await draftRecord({ state: live, depth: 'subtle-correctness' })
@@ -108,7 +108,7 @@ try {
   // Live state at U: Codex raised PRRT_1 on R; the fix F was reviewed by Codex only on F (another identity); Codex has
   // not reviewed U and is past its wait; CodeRabbit and Gemini cover U.
   const liveAtU = (extra = {}) => gateState(repo, sha.U, {
-    reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))],
+    reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U),
     codexState: { commitSha: sha.F, status: 'completed', at: T(10), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.F, at: T(10), status: 'completed' }], complete: true },
     geminiVerdicts: [verdict(80, sha.U, id.U, 'no-findings')],
     threads: [thread('PRRT_1', CODEX_LOGIN, sha.R, { resolved: true, resolvedBy: 'dev' })],
