@@ -25,7 +25,8 @@
 // @property {Array}   runs                prRuns({headRef})              [{id, name, status, conclusion, headSha, headRepo, createdAt, prNumbers}]
 // @property {Array}   geminiDispatchRuns  geminiDispatchRuns({pr})       [{id, status, conclusion, createdAt}]
 //
-// The other slotState arguments: `headPushedAt` is this module's headPushedAt() over the same `runs`;
+// The other slotState arguments: `headPushedAt` is this module's substitutionClockStart() over the same `runs` (the
+// gate's choice; headPushedAt() alone restarts the clock on every head);
 // `identityOf` and `isAncestor` come from makeIdentityOf / makeIsAncestor (or a stand-in with the same
 // contract); `now` is an ISO string or epoch milliseconds.
 import { chainHeads, undisposedBlocking } from './records.mjs'
@@ -46,6 +47,14 @@ const CR_TERMINAL = new Set(['skipped', 'failure', 'cancelled', 'timed_out', 'ac
 const GEMINI_RUN_TERMINAL = new Set(['cancelled', 'failure', 'timed_out'])
 
 const ms = (t) => (typeof t === 'number' ? t : Date.parse(t))
+
+// Whether a CodeRabbit review on commit `sha` is unusable because its run failed (§5.5 "Usable": a failed review never
+// establishes coverage): `sha` is the head, the commit whose CodeRabbit check the state carries, and that check
+// concluded a terminal failure. A review on an earlier commit keeps its standing. Shared by slotState (coverage) and
+// review-gate (fix evidence, rule (a)), so the two cannot drift.
+export function coderabbitFailedOn(state, sha) {
+  return typeof sha === 'string' && sha !== '' && sha === state?.pr?.head && CR_TERMINAL.has(state?.coderabbitCheck?.conclusion)
+}
 const short = (sha) => (typeof sha === 'string' ? sha.slice(0, 12) : String(sha))
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 
@@ -72,17 +81,58 @@ export function headPushedAt({ runs, pr, head, headRepo, prCreatedAt }) {
   if (Number.isNaN(floor) || !Array.isArray(runs)) return null
   const mine = runs.filter(runOfPr(pr, headRepo))
   if (mine.some((r) => Number.isNaN(ms(r.createdAt)))) return null
-  const lastOther = Math.max(-Infinity, ...mine.filter((r) => r.headSha !== head).map((r) => ms(r.createdAt)))
-  const arrivals = mine.filter((r) => r.headSha === head && ms(r.createdAt) > lastOther)
+  const a = arrivalOf(mine, head)
+  if (a === null) return null
+  return ms(a.run.createdAt) >= floor ? a.run.createdAt : prCreatedAt
+}
+
+// The last arrival of `sha` among `runs` (the PR's runs, every time readable): the earliest run on `sha` created after
+// the latest run on any other SHA. -> { run, before } or null. `before` is the head the PR had just before that
+// arrival: the SHA of the latest run on another SHA, or null when there is none or several SHAs share that instant.
+function arrivalOf(runs, sha) {
+  const others = runs.filter((r) => r.headSha !== sha)
+  const lastOther = Math.max(-Infinity, ...others.map((r) => ms(r.createdAt)))
+  const arrivals = runs.filter((r) => r.headSha === sha && ms(r.createdAt) > lastOther)
   if (arrivals.length === 0) return null
-  const first = arrivals.reduce((a, b) => (ms(b.createdAt) < ms(a.createdAt) ? b : a))
-  return ms(first.createdAt) >= floor ? first.createdAt : prCreatedAt
+  const run = arrivals.reduce((a, b) => (ms(b.createdAt) < ms(a.createdAt) ? b : a))
+  const prev = [...new Set(others.filter((r) => ms(r.createdAt) === lastOther).map((r) => r.headSha))]
+  return { run, before: prev.length === 1 ? prev[0] : null }
+}
+
+// When the substitution clock starts (final review I-1): the earliest arrival among the trailing run of the PR's heads
+// that share the current input identity. From the current head's arrival (headPushedAt), walk back through the heads
+// the PR had before it, in arrival order, while each one's identity (identityOf) equals currentIdentity. The walk stops
+// at the first head whose identity differs or cannot be computed (an error or null counts as different: fail closed,
+// the later time stands), or whose predecessor is ambiguous. The 30 minutes are the bot's time to review the change; an
+// identity-preserving push (an evidence commit, a rebase that keeps the identity, D-10) does not change what it must
+// review, so it does not restart them. Floored at the PR's creation, as headPushedAt; null as headPushedAt (no run on
+// the head, or an unreadable time): the caller then stays pending naming the missing run.
+export async function substitutionClockStart({ runs, pr, head, headRepo, prCreatedAt, identityOf, currentIdentity }) {
+  const floor = ms(prCreatedAt)
+  if (Number.isNaN(floor) || !Array.isArray(runs)) return null
+  const mine = runs.filter(runOfPr(pr, headRepo))
+  if (mine.some((r) => Number.isNaN(ms(r.createdAt)))) return null
+  let a = arrivalOf(mine, head)
+  if (a === null) return null
+  let start = a.run.createdAt
+  if (typeof currentIdentity === 'string' && currentIdentity !== '' && typeof identityOf === 'function') {
+    while (typeof a.before === 'string' && a.before !== '') {
+      if ((await safe(() => identityOf(a.before), null)) !== currentIdentity) break
+      const at = ms(a.run.createdAt)
+      const earlier = arrivalOf(mine.filter((r) => ms(r.createdAt) < at), a.before)
+      if (earlier === null) break
+      a = earlier
+      start = a.run.createdAt
+    }
+  }
+  return ms(start) >= floor ? start : prCreatedAt
 }
 
 // ---------------------------------------------------------------- git oracles
 
-// One SHA, present locally or fetched once from origin. A non-SHA argument never reaches git.
-function makeHave({ cwd }) {
+// have(sha) -> Promise<boolean>: one SHA, present locally or fetched once from origin. A non-SHA argument never
+// reaches git. Exported for review-gate, which fetches the PR's base when the checkout lacks it.
+export function makeHave({ cwd }) {
   const cache = new Map()
   return (sha) => {
     if (typeof sha !== 'string' || !SHA.test(sha)) return Promise.resolve(false)
@@ -136,6 +186,9 @@ const safe = async (fn, fallback) => { try { return await fn() } catch { return 
 // bot is known to have reviewed or started (rewrite detection); `evidence` is the usable subset (coverage and
 // the "latest rewritten-away review" ordering). Empty reviews are entries, never evidence (V4); for Codex every
 // edit-history entry is an entry, and only a `completed` one is evidence (gate point 3).
+// A CodeRabbit review on the head, when the CodeRabbit check on that head (the one check the state carries) concluded a
+// terminal failure, is an entry and never evidence: a failed review never establishes coverage (§5.5 "Usable"). A review
+// on an earlier commit keeps its standing, so an evidence-only head that CodeRabbit skips stays covered.
 // An entry with no commit (REST allows a null `commit_id`) or an unreadable time is never evidence. It stays an
 // entry, and the rewrite check treats it like an unfetchable commit: not an ancestor of the head, so it takes the
 // full-review-request path. It never blocks the slot, because nobody can delete a bot's review.
@@ -152,7 +205,7 @@ function incrementalInputs(bot, state) {
   }
   for (const r of state.reviews) {
     if (r.login !== login) continue
-    add({ sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }, !r.empty)
+    add({ sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }, !r.empty && !(bot === 'coderabbit' && coderabbitFailedOn(state, r.commitId)))
   }
   if (bot === 'codex') {
     const cs = state.codexState
@@ -219,6 +272,9 @@ async function incrementalCoverage({ bot, state, entries, evidence, identityOf, 
   }
   const askedAt = Math.min(...asked.map((r) => ms(r.at)))
   const l = await latestOnCurrent(evidence.filter((e) => ms(e.at) > askedAt))
+  // The equality is implied today (every entry after the request is later than every entry before it, and every
+  // evidence time is readable), so no test can make it fail; it is kept so a change to the filter above cannot let an
+  // older review stand in for the latest one.
   if (l && ms(l.at) === Math.max(...evidence.map((e) => ms(e.at)))) return { covered: true, by: l.by }
   return { covered: false, reason: `${what}: waiting for a usable review answering the full review request ("${cmd}") on the current identity` }
 }
@@ -307,9 +363,11 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
   const start = Math.max(pushed, ...requests)
   const t = ms(now)
   if (!Number.isNaN(t) && t - start >= SUBSTITUTE_AFTER_MS) {
-    return substitute(`no usable ${bot} review ${Math.floor((t - start) / 60000)} minutes after ${requests.length && start > pushed ? 'the last full-review request' : `head ${short(head)} arrived`}`)
+    return substitute(`no usable ${bot} review ${Math.floor((t - start) / 60000)} minutes after ${requests.length && start > pushed ? 'the last full-review request' : `the current input identity arrived (head ${short(head)} or an earlier head with its identity)`}`)
   }
-  return pending(inc?.reason ?? `waiting for a ${bot} review of ${short(head)}`)
+  // Nothing re-runs the gate when the 30 minutes pass, so the line says when to re-run it.
+  const allowed = new Date(start + SUBSTITUTE_AFTER_MS).toISOString()
+  return pending(`${inc?.reason ?? `waiting for a ${bot} review of ${short(head)}`}; substitution allowed after ${allowed}; re-run review-gate then`)
 }
 
 // ---------------------------------------------------------------- substitutes

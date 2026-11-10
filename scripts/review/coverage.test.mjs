@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   BOT_VENDOR, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, diffTooLarge, headPushedAt, makeIdentityOf, makeIsAncestor, requiredMet,
-  slotState, substituteOk,
+  slotState, substituteOk, substitutionClockStart,
 } from './coverage.mjs'
 import { geminiDispatchRuns } from './github.mjs'
 import { geminiDiff, inputIdentity } from './identity.mjs'
@@ -261,6 +261,10 @@ try {
   // I-1: a review with no commit, or an unreadable time, never covers and never pins the slot.
   const nullCommit = { ...cr(A2, '09:30'), commitId: null }
   ok('(a) CodeRabbit review with commitId null plus a failure check -> needs-substitute', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit], coderabbitCheck: { conclusion: 'failure', title: 'x' } }), 'needs-substitute', /concluded failure/))
+  // D30: a review on the head whose CodeRabbit check concluded a terminal failure is not usable (§5.5 "Usable").
+  ok('D30: CodeRabbit review on the head plus a failure check on the head -> needs-substitute, not covered', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A2, '10:05')], coderabbitCheck: { conclusion: 'failure', title: 'x' } }), 'needs-substitute', /concluded failure/))
+  ok('D30: the same review with a successful check on the head -> covered', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A2, '10:05')], coderabbitCheck: { conclusion: 'success', title: 'ok' } })).status === 'covered')
+  ok('D30: a failed review on the head does not hide an earlier usable review on the same identity -> covered by the earlier one', await (async () => { const early = cr(A2, '09:30'); const r = await s({ bot: 'coderabbit', head: E, current: 'I2', reviews: [early, cr(E, '10:05')], coderabbitCheck: { conclusion: 'failure', title: 'x' } }); return r.status === 'covered' && r.by === `review:${early.id}` })())
   ok('(b) null-commit review, a full-review request answered by a usable review on the current identity -> covered', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '10:05')], requests: [req('coderabbit', '10:01')] }), 'covered'))
   ok('(b\') the same review before the request does not answer it', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '09:50')], requests: [req('coderabbit', '10:01')] }), 'pending', /full review request/))
   ok('a null-commit review with no request -> pending naming the request (the author can clear it)', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '10:05')] }), 'pending', /post "@coderabbitai full review"/))
@@ -303,6 +307,28 @@ try {
   ok('headPushedAt: runs only on other SHAs -> null', headPushedAt({ runs: [runOn(44, 'B', T('10:00'))], pr: 44, head: 'A', headRepo: 'o/r', prCreatedAt: T('09:00') }) === null)
   ok('headPushedAt: an unparseable run time -> null (fail closed)', headPushedAt({ runs: [runOn(44, 'A', 'garbage')], pr: 44, head: 'A', headRepo: 'o/r', prCreatedAt: T('09:00') }) === null)
   ok('headPushedAt: an empty-list run is not matched by a null head repository', headPushedAt({ runs: [{ ...forkRun(null, 'A', T('10:00')) }], pr: 44, head: 'A', headRepo: null, prCreatedAt: T('09:00') }) === null)
+
+  // Final review I-1: the substitution clock starts when the current input identity arrived (the earliest arrival in
+  // the trailing run of heads sharing it), not when the current head did.
+  const clock = (runs, head, extra = {}) => substitutionClockStart({ runs, pr: 44, head, headRepo: 'o/r', prCreatedAt: T('09:00'), identityOf, currentIdentity: 'I2', ...extra })
+  const evidencePush = [runOn(44, A2, T('10:00')), runOn(44, E, T('10:31'))]
+  ok('I-1: an evidence-only push (E keeps A2\'s identity) 31 minutes after A2 keeps A2\'s arrival as the clock start', (await clock(evidencePush, E)) === T('10:00'))
+  ok('I-1: ... so the slot needs a substitute at 10:32, not pending (headPushedAt alone would restart it: control)', is(await s({ bot: 'coderabbit', head: E, current: 'I2', now: T('10:32'), pushed: await clock(evidencePush, E) }), 'needs-substitute')
+    && headPushedAt({ runs: evidencePush, pr: 44, head: E, headRepo: 'o/r', prCreatedAt: T('09:00') }) === T('10:31')
+    && is(await s({ bot: 'coderabbit', head: E, current: 'I2', now: T('10:32'), pushed: T('10:31') }), 'pending'))
+  ok('I-1: a push that changes the identity (A1 -> A2) restarts the clock', (await clock([runOn(44, A1, T('10:00')), runOn(44, A2, T('10:31'))], A2)) === T('10:31'))
+  ok('I-1: the walk stops at the first head whose identity differs (A1 -> A2 -> E: A2\'s arrival)', (await clock([runOn(44, A1, T('10:00')), runOn(44, A2, T('10:10')), runOn(44, E, T('10:20'))], E)) === T('10:10'))
+  ok('I-1: an earlier head whose identity cannot be computed (null) stops the walk: the later time stands', (await clock([runOn(44, UNFETCHABLE, T('10:00')), runOn(44, A2, T('10:31'))], A2, { identityOf: async (x) => (x === UNFETCHABLE ? null : IDS.get(x) ?? null), currentIdentity: 'I2' })) === T('10:31'))
+  ok('I-1: ... and so does one whose identityOf throws', (await clock(evidencePush, E, { identityOf: async (x) => { if (x === A2) throw new Error('git failed'); return IDS.get(x) ?? null } })) === T('10:31'))
+  ok('I-1: a returning head A -> B -> A, B of another identity, starts at A\'s second arrival', (await clock([runOn(44, A2, T('10:00')), runOn(44, A1, T('10:10')), runOn(44, A2, T('10:20'))], A2)) === T('10:20'))
+  ok('I-1: A -> B -> A with B of the same identity starts at A\'s first arrival', (await clock([runOn(44, A2, T('10:00')), runOn(44, E, T('10:10')), runOn(44, A2, T('10:20'))], A2)) === T('10:00'))
+  ok('I-1: two other heads at the same instant before the head (ambiguous predecessor) stop the walk', (await clock([runOn(44, A2, T('10:00')), runOn(44, A1, T('10:00')), runOn(44, E, T('10:20'))], E)) === T('10:20'))
+  ok('I-1: the PR-creation floor still applies to the walked-back start', (await clock([runOn(44, A2, T('08:00')), runOn(44, E, T('10:00'))], E)) === T('09:00'))
+  ok('I-1: no run on the head -> null (pending naming the missing run), whatever the earlier heads', (await clock([runOn(44, A2, T('10:00'))], E)) === null)
+  ok('I-1: an unparseable run time -> null', (await clock([runOn(44, A2, 'garbage'), runOn(44, E, T('10:31'))], E)) === null)
+  ok('I-1: an unknown current identity does not walk', (await clock(evidencePush, E, { currentIdentity: '' })) === T('10:31'))
+  ok('I-1: the 30-minute pending line prints when substitution becomes allowed', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', now: T('10:10'), pushed: T('10:00') }), 'pending', /; substitution allowed after 2026-11-01T10:30:00\.000Z; re-run review-gate then$/))
+  ok('I-1: ... measured from the last full-review request when later', is(await s({ ...forcePushIncrementalOnly, requests: [req('coderabbit', '10:20')], now: T('10:31') }), 'pending', /substitution allowed after 2026-11-01T10:50:00\.000Z; re-run review-gate then$/))
 
   // requiredMet and constants
   ok('REQUIRED_BOTS matches §5.5', JSON.stringify(REQUIRED_BOTS) === JSON.stringify({ mechanical: [], standard: ['coderabbit|codex'], 'subtle-correctness': ['coderabbit', 'codex', 'gemini'] }))

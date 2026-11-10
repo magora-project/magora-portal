@@ -80,6 +80,11 @@ export async function listIssueComments({ repo, pr, token, fetchImpl = fetch }) 
 
 // ---------------------------------------------------------------- review threads (GraphQL)
 
+// `editor` is the comment's last editor and `lastEditedAt` the time of that edit (both null when never edited; an
+// editor GitHub cannot name is null with a time): CodeRabbit marks a fix by editing its own first
+// comment ("✅ Addressed in commit <sha>"), and review-gate accepts that only when the bot itself made the last edit.
+const COMMENT_FIELDS = 'author { login __typename } editor { login __typename } lastEditedAt body url originalCommit { oid }'
+
 const THREADS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $pr) {
@@ -88,15 +93,49 @@ const THREADS_QUERY = `query($owner: String!, $name: String!, $pr: Int!, $cursor
         nodes {
           id isResolved path
           resolvedBy { login }
-          comments(first: 1) { nodes { author { login } body url originalCommit { oid } } }
+          comments(first: 100) { totalCount pageInfo { hasNextPage endCursor } nodes { ${COMMENT_FIELDS} } }
         }
       }
     }
   }
 }`
 
+// A thread's later comment pages, when it has more than 100 comments.
+const THREAD_COMMENTS_QUERY = `query($id: ID!, $cursor: String) {
+  node(id: $id) {
+    ... on PullRequestReviewThread {
+      comments(first: 100, after: $cursor) { totalCount pageInfo { hasNextPage endCursor } nodes { ${COMMENT_FIELDS} } }
+    }
+  }
+}`
+
 // `originalCommit` is the commit the finding was reported on. The comment's `commit` is never read:
 // GitHub re-anchors it to the newest head (PR #52 comment 4438353270).
+// GraphQL names a Bot actor without the `[bot]` suffix that REST (and severity.mjs's logins) use: measured on PR #52,
+// 2026-11-10, `author { login: "chatgpt-codex-connector", __typename: "Bot" }`. A Bot author gets the suffix, so
+// the gate's login checks match; a User account of the same name keeps its plain login and is never a bot.
+const authorLogin = (a) => {
+  if (typeof a?.login !== 'string') return null
+  return a.__typename === 'Bot' && !a.login.endsWith('[bot]') ? `${a.login}[bot]` : a.login
+}
+const comment = (c) => ({ login: authorLogin(c.author), editor: authorLogin(c.editor), lastEditedAt: c.lastEditedAt ?? null, body: c.body ?? '', url: c.url, originalCommit: c.originalCommit?.oid ?? null })
+
+// Every comment of a thread: the first page from the threads query, then the rest by cursor. A short read throws.
+async function threadComments(fetchImpl, token, t) {
+  let page = t.comments
+  const all = []
+  for (;;) {
+    if (!page || !Array.isArray(page.nodes) || !Number.isInteger(page.totalCount)) throw new Error(`GraphQL thread ${t.id} has no readable comments`)
+    all.push(...page.nodes)
+    if (!page.pageInfo?.hasNextPage) break
+    const cursor = page.pageInfo.endCursor
+    if (!cursor) throw new Error(`GraphQL thread ${t.id} comments have a next page but no cursor`)
+    page = (await graphql(fetchImpl, token, THREAD_COMMENTS_QUERY, { id: t.id, cursor })).node?.comments
+  }
+  if (all.length < page.totalCount) throw new Error(`GraphQL thread ${t.id}: read ${all.length} of ${page.totalCount} comments`)
+  return all.map(comment)
+}
+
 export async function listThreads({ repo, pr, token, fetchImpl = fetch }) {
   const [owner, name] = split(repo)
   const threads = []
@@ -106,10 +145,12 @@ export async function listThreads({ repo, pr, token, fetchImpl = fetch }) {
     const page = data.repository?.pullRequest?.reviewThreads
     if (!page || !Array.isArray(page.nodes)) throw new Error('GraphQL response has no reviewThreads for the pull request')
     for (const t of page.nodes) {
-      const c = t.comments?.nodes?.[0]
+      const comments = await threadComments(fetchImpl, token, t)
+      const c = comments[0]
       threads.push({
         id: t.id, isResolved: t.isResolved, resolvedBy: t.resolvedBy?.login ?? null, path: t.path ?? null,
-        firstComment: c ? { login: c.author?.login ?? null, body: c.body ?? '', url: c.url, originalCommit: c.originalCommit?.oid ?? null } : null,
+        firstComment: c ? { login: c.login, body: c.body, url: c.url, originalCommit: c.originalCommit } : null,
+        comments: comments.map(({ login, editor, lastEditedAt, body }) => ({ login, editor, lastEditedAt, body })),
       })
     }
     if (!page.pageInfo?.hasNextPage) return threads

@@ -135,7 +135,7 @@ ok('listIssueComments paginates and maps', await (async () => {
 // ---------------------------------------------------------------- threads (GraphQL)
 const thread = (i, over = {}) => ({
   id: `T${i}`, isResolved: false, resolvedBy: null, path: 'a.js',
-  comments: { nodes: [{ author: { login: CR }, body: 'b', url: `u${i}`, originalCommit: { oid: 'f'.repeat(40) } }] }, ...over,
+  comments: { totalCount: 1, nodes: [{ author: { login: CR }, body: 'b', url: `u${i}`, originalCommit: { oid: 'f'.repeat(40) } }] }, ...over,
 })
 const gql = (pages) => async (url, init) => {
   ok('GraphQL goes to /graphql by POST', new URL(url).pathname === '/graphql' && init.method === 'POST')
@@ -146,15 +146,51 @@ const gql = (pages) => async (url, init) => {
 const threadPage = (nodes, next) => ({ pageInfo: { hasNextPage: next !== undefined, endCursor: next ?? null }, nodes })
 ok('threads paginate past 100', (await listThreads({ ...base, fetchImpl: gql([threadPage(hundred((i) => thread(i)), 'c1'), threadPage([thread(100)])]) })).length === 101)
 ok('a thread reports its original commit, not the re-anchored one (PR #52 comment 4438353270: commit baafa0b, original f530f6d; the fixture holds one thread)', await (async () => {
-  const t = await listThreads({ ...base, fetchImpl: gql([threadPage([thread(1, { comments: { nodes: [{ author: { login: CODEX }, body: 'b', url: 'u', originalCommit: { oid: 'f530f6d3f288a9ab9cd9d23f182befe33f2784d3' }, commit: { oid: 'baafa0b0000000000000000000000000000000000' } }] } })])]) })
+  const t = await listThreads({ ...base, fetchImpl: gql([threadPage([thread(1, { comments: { totalCount: 1, nodes: [{ author: { login: CODEX }, body: 'b', url: 'u', originalCommit: { oid: 'f530f6d3f288a9ab9cd9d23f182befe33f2784d3' }, commit: { oid: 'baafa0b0000000000000000000000000000000000' } }] } })])]) })
   return t.length === 1 && t[0].firstComment.originalCommit === 'f530f6d3f288a9ab9cd9d23f182befe33f2784d3' && t[0].firstComment.login === CODEX
 })())
 ok('a thread has the documented shape and a resolver', await (async () => {
   const t = await listThreads({ ...base, fetchImpl: gql([threadPage([thread(1, { isResolved: true, resolvedBy: { login: 'david' } })])]) })
-  return JSON.stringify(Object.keys(t[0])) === '["id","isResolved","resolvedBy","path","firstComment"]' && t[0].resolvedBy === 'david' &&
+  return JSON.stringify(Object.keys(t[0])) === '["id","isResolved","resolvedBy","path","firstComment","comments"]' && t[0].resolvedBy === 'david' &&
     JSON.stringify(Object.keys(t[0].firstComment)) === '["login","body","url","originalCommit"]'
 })())
-ok('an unresolved thread has resolvedBy null', (await listThreads({ ...base, fetchImpl: gql([threadPage([thread(1)])]) }))[0].resolvedBy === null)
+// GraphQL names a Bot actor without the `[bot]` suffix REST uses (measured on PR #52, 2026-11-10: author
+// { login: "chatgpt-codex-connector", __typename: "Bot" }, resolvedBy { login: "coderabbitai[bot]" }). The gate matches
+// the REST logins, so a Bot author gets the suffix; a User of the same name does not.
+ok('a Bot thread author gets the REST [bot] login; a User of that name does not', await (async () => {
+  const node = (typename) => thread(1, { comments: { totalCount: 1, nodes: [{ author: { login: 'chatgpt-codex-connector', __typename: typename }, body: 'b', url: 'u', originalCommit: { oid: 'f'.repeat(40) } }] } })
+  const [bot] = await listThreads({ ...base, fetchImpl: gql([threadPage([node('Bot')])]) })
+  const [user] = await listThreads({ ...base, fetchImpl: gql([threadPage([node('User')])]) })
+  return bot.firstComment.login === CODEX && user.firstComment.login === 'chatgpt-codex-connector'
+})())
+ok('the threads query asks for the author\'s __typename', await (async () => {
+  let q = ''
+  await listThreads({ ...base, fetchImpl: async (url, init) => { q = JSON.parse(init.body).query; return res({ data: { repository: { pullRequest: { reviewThreads: threadPage([]) } } } }) } })
+  return /author\s*\{\s*login\s+__typename\s*\}/.test(q)
+})())
+// Every comment of a thread is read (CodeRabbit marks a fix in its own comment, edited), with its last editor.
+const cmt = (i, author = { login: 'coderabbitai', __typename: 'Bot' }, editor = null) => ({ author, editor, body: `c${i}`, url: `u${i}`, originalCommit: { oid: 'f'.repeat(40) } })
+ok('a thread\'s comments are all read, past 100, by cursor on the thread node, with Bot authors and editors suffixed', await (async () => {
+  const first = { totalCount: 101, pageInfo: { hasNextPage: true, endCursor: 'k1' }, nodes: hundred((i) => cmt(i)) }
+  const rest = { totalCount: 101, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [cmt(100, { login: 'dev', __typename: 'User' }, { login: 'coderabbitai', __typename: 'Bot' })] }
+  const seen = []
+  const f = async (url, init) => {
+    const { query, variables } = JSON.parse(init.body)
+    seen[seen.length] = variables
+    if (/reviewThreads/.test(query)) return res({ data: { repository: { pullRequest: { reviewThreads: threadPage([thread(1, { comments: first })]) } } } })
+    return res({ data: { node: { comments: rest } } })
+  }
+  const [t] = await listThreads({ ...base, fetchImpl: f })
+  return t.comments.length === 101 && t.comments[0].login === CR && t.comments[0].editor === null && t.comments[100].login === 'dev' && t.comments[100].editor === CR && seen.some((v) => v.id === 'T1' && v.cursor === 'k1') && JSON.stringify(Object.keys(t.comments[0])) === '["login","editor","lastEditedAt","body"]'
+})())
+ok('a short comment read throws (fail closed)', /read 1 of 2/.test(await errOf(() => listThreads({ ...base, fetchImpl: gql([threadPage([thread(1, { comments: { totalCount: 2, nodes: [cmt(0)] } })])]) })) ?? ''))
+ok('a thread whose comments carry no totalCount throws', /no readable comments/.test(await errOf(() => listThreads({ ...base, fetchImpl: gql([threadPage([thread(1, { comments: { nodes: [cmt(0)] } })])]) })) ?? ''))
+ok('the threads query asks for each comment\'s editor', await (async () => {
+  let q = ''
+  await listThreads({ ...base, fetchImpl: async (url, init) => { q = JSON.parse(init.body).query; return res({ data: { repository: { pullRequest: { reviewThreads: threadPage([]) } } } }) } })
+  return /editor\s*\{\s*login\s+__typename\s*\}\s*lastEditedAt/.test(q) && /comments\(first: 100\)/.test(q)
+})())
+ok('an unresolved thread has resolvedBy null',(await listThreads({ ...base, fetchImpl: gql([threadPage([thread(1)])]) }))[0].resolvedBy === null)
 ok('GraphQL errors throw (fail closed)', /GraphQL/.test(await errOf(() => listThreads({ ...base, fetchImpl: async () => res({ errors: [{ message: 'boom' }] }) })) ?? ''))
 ok('a GraphQL HTTP error throws', /502/.test(await errOf(() => listThreads({ ...base, fetchImpl: async () => res({}, 502) })) ?? ''))
 ok('a missing pullRequest throws', /GraphQL/.test(await errOf(() => listThreads({ ...base, fetchImpl: async () => res({ data: { repository: { pullRequest: null } } }) })) ?? ''))

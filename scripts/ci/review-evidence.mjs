@@ -342,8 +342,8 @@ async function getJson(fetchImpl, token, url) {
 }
 
 // requiredSince from the base branch's activation file: { since } (undefined when the file or key is
-// missing), or { error }.
-export async function readActivation({ fetchImpl, token, repo, ref }) {
+// missing), or { error }. `key` names the check (review-gate reads its own key, plan Task 23).
+export async function readActivation({ fetchImpl, token, repo, ref, key = ACTIVATION_KEY }) {
   const r = await getJson(fetchImpl, token, `https://api.github.com/repos/${repo}/contents/${ACTIVATION_PATH}?ref=${encodeURIComponent(ref)}`)
   if (r.status === 404) return { since: undefined }
   if (!r.ok) return { error: `GitHub API ${r.status} reading ${ACTIVATION_PATH} at ${ref}` }
@@ -351,9 +351,9 @@ export async function readActivation({ fetchImpl, token, repo, ref }) {
   let obj
   try { obj = JSON.parse(Buffer.from(r.body.content, 'base64').toString('utf8')) } catch (e) { return { error: `${ACTIVATION_PATH} at ${ref} is not JSON (${e.message})` } }
   if (!isObj(obj)) return { error: `${ACTIVATION_PATH} at ${ref} is not a JSON object` }
-  const v = obj[ACTIVATION_KEY]
+  const v = Object.hasOwn(obj, key) ? obj[key] : undefined
   if (v === undefined) return { since: undefined }
-  if (!isIso(v)) return { error: `${ACTIVATION_PATH} at ${ref}: "${ACTIVATION_KEY}" is ${JSON.stringify(v)}, not an ISO 8601 time` }
+  if (!isIso(v)) return { error: `${ACTIVATION_PATH} at ${ref}: "${key}" is ${JSON.stringify(v)}, not an ISO 8601 time` }
   return { since: v }
 }
 
