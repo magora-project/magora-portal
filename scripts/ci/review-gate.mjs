@@ -268,7 +268,8 @@ function botEvidence(bot, state) {
   if (bot === 'coderabbit') return reviewsBy(CODERABBIT_LOGIN).filter((e) => !coderabbitFailedOn(state, e.sha))
   if (bot === 'codex') {
     // The current marker comes from the body GraphQL authenticated as Codex's (codexHistory.current), never from
-    // codexState's separate REST read.
+    // codexState's separate REST read. `current` is null unless that body is trusted (codexHistory sets it only when
+    // currentTrusted holds; github.test.mjs pins it), so no separate currentTrusted check is needed here.
     const cs = state.codexHistory?.current ?? null
     return [...reviewsBy(CODEX_LOGIN), ...(cs && cs.status === 'completed' && typeof cs.commitSha === 'string' ? [{ sha: cs.commitSha }] : [])]
   }
@@ -515,15 +516,19 @@ export async function readGateState({ repo, token, fetchImpl = fetch, pr, cwd, r
 // The depth judged: the PR's depth label, raised to subtle-correctness when label-gate's inferLabel says so from the
 // changed paths (as review-evidence judges). No depth label judges at `standard`, several at the highest
 // (label-gate is the check that enforces exactly one). -> { depth, note? }
-export async function judgedDepth({ labels, cwd, base, head, gitImpl = defaultGit }) {
+// A Dependabot PR is judged at its label: AGENTS.md § Depth labels says the merging maintainer's control-file read
+// replaces the depth rule for those, so the changed-path floor does not raise it.
+export async function judgedDepth({ labels, cwd, base, head, dependabot = false, gitImpl = defaultGit }) {
   const depths = labels.filter((l) => DEPTH_LABELS.includes(l))
   const label = depths.length === 0 ? 'standard' : DEPTH_LABELS.filter((d) => depths.includes(d)).at(-1)
   const mb = await gitImpl.mergeBase({ cwd, base, head })
   const paths = await gitImpl.changedPaths({ cwd, base: mb, head })
   const agents = await gitImpl.agentsAt({ cwd, rev: head })
   if (agents === null) throw new Error('the head has no AGENTS.md, so the depth floor (its control-file list) cannot be computed')
-  const depth = requiredDepth({ label, paths, controlFiles: parseControlFiles(agents) })
+  const floored = requiredDepth({ label, paths, controlFiles: parseControlFiles(agents) })
+  const depth = dependabot ? label : floored
   const notes = []
+  if (dependabot && floored !== label) notes.push(`depth: Dependabot PR judged at its ${label} label, not ${floored}: the merging maintainer reads every control-file change (AGENTS.md § Depth labels)`)
   if (depths.length !== 1) notes.push(`depth: ${depths.length ? `several depth labels (${depths.join(', ')})` : 'no depth label'}; judging at ${label} (label-gate enforces exactly one)`)
   if (depth !== label) notes.push(`depth: judged as ${depth}, not the ${label} label, from the changed paths (label-gate's inferLabel)`)
   return { depth, notes }
@@ -567,7 +572,7 @@ export async function main({ env = process.env, fetchImpl = fetch, cwd = process
     const local = await gitImpl.head({ cwd })
     if (local !== pr.head.sha) return cnj(`the checkout is ${local}, but the PR's head is now ${pr.head.sha} (a newer push; its own run judges it)`)
     await ensureBase({ cwd, base: pr.base.sha })
-    const { depth, notes } = await judgedDepth({ labels: pr.labels.map((l) => l?.name), cwd, base: pr.base.sha, head: pr.head.sha, gitImpl })
+    const { depth, notes } = await judgedDepth({ labels: pr.labels.map((l) => l?.name), cwd, base: pr.base.sha, head: pr.head.sha, dependabot: pr.user?.login === 'dependabot[bot]', gitImpl })
     for (const l of notes) console.log(l)
     const { record, problems } = readPrRecord({ cwd, pr: n })
     if (problems.length) {

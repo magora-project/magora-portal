@@ -69,7 +69,7 @@ export async function liveReaders({ pr, cwd, env = process.env, fetchImpl = fetc
   const local = must(await git(['rev-parse', 'HEAD'], { cwd }), 'git rev-parse HEAD')
   if (local !== p.head.sha) io?.err(`note: HEAD is ${local.slice(0, 12)}, the PR head is ${p.head.sha.slice(0, 12)}: the gate judges the PR head; records come from this work tree\n`)
   const state = await readGateState({ repo, token, fetchImpl, pr: p, cwd, recordsHead: 'HEAD', untracked: true })
-  const { depth, notes } = await judgedDepth({ labels: (p.labels ?? []).map((l) => l?.name), cwd, base: p.base.sha, head: p.head.sha })
+  const { depth, notes } = await judgedDepth({ labels: (p.labels ?? []).map((l) => l?.name), cwd, base: p.base.sha, head: p.head.sha, dependabot: p.user?.login === 'dependabot[bot]' })
   for (const n of notes) io?.err(`${n}\n`)
   return { state, depth }
 }
