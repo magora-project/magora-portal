@@ -14,6 +14,7 @@ const ok = (n, c) => {
   if (c !== null && typeof c === 'object' && typeof c.then === 'function') { fail++; console.log('  FAIL', n, '(unawaited Promise)'); return }
   if (c === true) pass++; else { fail++; console.log('  FAIL', n) }
 }
+const errSync = (fn) => { try { fn(); return null } catch (e) { return e.message } }
 const errOf = async (fn) => { try { await fn(); return null } catch (e) { return e.message } }
 
 const CODEX = 'chatgpt-codex-connector[bot]', CR = 'coderabbitai[bot]', GHA = 'github-actions[bot]'
@@ -201,7 +202,7 @@ ok('geminiDispatchRuns paginates past 100', (await geminiDispatchRuns({ ...base,
 ok('a geminiDispatchRuns page error throws', /500/.test(await errOf(() => geminiDispatchRuns({ ...base, fetchImpl: async () => res({}, 500) })) ?? ''))
 
 // ---------------------------------------------------------------- codexHistory (gate point 3, M3)
-const mk = (sha) => `<!-- codex-review-state:v1 {"code_review":{"commit_sha":"${sha}","status":"completed"}} -->`
+const mk = (sha, status = 'completed') => `<!-- codex-review-state:v1 {"code_review":{"commit_sha":"${sha}","status":"${status}"}} -->`
 const [A, B, C] = ['a', 'b', 'c'].map((c) => c.repeat(40))
 const history = ({ pages, total, current = `x\n${mk(A)}\n`, failPage = 0 }) => async (url, init) => {
   const u = new URL(url)
@@ -213,8 +214,9 @@ const history = ({ pages, total, current = `x\n${mk(A)}\n`, failPage = 0 }) => a
   const edits = pages[i]
   return res({ data: { node: { body: current, updatedAt: '2026-11-04T00:00:00Z', userContentEdits: { totalCount: total, pageInfo: { hasNextPage: i + 1 < pages.length, endCursor: `p${i + 1}` }, nodes: edits } } } })
 }
-const edit = (at, body) => ({ editedAt: at, diff: body })
-const twoEditPages = history({ total: 3, pages: [[edit('2026-11-03T00:00:00Z', `@@\n-${mk(B)}\n+${mk(A)}`), edit('2026-11-02T00:00:00Z', mk(B))], [edit('2026-11-01T00:00:00Z', mk(C))]] })
+// GitHub's userContentEdits `diff` is the FULL comment body after the edit, not a unified diff.
+const edit = (at, marker) => ({ editedAt: at, diff: `<!-- codex-pull-request-review-summary -->\n${marker}\n## Codex Review Summary\n` })
+const twoEditPages = history({ total: 3, pages: [[edit('2026-11-03T00:00:00Z', mk(B)), edit('2026-11-02T00:00:00Z', mk(B))], [edit('2026-11-01T00:00:00Z', mk(C))]] })
 ok('codexHistory reads every marker SHA across edit pages, each with its time', await (async () => {
   const h = await codexHistory({ ...base, commentId: 777, fetchImpl: twoEditPages })
   const bySha = (s) => h.reviews.filter((r) => r.sha === s).map((r) => r.at)
@@ -235,6 +237,14 @@ ok('a null userContentEdits (not readable) is incomplete', await (async () => {
   const h = await codexHistory({ ...base, commentId: 777, fetchImpl: async (u) => new URL(u).pathname === '/graphql' ? res({ data: { node: { body: mk(A), updatedAt: 't', userContentEdits: null } } }) : res({ node_id: 'n' }) })
   return h.complete === false
 })())
+ok('a running and a completed marker for the same sha are both kept, with their statuses', await (async () => {
+  const h = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 2, pages: [[edit('2026-11-03T00:00:00Z', mk(A)), edit('2026-11-02T00:00:00Z', mk(A, 'running'))]] }) })
+  const forA = h.reviews.filter((r) => r.sha === A)
+  const running = forA.filter((r) => r.status === 'running'), completed = forA.filter((r) => r.status === 'completed')
+  return h.complete === true && forA.length === 3 && running.length === 1 && running[0].at === '2026-11-02T00:00:00Z' && completed.length === 2 &&
+    JSON.stringify(Object.keys(forA[0])) === '["sha","at","status"]'
+})())
+ok('a marker with no status has status null', (await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], current: '<!-- codex-review-state:v1 {"code_review":{"commit_sha":"' + A + '"}} -->' }) })).reviews[0].status === null)
 ok('a diff whose marker JSON does not parse is skipped, not fatal', (await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 1, pages: [[edit('2026-11-03T00:00:00Z', '<!-- codex-review-state:v1 {bad} -->')]] }) })).reviews.length === 1)
 
 // ---------------------------------------------------------------- outsideDiffFindings (gate point 4)
@@ -242,7 +252,7 @@ const crReview = fx.crReviewOutsideDiff
 const review = { id: crReview.id, login: crReview.login, commitId: crReview.commitId, submittedAt: crReview.submittedAt, body: crReview.body, empty: false }
 const oneFinding = (() => {
   const b = crReview.body
-  return b.slice(0, b.indexOf('</blockquote></details>') + '</blockquote></details>'.length)
+  return b.slice(0, b.indexOf('</blockquote></details>') + '</blockquote></details>'.length).replace('comments (3)', 'comments (1)')
 })()
 const crReviewWithOutsideDiff = { ...review, body: oneFinding }
 const crCommentWithOutsideDiff = { id: 5, login: CR, body: oneFinding, createdAt: 'c', updatedAt: 'c' }
@@ -270,6 +280,18 @@ ok('a cr-comment marker outside the outside-diff section (a nitpick follow-up) i
   const nit = '<!-- coderabbit-ai-generated:v1 -->\n\n## Follow-up Comments\n\n<details>\n<summary>Nitpick</summary>\n\n`114-114`: **Trivial**\n\n<!-- cr-comment:v1:0ef4217fa9eb8eb9d8d7bb76 -->\n</details>\n'
   return outsideDiffFindings({ reviews: [{ ...review, body: nit }], comments: [] }).length === 0
 })())
+const pr54 = fx.crReviewOutsideThenDuplicate
+const asReview = (r) => ({ id: r.id, login: r.login, commitId: r.commitId, submittedAt: r.submittedAt, body: r.body, empty: false })
+ok('PR #54 review 5770496416 (live): the header says 1, a Duplicate comments block follows with no --- between, and exactly 1 finding is read', (() => {
+  const f = outsideDiffFindings({ reviews: [asReview(pr54)], comments: [] })
+  return /Outside diff range comments \(1\)/.test(pr54.body) && /Duplicate comments: 1/.test(pr54.body) && f.length === 1 &&
+    f[0].id === 'cr:23238fdffd3ac8e62e19ac61' && f[0].severity === 'Major' && typeof f[0].path === 'string' && f.every((x) => x.id !== 'cr:deed796122c799028b69a8c5')
+})())
+ok('a parsed count that differs from the heading throws, naming the review', (() => {
+  const body = pr54.body.replace('comments (1)', 'comments (2)')
+  return /review 5770496416.*declares 2 but 1/.test(errSync(() => outsideDiffFindings({ reviews: [{ ...asReview(pr54), body }], comments: [] })) ?? '')
+})())
+ok('a missing count throws, naming the comment', /comment 5.*no count/.test(errSync(() => outsideDiffFindings({ reviews: [], comments: [{ ...crCommentWithOutsideDiff, body: oneFinding.replace(' (1)', '') }] })) ?? ''))
 ok('a review and a comment carrying the same finding are both returned (the consumer dedups by id)', outsideDiffFindings({ reviews: [crReviewWithOutsideDiff], comments: [crCommentWithOutsideDiff] }).length === 2)
 
 if (fail) { console.log(`github: ${fail} FAILED, ${pass} passed`); process.exit(1) }

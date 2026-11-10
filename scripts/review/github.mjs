@@ -183,18 +183,24 @@ const NODE_QUERY = `query($id: ID!, $cursor: String) {
   }
 }`
 
-// Every `codex-review-state:v1` commit_sha the comment has ever held: its current body (`at`: the
-// comment's `updatedAt`) and each edit's diff (`at`: that edit's `editedAt`). `complete` is false
+// Every `codex-review-state:v1` code_review entry the comment has ever held, as `{sha, at, status}`
+// (`status` is code_review.status, or null). Entries are kept whatever their status: a `running`
+// entry names a sha whose review has not finished, so consumers treat only `completed` entries as
+// reviews. Each `userContentEdits` diff is the full comment body after that edit, not a unified diff.
+// Sources: the current body (`at`: the comment's `updatedAt`) and each edit's diff (`at`: that
+// edit's `editedAt`). `complete` is false
 // when anything fails to read or the edits read fall short of `totalCount`; it never throws.
 export async function codexHistory({ repo, token, commentId, fetchImpl = fetch }) {
   const reviews = []
   const add = (text, at) => {
-    const shas = new Set()
+    const entries = new Map()
     for (const m of (text ?? '').matchAll(/<!-- codex-review-state:v1 (\{.*?\}) -->/g)) {
-      const sha = parseJson(m[1])?.code_review?.commit_sha
-      if (typeof sha === 'string' && sha !== '') shas.add(sha)
+      const cr = parseJson(m[1])?.code_review
+      if (typeof cr?.commit_sha === 'string' && cr.commit_sha !== '') {
+        entries.set(`${cr.commit_sha}|${cr.status ?? ''}`, { sha: cr.commit_sha, at, status: typeof cr.status === 'string' ? cr.status : null })
+      }
     }
-    for (const sha of shas) reviews.push({ sha, at })
+    reviews.push(...entries.values())
   }
   try {
     const comment = await http(fetchImpl, token, `${API}/repos/${repo}/issues/comments/${commentId}`)
@@ -266,19 +272,22 @@ export function fullReviewRequests(comments) {
 
 // ---------------------------------------------------------------- CodeRabbit outside-diff findings
 
-// CodeRabbit puts findings it cannot anchor inline under "Outside diff range comments" in the
-// review body. Each one ends with `<!-- cr-comment:v1:<id> -->`, and starts with a summary that
-// holds the severity and a `path:lines` line. Reading stops at the section's closing `---`.
+// CodeRabbit puts findings it cannot anchor inline under "Outside diff range comments (N)" in the
+// review body, inside one blockquote (a CAUTION callout): the section is the run of `>` lines from
+// the heading to the first line that is not quoted. Blocks that follow (Duplicate comments,
+// Nitpicks, prompts) are not quoted and are not read. Each finding ends with
+// `<!-- cr-comment:v1:<id> -->` and starts with a summary holding the severity and a `path:lines`
+// line. The parsed count must equal the heading's N, else this throws (the gate cannot judge).
 function outsideDiffSection(body) {
-  const text = body.replace(/^> ?/gm, '')
-  const at = text.search(/Outside diff range comments/)
-  if (at === -1) return null
-  const rest = text.slice(at)
-  const end = rest.search(/\n---\n/)
-  return end === -1 ? rest : rest.slice(0, end)
+  const lines = body.split('\n')
+  const start = lines.findIndex((l) => /Outside diff range comments/.test(l))
+  if (start === -1) return null
+  let end = start
+  while (end < lines.length && /^>/.test(lines[end])) end++
+  return lines.slice(start, end).map((l) => l.replace(/^> ?/, '')).join('\n')
 }
 
-function findingsIn(body, reportedCommit) {
+function findingsIn(body, reportedCommit, what) {
   const section = outsideDiffSection(body ?? '')
   if (section === null) return []
   const out = []
@@ -289,13 +298,17 @@ function findingsIn(body, reportedCommit) {
     const path = /^`([^`\s]+?)(?::\d[\d-]*)?`$/m.exec(chunk)?.[1] ?? null
     out.push({ id: `cr:${m[1]}`, severity: crLabelIn(chunk), path, reportedCommit })
   }
+  const declared = /Outside diff range comments \((\d+)\)/.exec(section)?.[1]
+  if (declared === undefined || Number(declared) !== out.length) {
+    throw new Error(`CodeRabbit ${what}: outside-diff heading declares ${declared ?? 'no count'} but ${out.length} finding(s) were parsed; cannot judge`)
+  }
   return out
 }
 
 // Reviews carry their `commitId`; an issue comment names no commit (`null`). Only CodeRabbit's own.
 export function outsideDiffFindings({ reviews, comments }) {
   return [
-    ...reviews.filter((r) => r.login === CODERABBIT_LOGIN).flatMap((r) => findingsIn(r.body, r.commitId ?? null)),
-    ...comments.filter((c) => c.login === CODERABBIT_LOGIN).flatMap((c) => findingsIn(c.body, null)),
+    ...reviews.filter((r) => r.login === CODERABBIT_LOGIN).flatMap((r) => findingsIn(r.body, r.commitId ?? null, `review ${r.id}`)),
+    ...comments.filter((c) => c.login === CODERABBIT_LOGIN).flatMap((c) => findingsIn(c.body, null, `comment ${c.id}`)),
   ]
 }
