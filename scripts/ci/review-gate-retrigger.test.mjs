@@ -87,6 +87,14 @@ ok('a gate run naming no PR (a fork PR\'s) is still re-run', await (async () => 
   return r.action === 'rerun' && s.reruns.join() === '700'
 })())
 
+ok('a Gemini run listing two PRs re-runs each PR\'s own gate run', await (async () => {
+  const s = makeStub()
+  s.pr = async (n) => ({ number: n, state: 'open', head: { sha: HEAD, ref: `b${n}`, repo: { full_name: 'o/r' } } })
+  s.gateRuns = async () => [{ id: 501, status: 'completed', createdAt: '2026-11-05T10:00:00Z', prNumbers: [44] }, { id: 600, status: 'completed', createdAt: '2026-11-05T11:00:00Z', prNumbers: [45] }]
+  const r = await retrigger({ event: 'workflow_run', payload: { ...geminiDoneOnHead, workflow_run: { ...geminiDoneOnHead.workflow_run, pull_requests: [{ number: 44 }, { number: 45 }] } }, api: s })
+  return r.action === 'rerun' && s.reruns.join() === '501,600'
+})())
+
 // The workflow's trust boundary, read from the file: it is what keeps PR code away from the write token.
 const wf = readFileSync(new URL('../../.github/workflows/review-gate-retrigger.yml', import.meta.url), 'utf8')
 const block = (name) => (new RegExp(`^${name}:\\n((?:  .*\\n)+)`, 'm').exec(wf)?.[1] ?? '').trim().split('\n').map((l) => l.trim()).sort().join('|')

@@ -73,7 +73,8 @@ async function prOf({ event, payload, api }) {
     const run = payload?.workflow_run
     if (run?.name !== GEMINI_WORKFLOW) return { reason: `the run is of ${JSON.stringify(run?.name)}, not ${GEMINI_WORKFLOW}` }
     const listed = (run.pull_requests ?? []).map((p) => p?.number).filter((x) => Number.isInteger(x))
-    if (listed.length) return { n: listed[0] }
+    // A run on a commit two PRs share lists both: each one's gate is re-run.
+    if (listed.length) return { ns: [...new Set(listed)] }
     const t = DISPATCH_TITLE.exec(run.display_title ?? '')
     if (t) return { n: Number(t[1]) }
     const repoName = run.head_repository?.full_name
@@ -87,7 +88,17 @@ async function prOf({ event, payload, api }) {
 export async function retrigger({ event, payload, api }) {
   const which = await prOf({ event, payload, api })
   if (which.reason) return none(which.reason)
-  const n = which.n
+  if (which.ns) {
+    const results = []
+    for (const n of which.ns) results.push(await retriggerPr({ n, api }))
+    if (results.length === 1) return results[0]
+    const reran = results.filter((x) => x.action === 'rerun')
+    return { action: reran.length ? 'rerun' : 'none', runIds: reran.map((x) => x.runId), reason: results.map((x) => x.reason).join('; ') }
+  }
+  return retriggerPr({ n: which.n, api })
+}
+
+async function retriggerPr({ n, api }) {
   if (!Number.isInteger(n) || n <= 0) return none('no pull request number')
   const pr = await api.pr(n)
   if (pr?.state !== 'open') return none(`PR #${n} is not open`)
