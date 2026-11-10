@@ -272,8 +272,12 @@ function botEvidence(bot, state) {
     // The current marker comes from the body GraphQL authenticated as Codex's (codexHistory.current), never from
     // codexState's separate REST read. `current` is null unless that body is trusted (codexHistory sets it only when
     // currentTrusted holds; github.test.mjs pins it), so no separate currentTrusted check is needed here.
+    // Every completed entry of the authenticated edit history counts too, as it does for coverage (coverage.mjs): a
+    // later `running` marker (Codex starting on an evidence commit) must not revoke a review already completed.
+    // codexHistory reads only bodies Codex wrote; ruleA still checks ancestry and the current identity.
     const cs = state.codexHistory?.current ?? null
-    return [...reviewsBy(CODEX_LOGIN), ...(cs && cs.status === 'completed' && typeof cs.commitSha === 'string' ? [{ sha: cs.commitSha }] : [])]
+    const done = (state.codexHistory?.reviews ?? []).filter((h) => h?.status === 'completed' && typeof h.sha === 'string' && h.sha !== '').map((h) => ({ sha: h.sha }))
+    return [...reviewsBy(CODEX_LOGIN), ...done, ...(cs && cs.status === 'completed' && typeof cs.commitSha === 'string' ? [{ sha: cs.commitSha }] : [])]
   }
   if (bot === 'gemini') {
     return (state.geminiVerdicts ?? []).filter((v) => (v.verdict === 'findings' || v.verdict === 'no-findings') && nonEmpty(v.identity)).map((v) => ({ sha: v.head, identity: v.identity }))

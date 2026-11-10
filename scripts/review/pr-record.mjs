@@ -164,7 +164,9 @@ export async function runSubstitute({
     const carry = await substituteCarries({ state, record: prev.record, bot })
     io.out(`${bot}: ${carry.length} live finding(s) to assess${carry.length ? ` (${carry.map((f) => f.id).join(', ')})` : ''}\n`)
     let written = null
-    const o = { slot: `substitute:${bot}`, author, reviewer, supersedes, base, model, 'timeout-min': timeoutMin }
+    // The review's base defaults to the PR's live base (state.pr.base), the one the gate computes the current identity
+    // against: a stale local origin/main would review, and record, a different identity the gate cannot accept.
+    const o = { slot: `substitute:${bot}`, author, reviewer, supersedes, base: base ?? state.pr?.base, model, 'timeout-min': timeoutMin }
     const code = await runReview(o, { cwd: root, io, env, fetchImpl, now, spawnImpl, adapters, inheritExtra: carry, onWritten: (w) => { written = w } })
     return written ? { code, stem: written.stem, record: written.record, sentInherited: written.inheritedIds } : none(code)
   } catch (e) {

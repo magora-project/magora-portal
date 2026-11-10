@@ -152,6 +152,12 @@ try {
   fresh(fixedG)
   ok('a substitute that leaves the finding open does not pass the gate', await (async () => { const r1 = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: leavesOpen }); return r1.code === 0 && (await evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(r1), depth: 'subtle-correctness' })).ok === false })())
   fresh(null)
+  // Codex review on #92 at d3106bb: with no --base the substitute reviews against the PR's live base, not the clone's
+  // origin/main (M0 here), so it records the identity the gate computes.
+  ok('a substitute run with no --base reviews against the live PR base', await (async () => {
+    const r = await runSubstitute({ bot: 'codex', readersImpl: readers(liveAtU({ pr: { ...liveAtU().pr, base: sha.Q0 } })), reviewerImpl: captures })
+    return r.code === 0 && r.input?.mergeBase === sha.Q0
+  })())
   ok('substitute run fills {{bot}} in substitute.md', (await runSubstitute({ bot: 'gemini', readersImpl: none, reviewerImpl: captures })).prompt.includes('gemini') && !(await runSubstitute({ bot: 'gemini', readersImpl: none, reviewerImpl: captures })).prompt.includes('{{bot}}'))
   fresh(null)
   ok('with no PR review record, every blocking finding of the bot is carried (open), and only that bot\'s', await (async () => {

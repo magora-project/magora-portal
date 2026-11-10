@@ -287,6 +287,10 @@ try {
   })
   ok('I-2: a running Codex marker on the fix is not fix evidence', failsOn(await evaluateGate({ state: codexRunningOnFix, record: fixedRec, depth: 'standard' }), /^FAIL thread:PRRT_1\b.*no usable codex review/))
   ok('I-2: ... the same marker completed is (control)', (await evaluateGate({ state: { ...codexRunningOnFix, ...codexCovers(sha.E) }, record: fixedRec, depth: 'standard' })).ok)
+  // Codex review on #92 at d3106bb: a completed review in the authenticated history stays fix evidence after Codex's
+  // marker moves to `running` (starting on an evidence commit), as it stays coverage.
+  ok('a completed Codex review in the edit history verifies the fix although the current marker is running', (await evaluateGate({ state: { ...codexRunningOnFix,
+    codexHistory: { ...codexRunningOnFix.codexHistory, reviews: [{ sha: sha.E, at: T(10), status: 'completed' }, { sha: sha.E, at: T(20), status: 'running' }] } }, record: fixedRec, depth: 'standard' })).ok)
   // A completed marker in a body a human last edited is no fix evidence (pre-publish Codex review, 2026-11-10).
   ok('a completed Codex marker in a human-edited body is not fix evidence', await (async () => {
     const cov = codexCovers(sha.E)
