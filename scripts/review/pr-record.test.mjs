@@ -137,6 +137,13 @@ try {
     const r = await runSubstitute({ bot: 'codex', readersImpl: withDetail, reviewerImpl: captures })
     return r.prompt.includes('XYZZY the actual defect.')
   })())
+  ok('a chained substitute refreshes an inherited open finding with the live text', await (async () => {
+    const thin = readers(liveAtU({ threads: [thread('PRRT_1', CODEX_LOGIN, sha.R, { resolved: true, resolvedBy: 'dev', body: 'P1 Badge headline' })] }))
+    const rich = readers(liveAtU({ threads: [thread('PRRT_1', CODEX_LOGIN, sha.R, { resolved: true, resolvedBy: 'dev', body: 'P1 Badge headline\n\nPLUGH the defect text.' })] }))
+    const r1 = await runSubstitute({ bot: 'codex', readersImpl: thin, reviewerImpl: leavesOpen })
+    const r2 = await runSubstitute({ bot: 'codex', supersedes: r1.stem, readersImpl: rich, reviewerImpl: captures })
+    return !r1.prompt.includes('PLUGH') && r2.prompt.includes('PLUGH the defect text.') && r2.sentInherited.join() === 'thread:PRRT_1'
+  })())
   ok('substitute run carries a fixed-but-unverified finding, not a verified one', (await runSubstitute({ bot: 'codex', readersImpl: oneVerifiedOneNot, reviewerImpl: captures })).sentInherited.join() === 'thread:PRRT_2')
   fresh(fixedG)
   ok('R1 resolves G, R2 chains from R1: R2 persists G as fixed with R1 as by, never sends G to the reviewer, and the gate passes on R2', await (async () => { const r1 = await runSubstitute({ bot: 'codex', readersImpl: liveFixedUnverified, reviewerImpl: resolvesAll }); const sent = []; const r2 = await runSubstitute({ bot: 'codex', supersedes: r1.stem, readersImpl: liveAfterR1, reviewerImpl: rejectsIds(['thread:PRRT_1'], sent) }); const g = (r2.findings ?? []).find((f) => f.id === 'thread:PRRT_1'); return g && g.disposition?.kind === 'fixed' && g.disposition?.by === r1.stem && !sent.includes('thread:PRRT_1') && (await evaluateGate({ state: fixUnrelatedThenFail, record: prRecWithSub(r1, r2), depth: 'subtle-correctness' })).ok })())

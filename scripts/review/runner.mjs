@@ -548,7 +548,13 @@ export const runReview = async (o, ctx, conf = null) => {
   if (Array.isArray(ctx.inheritExtra) && ctx.inheritExtra.length) {
     if (!isSubstitute(o.slot)) usage(`slot ${o.slot} takes no inherited gate findings`)
     const have = new Set([...carried, ...toAssess].map((f) => f.id))
+    // An open finding already inherited from the chain takes the live text: an older record may hold only a summary,
+    // and the reviewer must see the defect it is asked to judge. A carried (disposed) entry is never touched.
+    const open = new Map(toAssess.map((f, i) => [f.id, i]))
     for (const f of ctx.inheritExtra) {
+      if (isGateId(f.id) && open.has(f.id) && typeof f.detail === 'string' && f.detail !== '') {
+        toAssess[open.get(f.id)] = { ...toAssess[open.get(f.id)], detail: f.detail }
+      }
       if (!isGateId(f.id) || have.has(f.id)) continue
       toAssess.push(f)
       have.add(f.id)
