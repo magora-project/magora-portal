@@ -236,6 +236,8 @@ const NODE_QUERY = `query($id: ID!, $cursor: String) {
 // never edited). `currentTrusted` says whether the current body counted; codexState reads that same body from REST,
 // which names no editor, so its consumers use it only when `currentTrusted` is true. Measured 2026-11-10 on PRs #43,
 // #44 and #87: every edit of Codex's summary comment is by `chatgpt-codex-connector` (Bot).
+// An edit's diff is the body that edit WROTE, not the one it replaced: on PR #87 (comment IC_kwDOSsky088AAAABkDfhMw,
+// 13 edits) the newest edit's `editedAt` equals the comment's `lastEditedAt` and its diff equals the current body.
 export async function codexHistory({ repo, token, commentId, fetchImpl = fetch }) {
   const reviews = []
   let currentTrusted = false
