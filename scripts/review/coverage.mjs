@@ -18,7 +18,7 @@
 // @property {Array}   reviews             listReviews()                  [{id, login, commitId, submittedAt, body, empty}]
 // @property {Array}   requests            fullReviewRequests(comments)   [{bot, at}]
 // @property {?object} codexState          codexState(comments)           {commitSha, status, at, commentId} | null
-// @property {?object} codexHistory        codexHistory({commentId: codexState.commentId}) {reviews: [{sha, at, status}], complete};
+// @property {?object} codexHistory        codexHistory({commentId: codexState.commentId}) {reviews: [{sha, at, status}], complete, currentTrusted};
 //                                         null when codexState is null (and then it is not read)
 // @property {Array}   geminiVerdicts      geminiVerdicts(comments)       [{head, identity, verdict, findings, commentId, at}]
 // @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {conclusion, title} | null: the head's check, read
@@ -230,9 +230,10 @@ function incrementalInputs(bot, state) {
     add({ sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }, !(bot === 'coderabbit' && coderabbitFailedOn(state, r.commitId)))
   }
   if (bot === 'codex') {
-    const cs = state.codexState
+    // The marker's current body counts only when the Codex bot made its last edit (codexHistory.currentTrusted).
+    const cs = state.codexHistory?.currentTrusted === true ? state.codexState : null
     for (const h of state.codexHistory?.reviews ?? []) {
-      add({ sha: h.sha, at: h.at, by: `codex-comment:${cs?.commentId}@${short(h.sha)}` }, h.status === 'completed')
+      add({ sha: h.sha, at: h.at, by: `codex-comment:${state.codexState?.commentId}@${short(h.sha)}` }, h.status === 'completed')
     }
     if (cs) add({ sha: cs.commitSha, at: cs.at, by: `codex-comment:${cs.commentId}@${short(cs.commitSha)}` }, cs.status === 'completed')
   }
@@ -364,7 +365,8 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
   const geminiRuns = bot === 'gemini' ? geminiRunsOnHead(state, pushedAt) : []
   const inFlight = geminiRuns.filter((r) => r.status !== 'completed')
   if (bot === 'gemini') {
-    if (state.geminiVerdicts.some((v) => v.head === head && v.verdict === 'could-not-run')) return substitute(`Gemini could not run on ${short(head)}`)
+    // A could-not-run verdict yields to a run still in flight (a retry): the hold below waits for its verdict.
+    if (inFlight.length === 0 && state.geminiVerdicts.some((v) => v.head === head && v.verdict === 'could-not-run')) return substitute(`Gemini could not run on ${short(head)}`)
     // Task 20 Step 3b: a job timeout is a cancellation, and its post step writes no verdict.
     const completed = geminiRuns.filter((r) => r.status === 'completed')
     const named = state.geminiVerdicts.some((v) => v.head === head)

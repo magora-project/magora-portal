@@ -214,11 +214,11 @@ export function codexState(comments) {
 const NODE_QUERY = `query($id: ID!, $cursor: String) {
   node(id: $id) {
     ... on IssueComment {
-      body updatedAt
+      body updatedAt lastEditedAt editor { login __typename }
       userContentEdits(first: 100, after: $cursor) {
         totalCount
         pageInfo { hasNextPage endCursor }
-        nodes { editedAt diff }
+        nodes { editedAt diff editor { login __typename } }
       }
     }
   }
@@ -231,8 +231,15 @@ const NODE_QUERY = `query($id: ID!, $cursor: String) {
 // Sources: the current body (`at`: the comment's `updatedAt`) and each edit's diff (`at`: that
 // edit's `editedAt`). `complete` is false
 // when anything fails to read or the edits read fall short of `totalCount`; it never throws.
+// Anyone with write access can edit the bot's comment, so a body counts only when the Codex bot wrote it: an edit's
+// diff when that edit's editor is the Codex Bot, the current body when its last editor is the Codex Bot (or it was
+// never edited). `currentTrusted` says whether the current body counted; codexState reads that same body from REST,
+// which names no editor, so its consumers use it only when `currentTrusted` is true. Measured 2026-11-10 on PRs #43,
+// #44 and #87: every edit of Codex's summary comment is by `chatgpt-codex-connector` (Bot).
 export async function codexHistory({ repo, token, commentId, fetchImpl = fetch }) {
   const reviews = []
+  let currentTrusted = false
+  const byCodex = (actor) => authorLogin(actor) === CODEX_LOGIN
   const add = (text, at) => {
     const entries = new Map()
     for (const m of (text ?? '').matchAll(/<!-- codex-review-state:v1 (\{.*?\}) -->/g)) {
@@ -250,19 +257,23 @@ export async function codexHistory({ repo, token, commentId, fetchImpl = fetch }
     for (;;) {
       const node = (await graphql(fetchImpl, token, NODE_QUERY, { id: comment.node_id, cursor })).node
       if (!node || typeof node.body !== 'string') throw new Error('comment node unreadable')
-      if (first) { add(node.body, node.updatedAt); first = false }
+      if (first) {
+        currentTrusted = byCodex(node.editor) || (node.editor === null && node.lastEditedAt === null)
+        if (currentTrusted) add(node.body, node.updatedAt)
+        first = false
+      }
       const edits = node.userContentEdits
       if (!edits || !Array.isArray(edits.nodes)) throw new Error('edit history unreadable')
       total = edits.totalCount
-      for (const e of edits.nodes) add(e.diff, e.editedAt)
+      for (const e of edits.nodes) if (byCodex(e.editor)) add(e.diff, e.editedAt)
       seen += edits.nodes.length
       if (!edits.pageInfo?.hasNextPage) break
       cursor = edits.pageInfo.endCursor
       if (!cursor) throw new Error('edit history has a next page but no cursor')
     }
-    return { reviews, complete: Number.isInteger(total) && seen >= total }
+    return { reviews, complete: Number.isInteger(total) && seen >= total, currentTrusted }
   } catch {
-    return { reviews, complete: false }
+    return { reviews, complete: false, currentTrusted }
   }
 }
 

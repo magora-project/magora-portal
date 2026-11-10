@@ -84,10 +84,10 @@ try {
       bot, state: { ...st, ...rest, pr: { ...st.pr, ...pr } }, identityOf, isAncestor, currentIdentity: current, now, headPushedAt: pushed,
     })
   }
-  const codexFx = ({ head, current, history, reviews = [], requests = [], complete = true, now, marker = history.at(-1) }) => ({
+  const codexFx = ({ head, current, history, reviews = [], requests = [], complete = true, currentTrusted = true, now, marker = history.at(-1) }) => ({
     bot: 'codex', head, current, now, reviews, requests,
     codexState: marker ? { commitSha: marker.sha, status: marker.status, at: marker.at, commentId: 9 } : null,
-    codexHistory: { reviews: history, complete },
+    codexHistory: { reviews: history, complete, currentTrusted },
   })
   const hist = (sha, at, status = 'completed') => ({ sha, at: T(at), status })
 
@@ -190,6 +190,11 @@ try {
   ok('empty reviews after a full one do not uncover it', (await s(crFullThenEmpties)).status === 'covered')
   ok('rate-limited CodeRabbit with no usable review -> needs-substitute', (await s(crRateLimited)).status === 'needs-substitute')
   ok('Gemini could-not-run -> needs-substitute', (await s(geminiCouldNotRun)).status === 'needs-substitute')
+  // Pre-publish Codex review 2026-11-10: a retry in flight after a could-not-run holds the slot, so no substitute turns
+  // the gate green ahead of the retry's verdict.
+  ok('Gemini could-not-run, a retry in flight -> pending (hold)', await (async () => { const r = await s({ ...geminiCouldNotRun, runs: [runOn(44, A2, T('10:00')), gemRun(A2, '10:06', 'in_progress')] }); return r.status === 'pending' && /has not finished/.test(r.reason) })())
+  ok('Gemini could-not-run, a dispatched retry in flight -> pending (hold)', await (async () => { const r = await s({ ...geminiCouldNotRun, geminiDispatchRuns: [{ id: 5, status: 'queued', conclusion: null, createdAt: T('10:06') }] }); return r.status === 'pending' && /has not finished/.test(r.reason) })())
+  ok('Gemini could-not-run, the retry completed with no new verdict -> needs-substitute', (await s({ ...geminiCouldNotRun, runs: [runOn(44, A2, T('10:00')), gemRun(A2, '10:06', 'completed', 'success')] })).status === 'needs-substitute')
   ok('Gemini on a draft PR -> needs-substitute immediately', (await s(geminiDraft)).status === 'needs-substitute')
   ok('force-push then incremental review only, no answer to the full-review request -> not covered', ['pending', 'needs-substitute'].includes((await s(forcePushIncrementalOnly)).status))
   ok('force-push, incremental review on the new identity, no request at all -> not covered, reason names the request', ['pending', 'needs-substitute'].includes((await s(forcePushNoRequest)).status) && /full review/.test((await s(forcePushNoRequest)).reason))
@@ -242,6 +247,9 @@ try {
   ok('a running Codex entry is never coverage', is(await s(codexFx({ head: A2, current: 'I2', history: [hist(A2, '10:05', 'running')] })), 'pending', /no usable review yet/))
   ok('a running entry after a completed one does not hide it (latest completed review counts)', (await s(codexFx({ head: A2, current: 'I2', history: [hist(A2, '10:05'), hist(A2, '10:07', 'running')] }))).status === 'covered')
   ok('a non-empty Codex review object on the head is coverage', (await s({ bot: 'codex', head: A2, current: 'I2', reviews: [review(CODEX, A2, '10:05')] })).status === 'covered')
+  // Pre-publish Codex review 2026-11-10: a marker in a body a human last edited is not Codex's.
+  ok('a completed marker on the head in a human-edited body is not coverage', (await s(codexFx({ head: A2, current: 'I2', history: [], marker: hist(A2, '10:05'), currentTrusted: false }))).status !== 'covered')
+  ok('the same marker in a body Codex last edited is coverage (control)', (await s(codexFx({ head: A2, current: 'I2', history: [], marker: hist(A2, '10:05') }))).status === 'covered')
   ok('a marker without an edit history -> pending naming the edit history', await (async () => {
     const r = await s({ ...codexFx({ head: A2, current: 'I2', history: [hist(A2, '10:05')] }), codexHistory: null })
     return r.status === 'pending' && /edit history/.test(r.reason)

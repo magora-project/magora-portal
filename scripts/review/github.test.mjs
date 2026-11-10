@@ -240,7 +240,8 @@ ok('a geminiDispatchRuns page error throws', /500/.test(await errOf(() => gemini
 // ---------------------------------------------------------------- codexHistory (gate point 3, M3)
 const mk = (sha, status = 'completed') => `<!-- codex-review-state:v1 {"code_review":{"commit_sha":"${sha}","status":"${status}"}} -->`
 const [A, B, C] = ['a', 'b', 'c'].map((c) => c.repeat(40))
-const history = ({ pages, total, current = `x\n${mk(A)}\n`, failPage = 0 }) => async (url, init) => {
+const CODEX_BOT = { login: 'chatgpt-codex-connector', __typename: 'Bot' }
+const history = ({ pages, total, current = `x\n${mk(A)}\n`, failPage = 0, editor = CODEX_BOT, lastEditedAt = '2026-11-04T00:00:00Z' }) => async (url, init) => {
   const u = new URL(url)
   if (u.pathname === '/repos/o/r/issues/comments/777') return res({ node_id: 'IC_node' })
   if (u.pathname !== '/graphql') return res({}, 404)
@@ -248,10 +249,10 @@ const history = ({ pages, total, current = `x\n${mk(A)}\n`, failPage = 0 }) => a
   const i = variables.cursor ? Number(variables.cursor.slice(1)) : 0
   if (failPage && i === failPage) return res({}, 502)
   const edits = pages[i]
-  return res({ data: { node: { body: current, updatedAt: '2026-11-04T00:00:00Z', userContentEdits: { totalCount: total, pageInfo: { hasNextPage: i + 1 < pages.length, endCursor: `p${i + 1}` }, nodes: edits } } } })
+  return res({ data: { node: { body: current, updatedAt: '2026-11-04T00:00:00Z', lastEditedAt, editor, userContentEdits: { totalCount: total, pageInfo: { hasNextPage: i + 1 < pages.length, endCursor: `p${i + 1}` }, nodes: edits } } } })
 }
 // GitHub's userContentEdits `diff` is the FULL comment body after the edit, not a unified diff.
-const edit = (at, marker) => ({ editedAt: at, diff: `<!-- codex-pull-request-review-summary -->\n${marker}\n## Codex Review Summary\n` })
+const edit = (at, marker, editor = CODEX_BOT) => ({ editedAt: at, editor, diff: `<!-- codex-pull-request-review-summary -->\n${marker}\n## Codex Review Summary\n` })
 const twoEditPages = history({ total: 3, pages: [[edit('2026-11-03T00:00:00Z', mk(B)), edit('2026-11-02T00:00:00Z', mk(B))], [edit('2026-11-01T00:00:00Z', mk(C))]] })
 ok('codexHistory reads every marker SHA across edit pages, each with its time', await (async () => {
   const h = await codexHistory({ ...base, commentId: 777, fetchImpl: twoEditPages })
@@ -281,6 +282,30 @@ ok('a running and a completed marker for the same sha are both kept, with their 
     JSON.stringify(Object.keys(forA[0])) === '["sha","at","status"]'
 })())
 ok('a marker with no status has status null', (await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], current: '<!-- codex-review-state:v1 {"code_review":{"commit_sha":"' + A + '"}} -->' }) })).reviews[0].status === null)
+// Editor provenance (pre-publish Codex review, 2026-11-10): anyone with write access can edit the bot's comment.
+const HUMAN = { login: 'maintainer', __typename: 'User' }
+ok('an edit by a human is not a review; the bot\'s own edits still are', await (async () => {
+  const h = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 2, pages: [[edit('2026-11-03T00:00:00Z', mk(B), HUMAN), edit('2026-11-02T00:00:00Z', mk(C))]] }) })
+  return h.complete === true && h.currentTrusted === true && !h.reviews.some((r) => r.sha === B) && h.reviews.some((r) => r.sha === C) && h.reviews.some((r) => r.sha === A)
+})())
+ok('a current body last edited by a human is not trusted and not a review', await (async () => {
+  const h = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 1, editor: HUMAN, current: `x\n${mk(B)}\n`, pages: [[edit('2026-11-03T00:00:00Z', mk(B), HUMAN)]] }) })
+  return h.complete === true && h.currentTrusted === false && h.reviews.length === 0
+})())
+ok('a User account named like the Codex bot is not the bot', await (async () => {
+  const imp = { login: 'chatgpt-codex-connector', __typename: 'User' }
+  const h = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 1, editor: imp, pages: [[edit('2026-11-03T00:00:00Z', mk(B), imp)]] }) })
+  return h.currentTrusted === false && h.reviews.length === 0
+})())
+ok('a null editor on an edited body (a deleted account) is not trusted', (await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], editor: null }) })).currentTrusted === false)
+ok('a never-edited body is trusted', await (async () => {
+  const h = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], editor: null, lastEditedAt: null }) })
+  return h.currentTrusted === true && h.reviews.length === 1 && h.reviews[0].sha === A
+})())
+ok('a node missing its editor fields is not trusted (fail closed)', await (async () => {
+  const h = await codexHistory({ ...base, commentId: 777, fetchImpl: async (u) => new URL(u).pathname === '/graphql' ? res({ data: { node: { body: mk(A), updatedAt: 't', userContentEdits: { totalCount: 0, pageInfo: { hasNextPage: false }, nodes: [] } } } }) : res({ node_id: 'n' }) })
+  return h.complete === true && h.currentTrusted === false && h.reviews.length === 0
+})())
 ok('a diff whose marker JSON does not parse is skipped, not fatal', (await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 1, pages: [[edit('2026-11-03T00:00:00Z', '<!-- codex-review-state:v1 {bad} -->')]] }) })).reviews.length === 1)
 
 // ---------------------------------------------------------------- outsideDiffFindings (gate point 4)
