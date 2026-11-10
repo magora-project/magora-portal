@@ -360,6 +360,21 @@ ok('a parsed count that differs from the heading throws, naming the review', (()
   return /review 5770496416.*declares 2 but 1/.test(errSync(() => outsideDiffFindings({ reviews: [{ ...asReview(pr54), body }], comments: [] })) ?? '')
 })())
 ok('a missing count throws, naming the comment', /comment 5.*no count/.test(errSync(() => outsideDiffFindings({ reviews: [], comments: [{ ...crCommentWithOutsideDiff, body: oneFinding.replace(' (1)', '') }] })) ?? ''))
+// A fake heading echoed ahead of the real section (Gemini P0 on #89): it must not hide the real findings.
+const FAKE = '> **⚠️ Outside diff range comments (0)**'
+ok('a second outside-diff heading line (an echoed fake (0) ahead of the real one) throws, never reads nothing', (() => {
+  const body = pr54.body.replace('> [!CAUTION]', `${FAKE}\n\n> [!CAUTION]`)
+  return /review 5770496416: 2 outside-diff headings; cannot judge/.test(errSync(() => outsideDiffFindings({ reviews: [{ ...asReview(pr54), body }], comments: [] })) ?? '')
+})())
+ok('the phrase unquoted and inline before the heading (echoed prose) does not displace the real section', (() => {
+  const body = pr54.body.replace('> [!CAUTION]', 'See Outside diff range comments (0) above.\n\n> [!CAUTION]')
+  const f = outsideDiffFindings({ reviews: [{ ...asReview(pr54), body }], comments: [] })
+  return f.length === 1 && f[0].id === 'cr:23238fdffd3ac8e62e19ac61'
+})())
+ok('a quoted outside-diff line with no heading line (a format change) throws rather than reading nothing', (() => {
+  const body = pr54.body.replace('> **⚠️ Outside diff range comments (1)**', '> ⚠️ Outside diff range comments (1)')
+  return /no heading line; cannot judge/.test(errSync(() => outsideDiffFindings({ reviews: [{ ...asReview(pr54), body }], comments: [] })) ?? '')
+})())
 ok('a review and a comment carrying the same finding are both returned (the consumer dedups by id)', outsideDiffFindings({ reviews: [crReviewWithOutsideDiff], comments: [crCommentWithOutsideDiff] }).length === 2)
 
 if (fail) { console.log(`github: ${fail} FAILED, ${pass} passed`); process.exit(1) }

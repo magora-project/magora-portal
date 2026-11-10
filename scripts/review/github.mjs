@@ -342,17 +342,28 @@ export function fullReviewRequests(comments) {
 // Nitpicks, prompts) are not quoted and are not read. Each finding ends with
 // `<!-- cr-comment:v1:<id> -->` and starts with a summary holding the severity and a `path:lines`
 // line. The parsed count must equal the heading's N, else this throws (the gate cannot judge).
-function outsideDiffSection(body) {
+// The heading is matched as its whole line, and must be the only such line: echoed text (a PR
+// description CodeRabbit quotes) could otherwise put a fake `(0)` heading first and hide the real
+// section. Two headings, or the phrase with no heading line (a format change), throw: the gate
+// cannot judge, so it fails closed rather than reading nothing.
+const OUTSIDE_DIFF_HEADING = /^> \*\*⚠️ Outside diff range comments(?: \(\d+\))?\*\*$/
+function outsideDiffSection(body, what) {
   const lines = body.split('\n')
-  const start = lines.findIndex((l) => /Outside diff range comments/.test(l))
-  if (start === -1) return null
+  const headings = lines.flatMap((l, i) => (OUTSIDE_DIFF_HEADING.test(l) ? [i] : []))
+  if (headings.length > 1) throw new Error(`CodeRabbit ${what}: ${headings.length} outside-diff headings; cannot judge`)
+  if (headings.length === 0) {
+    // Only a quoted line: the section is a blockquote, and a nitpick quoting this parser is not.
+    if (lines.some((l) => /^>.*Outside diff range comments/.test(l))) throw new Error(`CodeRabbit ${what}: outside-diff text but no heading line; cannot judge`)
+    return null
+  }
+  const start = headings[0]
   let end = start
   while (end < lines.length && /^>/.test(lines[end])) end++
   return lines.slice(start, end).map((l) => l.replace(/^> ?/, '')).join('\n')
 }
 
 function findingsIn(body, reportedCommit, what) {
-  const section = outsideDiffSection(body ?? '')
+  const section = outsideDiffSection(body ?? '', what)
   if (section === null) return []
   const out = []
   let from = 0
