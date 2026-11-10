@@ -117,6 +117,17 @@ try {
     const r = await evaluateGate({ state: inFlight, record: threeSubs, depth: 'subtle-correctness' })
     return r.ok === false && /gemini/.test(r.lines.join('\n'))
   })())
+  // Pre-publish Codex review 2026-11-10: only a substitute that can fill its slot counts its vendor.
+  const codexSubE = subRecord({ bot: 'codex', vendor: 'anthropic', identity: id.E, stem: 'substitute-codex--a--1' })
+  const codexSubbed = prRecord([], { slots: [{ bot: 'codex', status: 'substituted', by: 'substitute-codex--a--1' }] })
+  ok('a stale same-vendor substitute in the unused slot does not block a current one (standard)', (await evaluateGate({ state: st(sha.E, { records: [subRecord({ bot: 'coderabbit', vendor: 'anthropic', identity: id.R, stem: 'substitute-coderabbit--r--1' }), codexSubE] }), record: codexSubbed, depth: 'standard' })).ok)
+  ok('a current same-vendor substitute in the other slot still blocks it (control)', (await evaluateGate({ state: st(sha.E, { records: [subRecord({ bot: 'coderabbit', vendor: 'anthropic', identity: id.E, stem: 'substitute-coderabbit--a--1' }), codexSubE] }), record: codexSubbed, depth: 'standard' })).ok === false)
+  ok('a same-vendor substitute for a bot still pending counts no vendor', await (async () => {
+    const state = st(sha.E, { requests: [{ bot: 'coderabbit', at: T(110) }], records: [subRecord({ bot: 'coderabbit', vendor: 'anthropic', identity: id.E, stem: 'substitute-coderabbit--a--1' }), codexSubE] })
+    const r = await evaluateGate({ state, record: codexSubbed, depth: 'standard' })
+    return r.ok && !r.lines.some((l) => /^FAIL/.test(l))
+  })())
+  ok('a same-vendor substitute for a covered bot counts no vendor', (await evaluateGate({ state: st(sha.E, { ...crOk(sha.E), reviews: [{ id: 3, login: CODERABBIT_LOGIN, commitId: sha.E, submittedAt: T(5), body: 'review', empty: false }], records: [subRecord({ bot: 'coderabbit', vendor: 'anthropic', identity: id.E, stem: 'substitute-coderabbit--a--1' }), codexSubE] }), record: codexSubbed, depth: 'standard' })).ok)
   ok('standard with neither bot covered nor substituted -> FAIL naming the slot', await (async () => { const r = await evaluateGate({ state: st(sha.E), record: prRecord(), depth: 'standard' }); return r.ok === false && r.lines.some((l) => /^FAIL slot/.test(l)) })())
   // D31 (§5.5 "What it lists: each required slot"): the record must list every required slot with a non-empty `by`.
   const codexLive = st(sha.E, codexCovers(sha.E))
@@ -218,7 +229,7 @@ try {
   const subCodex = subRecord({ bot: 'codex', vendor: 'anthropic', identity: id.U, stem: 'substitute-codex--u--1', fixedIds: ['thread:PRRT_1'] })
   const fixUnrelatedThenFail = st(sha.U, {
     reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U),
-    codexState: { commitSha: sha.F, status: 'completed', at: T(10), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.F, at: T(10), status: 'completed' }], complete: true },
+    codexState: { commitSha: sha.F, status: 'completed', at: T(10), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.F, at: T(10), status: 'completed' }], complete: true, currentTrusted: true },
     geminiVerdicts: [verdict(80, sha.U, id.U, 'no-findings')],
     threads: [codexThreadOnR('PRRT_1', { resolved: true, resolvedBy: 'dev' })], records: [subCodex],
   })
@@ -253,10 +264,16 @@ try {
   // botEvidence: a `running` Codex marker is never fix evidence (gate point 3).
   const codexRunningOnFix = st(sha.E, {
     reviews: [review(2, CODERABBIT_LOGIN, sha.E, T(40))], ...crOk(sha.E), threads: [codexThreadOnR('PRRT_1', { resolved: true, resolvedBy: 'dev' })],
-    codexState: { commitSha: sha.E, status: 'running', at: T(20), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.E, at: T(20), status: 'running' }], complete: true },
+    codexState: { commitSha: sha.E, status: 'running', at: T(20), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.E, at: T(20), status: 'running' }], complete: true, currentTrusted: true },
   })
   ok('I-2: a running Codex marker on the fix is not fix evidence', failsOn(await evaluateGate({ state: codexRunningOnFix, record: fixedRec, depth: 'standard' }), /^FAIL thread:PRRT_1\b.*no usable codex review/))
   ok('I-2: ... the same marker completed is (control)', (await evaluateGate({ state: { ...codexRunningOnFix, ...codexCovers(sha.E) }, record: fixedRec, depth: 'standard' })).ok)
+  // A completed marker in a body a human last edited is no fix evidence (pre-publish Codex review, 2026-11-10).
+  ok('a completed Codex marker in a human-edited body is not fix evidence', await (async () => {
+    const cov = codexCovers(sha.E)
+    const r = await evaluateGate({ state: { ...codexRunningOnFix, ...cov, codexHistory: { ...cov.codexHistory, reviews: [], currentTrusted: false } }, record: fixedRec, depth: 'standard' })
+    return failsOn(r, /^FAIL thread:PRRT_1\b.*no usable codex review/)
+  })())
   // botEvidence: a could-not-run Gemini verdict, and one with identity "", are never fix evidence.
   const geminiFixed = (later, extra = {}) => st(sha.E, { ...codexCovers(sha.E), geminiVerdicts: [verdict(61, sha.R, id.R, 'findings', [1], T(5)), later], ...extra })
   const geminiFixedRec = prRecord([fixedAt('gemini:61:1', sha.F)], { slots: STD_SLOTS })

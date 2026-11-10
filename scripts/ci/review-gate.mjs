@@ -49,7 +49,7 @@ import {
 import { CODERABBIT_LOGIN, CODEX_LOGIN, severityOf } from '../review/severity.mjs'
 import { EVIDENCE_DIR, git, inputIdentity, mergeBase } from '../review/identity.mjs'
 import { addedRecordStems, chainHeads, readRecords } from '../review/records.mjs'
-import { defaultGit, isGrandfathered, readActivation, requiredDepth } from './review-evidence.mjs'
+import { defaultGit, isGrandfathered, readActivation, recordResultReasons, requiredDepth } from './review-evidence.mjs'
 import { DEPTH_LABELS, parseControlFiles } from './label-gate.mjs'
 
 export const GATE_ACTIVATION_KEY = 'review-gate'
@@ -182,7 +182,13 @@ export async function judgeSlots(state) {
   }
   const subs = substituteRecords(state)
   const heads = chainHeads(subs)
-  const headVendors = (bot) => heads.filter((r) => r.slot === SUBSTITUTE(bot) && r.outcome === 'completed' && typeof r.reviewer?.vendor === 'string').map((r) => r.reviewer.vendor)
+  // A substitute counts toward the PR only when it can fill its slot: a completed review of the current identity
+  // (review-evidence's own record check), for a bot whose slot needs a substitute. A stale record, or one for a slot
+  // the bot covered or is still pending on, counts no vendor (pre-publish Codex review, 2026-11-10).
+  const want = { kind: 'pr', identity: state.currentIdentity }
+  const headVendors = (bot) => (live[bot].status !== 'needs-substitute' ? [] : heads
+    .filter((r) => r.slot === SUBSTITUTE(bot) && r.input?.kind === 'pr' && typeof r.reviewer?.vendor === 'string' && recordResultReasons(r, want).length === 0)
+    .map((r) => r.reviewer.vendor))
   // §5.5: a substitute's vendor is not one already counted on the PR: the vendors of the bots that covered it, and of
   // the other bots' substitutes.
   const counted = {}, accepted = {}
@@ -252,7 +258,8 @@ function botEvidence(bot, state) {
   const reviewsBy = (login) => (state.reviews ?? []).filter((r) => r.login === login && r.empty !== true && typeof r.commitId === 'string').map((r) => ({ sha: r.commitId }))
   if (bot === 'coderabbit') return reviewsBy(CODERABBIT_LOGIN).filter((e) => !coderabbitFailedOn(state, e.sha))
   if (bot === 'codex') {
-    const cs = state.codexState
+    // The marker's current body counts only when the Codex bot made its last edit (codexHistory.currentTrusted).
+    const cs = state.codexHistory?.currentTrusted === true ? state.codexState : null
     return [...reviewsBy(CODEX_LOGIN), ...(cs && cs.status === 'completed' && typeof cs.commitSha === 'string' ? [{ sha: cs.commitSha }] : [])]
   }
   if (bot === 'gemini') {
