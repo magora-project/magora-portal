@@ -223,18 +223,20 @@ try {
   ok('unreadable Codex edit history -> pending, never covered', await (async () => { const r = await s(codexHistoryIncomplete); return r.status === 'pending' && /edit history/.test(r.reason) })())
 
   // ------------------------------------------------------------ controller rulings and extra guards
+  // `is(result, status, reasonRe?)`: the expected status, and the reason when a pattern is given.
+  const is = (r, status, re) => r.status === status && (re === undefined || re.test(r.reason))
   // Ruling 3: an empty Gemini identity is never coverage.
-  ok('a Gemini verdict with identity "" is never coverage', (await s({ bot: 'gemini', head: A2, current: 'I2', geminiVerdicts: [verdict(A2, '', 'no-findings', '10:05')] })).status !== 'covered')
-  ok('a Gemini verdict with identity "" does not cover an empty current identity either', (await s({ bot: 'gemini', head: A2, current: '', geminiVerdicts: [verdict(A2, '', 'no-findings', '10:05')] })).status !== 'covered')
-  ok('a skipped-same-identity verdict is not itself coverage', (await s({ bot: 'gemini', head: A2, current: 'I2', geminiVerdicts: [verdict(A2, 'I2', 'skipped-same-identity', '10:05')] })).status !== 'covered')
-  ok('a usable Gemini verdict on another identity is not coverage', (await s({ bot: 'gemini', head: F1, current: 'IF1', geminiVerdicts: [verdict(A2, 'I2', 'no-findings', '10:05')] })).status !== 'covered')
+  ok('a Gemini verdict with identity "" is never coverage (pending at 10 minutes)', is(await s({ bot: 'gemini', head: A2, current: 'I2', geminiVerdicts: [verdict(A2, '', 'no-findings', '10:05')] }), 'pending', /waiting for a gemini review/))
+  ok('a Gemini verdict with identity "" does not cover an empty current identity either', is(await s({ bot: 'gemini', head: A2, current: '', geminiVerdicts: [verdict(A2, '', 'no-findings', '10:05')] }), 'pending', /identity is unknown/))
+  ok('a skipped-same-identity verdict is not itself coverage', is(await s({ bot: 'gemini', head: A2, current: 'I2', geminiVerdicts: [verdict(A2, 'I2', 'skipped-same-identity', '10:05')] }), 'pending', /waiting for a gemini review/))
+  ok('a usable Gemini verdict on another identity is not coverage', is(await s({ bot: 'gemini', head: F1, current: 'IF1', geminiVerdicts: [verdict(A2, 'I2', 'no-findings', '10:05')] }), 'pending', /waiting for a gemini review/))
   // Ruling 4: Codex running entries count for rewrite detection, never for coverage.
   ok('a running-only Codex entry on a rewritten-away commit still triggers the rewrite rule', await (async () => {
     const r = await s(codexFx({ head: F1, current: 'IF1', history: [hist(A2, '09:30', 'running'), hist(F1, '10:05')] }))
-    return r.status !== 'covered' && /full review/.test(r.reason)
+    return is(r, 'pending', /post "@codex review" for a full review/)
   })())
   ok('the same history without the rewritten-away entry is covered (control)', (await s(codexFx({ head: F1, current: 'IF1', history: [hist(F1, '10:05')] }))).status === 'covered')
-  ok('a running Codex entry is never coverage', (await s(codexFx({ head: A2, current: 'I2', history: [hist(A2, '10:05', 'running')] }))).status !== 'covered')
+  ok('a running Codex entry is never coverage', is(await s(codexFx({ head: A2, current: 'I2', history: [hist(A2, '10:05', 'running')] })), 'pending', /no usable review yet/))
   ok('a running entry after a completed one does not hide it (latest completed review counts)', (await s(codexFx({ head: A2, current: 'I2', history: [hist(A2, '10:05'), hist(A2, '10:07', 'running')] }))).status === 'covered')
   ok('a non-empty Codex review object on the head is coverage', (await s({ bot: 'codex', head: A2, current: 'I2', reviews: [review(CODEX, A2, '10:05')] })).status === 'covered')
   ok('a marker without an edit history -> pending naming the edit history', await (async () => {
@@ -246,15 +248,35 @@ try {
     // A2 (I2) reviewed; rewritten to L1 (IF1), reviewed incrementally with no request; then rebased to F1 (still IF1).
     // The latest rewritten-away review (L1) kept the identity, but the A2 -> L1 rewrite changed it and was never answered.
     const r = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [cr(A2, '09:30'), cr(L1, '09:50')] })
-    return r.status !== 'covered' && /full review/.test(r.reason)
+    return is(r, 'pending', /post "@coderabbitai full review"/)
   })())
   ok('a rewrite whose latest rewritten-away review kept the identity, after earlier pushes, stays covered (D-10)', (await s(crRebaseSameIdentity)).status === 'covered')
   ok('an unanswered request\'s clock: request at 10:20, 10:31 -> pending; 10:51 -> needs-substitute', await (async () => {
     const fx = { ...forcePushIncrementalOnly, requests: [req('coderabbit', '10:20')] }
     return (await s({ ...fx, now: T('10:31') })).status === 'pending' && (await s({ ...fx, now: T('10:51') })).status === 'needs-substitute'
   })())
-  ok('a request for the other bot does not count', (await s({ ...forcePushAnswered, requests: [req('codex', '10:01')] })).status !== 'covered')
-  ok('a review submitted at the same second as the request does not answer it', (await s({ ...forcePushAnswered, reviews: [cr(A2, '09:30'), cr(F1, '10:01')] })).status !== 'covered')
+  ok('a request for the other bot does not count', is(await s({ ...forcePushAnswered, requests: [req('codex', '10:01')] }), 'pending', /post "@coderabbitai full review"/))
+  ok('a review submitted at the same second as the request does not answer it', is(await s({ ...forcePushAnswered, reviews: [cr(A2, '09:30'), cr(F1, '10:01')] }), 'pending', /waiting for a usable review answering the full review request/))
+
+  // I-1: a review with no commit, or an unreadable time, never covers and never pins the slot.
+  const nullCommit = { ...cr(A2, '09:30'), commitId: null }
+  ok('(a) CodeRabbit review with commitId null plus a failure check -> needs-substitute', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit], coderabbitCheck: { conclusion: 'failure', title: 'x' } }), 'needs-substitute', /concluded failure/))
+  ok('(b) null-commit review, a full-review request answered by a usable review on the current identity -> covered', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '10:05')], requests: [req('coderabbit', '10:01')] }), 'covered'))
+  ok('(b\') the same review before the request does not answer it', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '09:50')], requests: [req('coderabbit', '10:01')] }), 'pending', /full review request/))
+  ok('a null-commit review with no request -> pending naming the request (the author can clear it)', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '10:05')] }), 'pending', /post "@coderabbitai full review"/))
+  ok('(c) null-commit review, a request, nothing after it, 31 minutes -> needs-substitute', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit], requests: [req('coderabbit', '10:01')], now: T('10:32') }), 'needs-substitute', /last full-review request/))
+  ok('(c\') ... and 29 minutes after the request -> pending', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit], requests: [req('coderabbit', '10:01')], now: T('10:30') }), 'pending', /full review request/))
+  const badTime = { ...cr(A2, '10:05'), submittedAt: 'not a time' }
+  ok('(d) an unparseable submittedAt on the head is never coverage: pending at 10 minutes', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [badTime] }), 'pending', /no usable review yet/))
+  ok('(d) ... and needs-substitute at 31 minutes (not pending forever)', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [badTime], now: T('10:31') }), 'needs-substitute'))
+  ok('(d) an unparseable time on a rewritten-away review: any request counts after it; answered -> covered, unanswered at 31 min -> needs-substitute', await (async () => {
+    const old = { ...cr(A2, '09:30'), submittedAt: 'garbage' }
+    const answered = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [old, cr(F1, '10:05')], requests: [req('coderabbit', '10:01')] })
+    const late = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [old], requests: [req('coderabbit', '10:01')], now: T('10:32') })
+    const none = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [old, cr(F1, '10:05')] })
+    return is(answered, 'covered') && is(late, 'needs-substitute') && is(none, 'pending', /full review/)
+  })())
+  ok('a Codex history entry with no sha and an unreadable time is never coverage and does not pin the slot', is(await s({ ...codexFx({ head: A2, current: 'I2', history: [{ sha: null, at: 'x', status: 'completed' }], marker: null }), codexState: { commitSha: A2, status: 'running', at: T('10:05'), commentId: 9 }, requests: [req('codex', '10:01')], now: T('10:32') }), 'needs-substitute'))
   ok('latest usable review on an older identity -> not covered (ordinary push not yet reviewed)', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A1, '09:30')] })).status === 'pending')
   ok('reviews from another login are not CodeRabbit evidence', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [review('mallory', A2, '10:05')] })).status === 'pending')
   // 30-minute boundary and clocks.

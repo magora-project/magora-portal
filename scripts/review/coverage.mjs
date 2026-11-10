@@ -136,27 +136,30 @@ const safe = async (fn, fallback) => { try { return await fn() } catch { return 
 // bot is known to have reviewed or started (rewrite detection); `evidence` is the usable subset (coverage and
 // the "latest rewritten-away review" ordering). Empty reviews are entries, never evidence (V4); for Codex every
 // edit-history entry is an entry, and only a `completed` one is evidence (gate point 3).
+// An entry with no commit (REST allows a null `commit_id`) or an unreadable time is never evidence. It stays an
+// entry, and the rewrite check treats it like an unfetchable commit: not an ancestor of the head, so it takes the
+// full-review-request path. It never blocks the slot, because nobody can delete a bot's review.
+const hasCommit = (e) => typeof e.sha === 'string' && e.sha !== ''
+const readable = (e) => !Number.isNaN(ms(e.at))
+// This bot's full-review requests. One with an unreadable time is ignored (GitHub always sets `created_at`).
+const botRequests = (state, bot) => state.requests.filter((r) => r.bot === bot && readable(r))
 function incrementalInputs(bot, state) {
   const login = bot === 'coderabbit' ? CODERABBIT_LOGIN : CODEX_LOGIN
   const entries = [], evidence = []
+  const add = (e, usable) => {
+    entries.push(e)
+    if (usable && hasCommit(e) && readable(e)) evidence.push(e)
+  }
   for (const r of state.reviews) {
     if (r.login !== login) continue
-    const e = { sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }
-    entries.push(e)
-    if (!r.empty) evidence.push(e)
+    add({ sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }, !r.empty)
   }
   if (bot === 'codex') {
     const cs = state.codexState
     for (const h of state.codexHistory?.reviews ?? []) {
-      const e = { sha: h.sha, at: h.at, by: `codex-comment:${cs?.commentId}@${short(h.sha)}` }
-      entries.push(e)
-      if (h.status === 'completed') evidence.push(e)
+      add({ sha: h.sha, at: h.at, by: `codex-comment:${cs?.commentId}@${short(h.sha)}` }, h.status === 'completed')
     }
-    if (cs) {
-      const e = { sha: cs.commitSha, at: cs.at, by: `codex-comment:${cs.commentId}@${short(cs.commitSha)}` }
-      entries.push(e)
-      if (cs.status === 'completed') evidence.push(e)
-    }
+    if (cs) add({ sha: cs.commitSha, at: cs.at, by: `codex-comment:${cs.commentId}@${short(cs.commitSha)}` }, cs.status === 'completed')
   }
   return { entries, evidence }
 }
@@ -166,7 +169,8 @@ function incrementalInputs(bot, state) {
 async function incrementalCoverage({ bot, state, entries, evidence, identityOf, isAncestor, currentIdentity }) {
   const head = state.pr.head
   const idOf = (sha) => safe(() => identityOf(sha), null)
-  const anc = (a, b) => (a === b ? Promise.resolve(true) : safe(() => isAncestor(a, b), false))
+  // A commitless entry is never an ancestor (and so counts as rewritten away, like an unfetchable commit).
+  const anc = (a, b) => (typeof a !== 'string' || a === '' ? Promise.resolve(false) : a === b ? Promise.resolve(true) : safe(() => isAncestor(a, b), false))
   const latestOf = (list) => {
     const top = Math.max(...list.map((e) => ms(e.at)))
     return list.filter((e) => ms(e.at) === top)
@@ -202,12 +206,14 @@ async function incrementalCoverage({ bot, state, entries, evidence, identityOf, 
 
   // After an identity-changing rewrite: a full-review request after the latest rewritten-away review, then usable
   // evidence after that request on the current identity. The ordering uses usable reviews (completed, for Codex);
-  // when the rewrite is known only from unusable entries, their times stand in (fail closed).
+  // when the rewrite is known only from unusable entries, their times stand in (fail closed). An entry whose time
+  // cannot be read is left out of the floor, so any request counts as after it: excluding it is the only choice
+  // that keeps the request path reachable, and coverage still needs a usable review after that request.
   const changedUsable = changed.filter((c) => evidence.includes(c))
-  const floor = Math.max(...(changedUsable.length ? changedUsable : changed).map((c) => ms(c.at)))
-  const asked = state.requests.filter((r) => r.bot === bot && ms(r.at) > floor)
+  const floor = Math.max(-Infinity, ...(changedUsable.length ? changedUsable : changed).filter(readable).map((c) => ms(c.at)))
+  const asked = botRequests(state, bot).filter((r) => ms(r.at) > floor)
   const cmd = FULL_REVIEW_COMMAND[bot]
-  const what = `a rewrite changed the input identity (reviewed ${changed.map((c) => short(c.sha)).join(', ')} no longer in the head's history)`
+  const what = `a rewrite changed the input identity (reviewed ${changed.map((c) => (hasCommit(c) ? short(c.sha) : 'a review with no commit')).join(', ')} no longer in the head's history)`
   if (asked.length === 0) {
     return { covered: false, needsRequest: true, reason: `${what}: post "${cmd}" for a full review` }
   }
@@ -255,9 +261,6 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
     }
   } else {
     const { entries, evidence } = incrementalInputs(bot, state)
-    const times = [...entries.map((e) => e.at), ...state.requests.filter((r) => r.bot === bot).map((r) => r.at)]
-    if (times.some((t) => Number.isNaN(ms(t)))) return pending(`a ${bot} review or request has an unreadable timestamp`)
-    if (entries.some((e) => typeof e.sha !== 'string' || e.sha === '')) return pending(`a ${bot} review names no commit`)
     inc = await incrementalCoverage({ bot, state, entries, evidence, identityOf, isAncestor, currentIdentity })
     if (inc.covered) return { status: 'covered', by: inc.by, reason: `usable ${bot} review on the current identity` }
   }
@@ -300,7 +303,7 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
   }
 
   // Timeout.
-  const requests = state.requests.filter((r) => r.bot === bot).map((r) => ms(r.at))
+  const requests = botRequests(state, bot).map((r) => ms(r.at))
   const start = Math.max(pushed, ...requests)
   const t = ms(now)
   if (!Number.isNaN(t) && t - start >= SUBSTITUTE_AFTER_MS) {
