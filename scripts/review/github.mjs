@@ -233,14 +233,15 @@ const NODE_QUERY = `query($id: ID!, $cursor: String) {
 // when anything fails to read or the edits read fall short of `totalCount`; it never throws.
 // Anyone with write access can edit the bot's comment, so a body counts only when the Codex bot wrote it: an edit's
 // diff when that edit's editor is the Codex Bot, the current body when its last editor is the Codex Bot (or it was
-// never edited). `currentTrusted` says whether the current body counted; codexState reads that same body from REST,
-// which names no editor, so its consumers use it only when `currentTrusted` is true. Measured 2026-11-10 on PRs #43,
+// never edited). `currentTrusted` says whether the current body counted. `current` is that body's one marker as
+// { commitSha, status, at } (null when untrusted or not exactly one marker): consumers take the marker from here, never
+// from codexState, whose REST read is a separate snapshot that may predate the edit GraphQL authenticated. Measured 2026-11-10 on PRs #43,
 // #44 and #87: every edit of Codex's summary comment is by `chatgpt-codex-connector` (Bot).
 // An edit's diff is the body that edit WROTE, not the one it replaced: on PR #87 (comment IC_kwDOSsky088AAAABkDfhMw,
 // 13 edits) the newest edit's `editedAt` equals the comment's `lastEditedAt` and its diff equals the current body.
 export async function codexHistory({ repo, token, commentId, fetchImpl = fetch }) {
   const reviews = []
-  let currentTrusted = false
+  let currentTrusted = false, current = null
   const byCodex = (actor) => authorLogin(actor) === CODEX_LOGIN
   const add = (text, at) => {
     const entries = new Map()
@@ -261,7 +262,14 @@ export async function codexHistory({ repo, token, commentId, fetchImpl = fetch }
       if (!node || typeof node.body !== 'string') throw new Error('comment node unreadable')
       if (first) {
         currentTrusted = byCodex(node.editor) || (node.editor === null && node.lastEditedAt === null)
-        if (currentTrusted) add(node.body, node.updatedAt)
+        if (currentTrusted) {
+          add(node.body, node.updatedAt)
+          const found = [...node.body.matchAll(CODEX_MARKER)]
+          const cr = found.length === 1 ? parseJson(found[0][1])?.code_review : null
+          if (typeof cr?.commit_sha === 'string' && cr.commit_sha !== '') {
+            current = { commitSha: cr.commit_sha, status: typeof cr.status === 'string' ? cr.status : null, at: node.updatedAt }
+          }
+        }
         first = false
       }
       const edits = node.userContentEdits
@@ -273,9 +281,9 @@ export async function codexHistory({ repo, token, commentId, fetchImpl = fetch }
       cursor = edits.pageInfo.endCursor
       if (!cursor) throw new Error('edit history has a next page but no cursor')
     }
-    return { reviews, complete: Number.isInteger(total) && seen >= total, currentTrusted }
+    return { reviews, complete: Number.isInteger(total) && seen >= total, currentTrusted, current }
   } catch {
-    return { reviews, complete: false, currentTrusted }
+    return { reviews, complete: false, currentTrusted, current }
   }
 }
 
@@ -314,12 +322,14 @@ export function geminiVerdicts(comments) {
 
 const REQUESTS = new Map([['@coderabbitai full review', 'coderabbit'], ['@codex review', 'codex']])
 
-// A comment whose whole trimmed body is the request. Anything longer is not one.
+// A comment whose whole trimmed body is the request. Anything longer is not one. Its time is the comment's last
+// update: an older comment edited into a request asked for the review only when edited, so a review between the two
+// cannot answer it (and a later time only delays the clock, never shortens it).
 export function fullReviewRequests(comments) {
   const out = []
   for (const c of comments) {
     const bot = REQUESTS.get((c.body ?? '').trim())
-    if (bot) out.push({ bot, at: c.createdAt })
+    if (bot) out.push({ bot, at: c.updatedAt ?? c.createdAt })
   }
   return out
 }

@@ -18,7 +18,7 @@
 // @property {Array}   reviews             listReviews()                  [{id, login, commitId, submittedAt, body, empty}]
 // @property {Array}   requests            fullReviewRequests(comments)   [{bot, at}]
 // @property {?object} codexState          codexState(comments)           {commitSha, status, at, commentId} | null
-// @property {?object} codexHistory        codexHistory({commentId: codexState.commentId}) {reviews: [{sha, at, status}], complete, currentTrusted};
+// @property {?object} codexHistory        codexHistory({commentId: codexState.commentId}) {reviews: [{sha, at, status}], complete, currentTrusted, current};
 //                                         null when codexState is null (and then it is not read)
 // @property {Array}   geminiVerdicts      geminiVerdicts(comments)       [{head, identity, verdict, findings, commentId, at}]
 // @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {conclusion, title} | null: the head's check, read
@@ -230,8 +230,10 @@ function incrementalInputs(bot, state) {
     add({ sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }, !(bot === 'coderabbit' && coderabbitFailedOn(state, r.commitId)))
   }
   if (bot === 'codex') {
-    // The marker's current body counts only when the Codex bot made its last edit (codexHistory.currentTrusted).
-    const cs = state.codexHistory?.currentTrusted === true ? state.codexState : null
+    // The current marker comes from the body GraphQL authenticated as Codex's (codexHistory.current), not from
+    // codexState's separate REST read of it.
+    const auth = state.codexHistory?.current ?? null
+    const cs = auth ? { ...auth, commentId: state.codexState?.commentId } : null
     for (const h of state.codexHistory?.reviews ?? []) {
       add({ sha: h.sha, at: h.at, by: `codex-comment:${state.codexState?.commentId}@${short(h.sha)}` }, h.status === 'completed')
     }

@@ -84,10 +84,11 @@ try {
       bot, state: { ...st, ...rest, pr: { ...st.pr, ...pr } }, identityOf, isAncestor, currentIdentity: current, now, headPushedAt: pushed,
     })
   }
-  const codexFx = ({ head, current, history, reviews = [], requests = [], complete = true, currentTrusted = true, now, marker = history.at(-1) }) => ({
+  const codexFx = ({ head, current, history, reviews = [], requests = [], complete = true, currentTrusted = true, now, marker = history.at(-1),
+    authenticated = currentTrusted && marker ? { commitSha: marker.sha, status: marker.status, at: marker.at } : null }) => ({
     bot: 'codex', head, current, now, reviews, requests,
     codexState: marker ? { commitSha: marker.sha, status: marker.status, at: marker.at, commentId: 9 } : null,
-    codexHistory: { reviews: history, complete, currentTrusted },
+    codexHistory: { reviews: history, complete, currentTrusted, current: authenticated },
   })
   const hist = (sha, at, status = 'completed') => ({ sha, at: T(at), status })
 
@@ -249,6 +250,7 @@ try {
   ok('a non-empty Codex review object on the head is coverage', (await s({ bot: 'codex', head: A2, current: 'I2', reviews: [review(CODEX, A2, '10:05')] })).status === 'covered')
   // Pre-publish Codex review 2026-11-10: a marker in a body a human last edited is not Codex's.
   ok('a completed marker on the head in a human-edited body is not coverage', (await s(codexFx({ head: A2, current: 'I2', history: [], marker: hist(A2, '10:05'), currentTrusted: false }))).status !== 'covered')
+  ok('a completed REST marker whose authenticated body now says running is not coverage', (await s(codexFx({ head: A2, current: 'I2', history: [], marker: hist(A2, '10:05'), authenticated: { commitSha: A2, status: 'running', at: T('10:06') } }))).status !== 'covered')
   ok('the same marker in a body Codex last edited is coverage (control)', (await s(codexFx({ head: A2, current: 'I2', history: [], marker: hist(A2, '10:05') }))).status === 'covered')
   ok('a marker without an edit history -> pending naming the edit history', await (async () => {
     const r = await s({ ...codexFx({ head: A2, current: 'I2', history: [hist(A2, '10:05')] }), codexHistory: null })

@@ -99,11 +99,13 @@ ok('"@codex review please" is not a full-review request', fullReviewRequests([{ 
 ok('"@coderabbitai full review" and "@codex review" (trimmed) are requests, with their time', (() => {
   const r = fullReviewRequests([
     { body: '  @coderabbitai full review\n', login: 'a', createdAt: '2026-11-01T00:00:00Z' },
-    { body: '@codex review', login: 'a', createdAt: '2026-11-02T00:00:00Z' },
+    { body: '@codex review', login: 'a', createdAt: '2026-11-02T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z' },
     { body: 'hello @codex review', login: 'a', createdAt: '2026-11-03T00:00:00Z' },
   ])
   return r.length === 2 && r[0].bot === 'coderabbit' && r[0].at === '2026-11-01T00:00:00Z' && r[1].bot === 'codex' && r[1].at === '2026-11-02T00:00:00Z'
 })())
+// Pre-publish Codex review 2026-11-10: a comment edited into a request asked when edited, not when first written.
+ok('an edited comment\'s request dates from its edit', fullReviewRequests([{ body: '@coderabbitai full review', login: 'a', createdAt: '2026-11-01T00:00:00Z', updatedAt: '2026-11-05T00:00:00Z' }])[0].at === '2026-11-05T00:00:00Z')
 
 // ---------------------------------------------------------------- reviews
 const pr43 = fx.pr43RawReviews.reviews
@@ -298,6 +300,11 @@ ok('a User account named like the Codex bot is not the bot', await (async () => 
   return h.currentTrusted === false && h.reviews.length === 0
 })())
 ok('a null editor on an edited body (a deleted account) is not trusted', (await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], editor: null }) })).currentTrusted === false)
+ok('current is the authenticated body\'s marker, and null when the body is not trusted', await (async () => {
+  const ok1 = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], current: `x\n${mk(B, 'running')}\n` }) })
+  const no = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], editor: HUMAN }) })
+  return ok1.current?.commitSha === B && ok1.current.status === 'running' && ok1.current.at === '2026-11-04T00:00:00Z' && no.current === null
+})())
 ok('a never-edited body is trusted', await (async () => {
   const h = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], editor: null, lastEditedAt: null }) })
   return h.currentTrusted === true && h.reviews.length === 1 && h.reviews[0].sha === A
