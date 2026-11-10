@@ -364,11 +364,18 @@ dispatch:
   added to `AGENTS.md` (plan Task 20).
 - Any finding located only in the evidence directory is outside the gate, whichever bot raised it.
   That last rule is what guarantees no loop.
+- Gemini's verdict marker carries the input identity, and the workflow skips the model call when a
+  usable verdict for the same identity exists; the gate collects findings from every usable Gemini
+  verdict on the PR, so none is dropped (plan V5, accepted 2026-11-01).
 
 Committing a record therefore never produces new findings to record.
 
 **Coverage of a slot.** A slot is covered when the bot's **latest usable** review has a `commit_id`
 whose input identity equals the current one.
+
+- **Codex App:** a clean Codex review submits no review object, so its coverage comes from the
+  `codex-review-state:v1` marker in its summary comment (the comment's `updated_at` is its time) or
+  a non-empty Codex review, whichever is later (plan V2, accepted 2026-11-01).
 
 - **Usable** means the review is non-empty, and its run did not end in a terminal failure (below). A
   failed review never establishes coverage. It is a ground for substitution.
@@ -390,12 +397,12 @@ whose input identity equals the current one.
   - **Immediately,** when the bot isn't configured for this PR. Gemini is not configured on fork,
     Dependabot and draft PRs.
   - **After a terminal failure.** The gate reads failure only from:
-    - CodeRabbit's commit-status description, for example "Review rate limited" or
-      "Review skipped: …";
-    - an empty review;
+    - CodeRabbit's check run named `CodeRabbit` (its `conclusion` and `output.title`, for example
+      `skipped` / "No files to review"); it posts no commit status (plan V3, accepted 2026-11-01);
     - the Gemini job's conclusion, or the verdict marker in its comment (`could-not-run`).
 
-    Review bodies are never parsed.
+    Review bodies are never parsed. An empty review is never usable and never a failure signal:
+    it is ignored (plan V4, accepted 2026-11-01).
   - **After a bounded timeout** with no review. The builder sets it; the suggestion is 30 minutes.
 - **What fills the slot:** a local full review of the current identity, by a vendor not already
   counted on this PR. It is recorded as a `substitute:<bot>` record and inherits that bot's
@@ -474,7 +481,8 @@ verified only by a substitute.
 fix that a later commit reverts can still pass. The gate cannot tell a review that answered a
 full-review request from one that merely came after it, and Codex exposes only its latest review
 marker. This review layer is discipline, not the control (AGENTS.md), so the limitation is
-accepted rather than worked around.
+accepted rather than worked around. It covers CodeRabbit's outside-diff findings as it covers
+threads (David, 2026-11-09; plan gate point 4).
 
 **Accepted limitation (David, 2026-11-03): an unsplittable diff.** The 400,000-byte limit (§5.5)
 applies to every PR, and a lockfile cannot be split. `package-lock.json` is 292,316 bytes, and the

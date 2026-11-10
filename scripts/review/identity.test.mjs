@@ -245,6 +245,21 @@ try {
     try { idXdg = await id(ra, 'main', 'pr') } finally { if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = prevXdg }
     ok('the default user attributes file ($XDG_CONFIG_HOME/git/attributes) marking *.txt -diff -> same identity', same(idPlain, idXdg))
     ok('the empty attributes file the module points git at exists and is empty', (() => { try { return readFileSync(EMPTY_ATTRIBUTES, 'utf8') === '' } catch { return false } })())
+
+    // A PR's own committed .gitattributes is read from the checked-out work tree. Without --attr-source, a PR adding
+    // `*.txt -diff` turns its own edit into "Binary files differ" for Gemini, and the identity depends on which
+    // commit is checked out (PR D Task 20 review, finding 3).
+    raw(ra, ['checkout', '-q', 'pr'])
+    put(ra, '.gitattributes', '*.txt -diff\n')
+    put(ra, 'f.txt', 'a\nBB\n')
+    commit(ra, 'pr adds a work-tree .gitattributes')
+    ok('fixture: plain git diff of the PR really shows f.txt as binary', raw(ra, ['diff', 'main...pr', '--', 'f.txt']).includes('Binary files'))
+    const idPrCheckedOut = await id(ra, 'main', 'pr')
+    const gdPrCheckedOut = (await geminiDiff({ cwd: ra, base: 'main', head: 'pr' })).toString()
+    raw(ra, ['checkout', '-q', 'main'])
+    const idMainCheckedOut = await id(ra, 'main', 'pr')
+    ok('a PR-committed .gitattributes marking *.txt -diff: same identity whichever commit is checked out', same(idPrCheckedOut, idMainCheckedOut))
+    ok('a PR-committed .gitattributes marking *.txt -diff: geminiDiff still shows the text edit', gdPrCheckedOut.includes('+BB') && !gdPrCheckedOut.includes('Binary files a/f.txt'))
   }
 
   // --- geminiDiff and git() ---

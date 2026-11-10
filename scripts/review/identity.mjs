@@ -26,12 +26,16 @@ const run = (args, { cwd, input } = {}) => new Promise((resolve, reject) => {
 // identity would differ between a developer's machine and CI. core.attributesFile (and its default,
 // $XDG_CONFIG_HOME/git/attributes or ~/.config/git/attributes) is pointed at this committed, empty file.
 // `--text` is NOT a fix: patch-id stops reading a line at its first NUL, so two different binary edits get one ID.
+// The work tree's own .gitattributes is replaced by the empty tree's (none) with `--attr-source` (git 2.40+; an
+// older git refuses the option, so every call fails closed). Without it, a PR that commits `*.js -diff` hides its
+// own edit from Gemini as "Binary files differ", and the identity depends on which commit is checked out.
 // Known gap: $GIT_DIR/info/attributes cannot be switched off from the command line (`--attr-source` only
 // replaces the work tree's .gitattributes, measured on git 2.54). A repo-local info/attributes entry that
 // changes the diff attribute still changes the local identity; CI's fresh checkout has none.
 export const EMPTY_ATTRIBUTES = fileURLToPath(new URL('./empty.gitattributes', import.meta.url))
+export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
-export const git = (args, { cwd } = {}) => run(['-c', 'core.quotePath=true', '-c', 'core.autocrlf=false', '-c', `core.attributesFile=${EMPTY_ATTRIBUTES}`, ...args], { cwd })
+export const git = (args, { cwd } = {}) => run([`--attr-source=${EMPTY_TREE}`, '-c', 'core.quotePath=true', '-c', 'core.autocrlf=false', '-c', `core.attributesFile=${EMPTY_ATTRIBUTES}`, ...args], { cwd })
 
 const must = (r, what) => {
   if (r.code !== 0) throw new Error(`${what} failed (${r.code}): ${r.stderr.trim()}`)

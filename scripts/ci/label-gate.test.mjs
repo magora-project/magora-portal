@@ -362,7 +362,8 @@ ok('gemini workflow: reruns on edited, and the job skips an edit that did not ch
 ok('gemini workflow: the PR title follows `--`, so a title like --help is never read as an option',
   gyml.includes('gemini_review.py --rules trusted/AGENTS.md -- "$PR_TITLE"') && !/gemini_review\.py "\$PR_TITLE"/.test(gyml))
 ok('gemini workflow: the PR number input is read through env, never expanded into a script',
-  /INPUT_PR: \$\{\{ inputs\.pr_number \}\}/.test(gyml) && (gyml.match(/inputs\.pr_number/g) ?? []).length === 2)
+  /INPUT_PR: \$\{\{ inputs\.pr_number \}\}/.test(gyml) && (gyml.match(/inputs\.pr_number/g) ?? []).length === 3 &&
+  gyml.includes("run-name: 'Gemini review PR #${{ github.event.pull_request.number || inputs.pr_number }}'\n"))
 const lyml = lf(readFileSync(new URL('../../.github/workflows/label-gate.yml', import.meta.url), 'utf8'))
 ok('label-gate workflow: can dispatch, and only for same-repo non-Dependabot PRs into main',
   /^\s*actions: write\b/m.test(lyml) &&
