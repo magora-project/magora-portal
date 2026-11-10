@@ -271,10 +271,39 @@ jobs:
             # `-I`: the cwd is the PR checkout and GH_TOKEN is in the env. Any crash is a notice,
             # not a failed step; it leaves no skip.json, so the review runs.
             IDENTITY="$identity" python3 -I - <<'PY' || echo "skip check failed; reviewing"
-          import json, os, re, sys
+          import json, math, os, re, sys
           try:
               env = os.environ
               marker = re.compile(r"^<!-- gemini-review:v1 (\{.*\}) -->$", re.MULTILINE)
+
+              # A marker counts only in the shape scripts/review/github.mjs `geminiVerdicts` accepts
+              # (scripts/ci/gemini-verdict.test.mjs checks the two agree), narrowed to the verdicts a
+              # skip may rest on. `could-not-run` and `skipped-same-identity` never qualify, so a run
+              # whose findings could not be read is reviewed again.
+              def no_constant(name):
+                  raise ValueError(name)  # JSON.parse refuses NaN and Infinity; json.loads would not
+
+              def js_integer(x):
+                  # Number.isInteger: a finite number with no fraction. A JSON bool is not a number.
+                  if isinstance(x, bool) or not isinstance(x, (int, float)):
+                      return False
+                  try:
+                      f = float(x)
+                  except OverflowError:
+                      return False  # JSON.parse reads it as Infinity
+                  return math.isfinite(f) and f.is_integer()
+
+              def valid_finding(f):
+                  return isinstance(f, dict) and js_integer(f.get("index")) and f.get("severity") in ("P0", "P1")
+
+              def skippable(m):
+                  return (isinstance(m, dict)
+                          and isinstance(m.get("head"), str) and m["head"] != ""
+                          and m.get("identity") == env["IDENTITY"]
+                          and m.get("verdict") in ("no-findings", "findings")
+                          and isinstance(m.get("findings"), list)
+                          and all(valid_finding(f) for f in m["findings"]))
+
               earlier = None
               with open(os.path.join(env["RUNNER_TEMP"], "comments.jsonl"), encoding="utf-8") as fh:
                   for raw in fh:
@@ -291,11 +320,10 @@ jobs:
                       if len(found) != 1:
                           continue
                       try:
-                          m = json.loads(found[0])
+                          m = json.loads(found[0], parse_constant=no_constant)
                       except ValueError:
                           continue
-                      if (isinstance(m, dict) and m.get("identity") == env["IDENTITY"]
-                              and m.get("verdict") in ("no-findings", "findings")):
+                      if skippable(m):
                           earlier = c["url"]
               if earlier is None:
                   print("no earlier verdict for this identity; reviewing")
@@ -437,19 +465,33 @@ jobs:
               verdict = "no-findings"
               body = (f"## Gemini review: no findings\n\nHead `{sha}`, {nbytes} byte diff.")
           else:
-              verdict = "findings"
               # `gemini_review.py` numbers each finding line `N. P1 | ...`. Parsed from the SAME
               # truncated text that is posted, so the marker never names an index the comment omits.
               out = out[:55000]
               findings = [{"index": int(i), "severity": sev.upper()}
                           for i, sev in re.findall(r"^(\d+)\. (P[01])\b", out, re.MULTILINE | re.IGNORECASE)]
-              body = (
-                  "## Gemini review\n\n"
-                  f"Head `{sha}`, {nbytes} byte diff. Advisory: this posts no commit status, and is not a required check. "
-                  "It gates nothing. Verify each finding against source before acting on it -- "
-                  "a measured false positive rate is why this is a second opinion and not "
-                  "an oracle.\n\n```\n" + out + "\n```"
-              )
+              if findings:
+                  verdict = "findings"
+                  body = (
+                      "## Gemini review\n\n"
+                      f"Head `{sha}`, {nbytes} byte diff. Advisory: this posts no commit status, and is not a required check. "
+                      "It gates nothing. Verify each finding against source before acting on it -- "
+                      "a measured false positive rate is why this is a second opinion and not "
+                      "an oracle.\n\n```\n" + out + "\n```"
+                  )
+              else:
+                  # The model reported findings but no line is numbered (a trusted base whose
+                  # gemini_review.py predates numbering emits them unnumbered). A `findings` verdict
+                  # with no findings would read as clean to the gate and make this identity
+                  # skippable, so the verdict stays `could-not-run`: never skip-eligible, and the
+                  # next run on the same identity reviews again.
+                  body = (
+                      "## Gemini review could not be read\n\n"
+                      f"Head `{sha}`, {nbytes} byte diff. The pass returned findings, but none is numbered "
+                      "`N. P0 | ...` or `N. P1 | ...`, so none can be cited: this is recorded as a review "
+                      "that could not run, not as coverage, and a later run on the same input identity "
+                      "reviews again. The unparsed output, unverified:\n\n```\n" + out + "\n```"
+                  )
           body += "\n\n---\n_Posted by gemini-review.yml (Gemini, advisory; not a required check)_"
           # Exactly one marker, last, for every outcome (Task 21 parses it).
           meta = {"head": sha, "identity": os.environ.get("IDENTITY", ""), "verdict": verdict, "findings": findings}
