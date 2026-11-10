@@ -51,7 +51,10 @@ export function makeApi({ repo, token, fetchImpl = fetch, sleepImpl = (ms) => ne
     pr: (n) => call(`/pulls/${n}`),
     openPrs: () => pages('/pulls?state=open'),
     gateRuns: async ({ headSha }) => (await pages(`/actions/workflows/${GATE_WORKFLOW_FILE}/runs?event=pull_request&head_sha=${headSha}`, 'workflow_runs'))
-      .map((r) => ({ id: r.id, status: r.status, createdAt: r.created_at, prNumbers: (r.pull_requests ?? []).map((p) => p?.number).filter((x) => Number.isInteger(x)) })),
+      .map((r) => ({
+        id: r.id, status: r.status, createdAt: r.created_at, headBranch: r.head_branch, headRepo: r.head_repository?.full_name,
+        prNumbers: (r.pull_requests ?? []).map((p) => p?.number).filter((x) => Number.isInteger(x)),
+      })),
     run: async (id) => { const r = await call(`/actions/runs/${id}`); return { id: r.id, status: r.status } },
     rerun: (id) => call(`/actions/runs/${id}/rerun`, 'POST'),
     sleep: sleepImpl,
@@ -104,10 +107,15 @@ async function retriggerPr({ n, api }) {
   if (pr?.state !== 'open') return none(`PR #${n} is not open`)
   const head = pr.head?.sha
   if (typeof head !== 'string' || !/^[0-9a-f]{40}$/.test(head)) throw new Error(`PR #${n}: the API reply has no head SHA`)
-  // Only this PR's runs: two PRs can share a head commit. A run that names no PR (a fork PR's run lists none) cannot be
-  // told apart, so it stays a candidate.
-  const runs = (await api.gateRuns({ headSha: head })).filter((r) => !Array.isArray(r.prNumbers) || r.prNumbers.length === 0 || r.prNumbers.includes(n))
-  if (runs.length === 0) return none(`no review-gate run on PR #${n}'s head ${head.slice(0, 12)}: the next push runs it`)
+  // Only this PR's runs: two PRs can share a head commit. A run that names no PR (a fork PR's run lists none) counts only
+  // when its head branch and head repository are this PR's; one whose branch or repository is unknown, or another's, is
+  // left out (two fork PRs can share a head commit too), so it is never re-run as this PR's.
+  const repoName = pr.head?.repo?.full_name
+  const ours = (r) => Array.isArray(r.prNumbers) && r.prNumbers.length > 0
+    ? r.prNumbers.includes(n)
+    : typeof r.headBranch === 'string' && r.headBranch === pr.head?.ref && typeof repoName === 'string' && r.headRepo === repoName
+  const runs = (await api.gateRuns({ headSha: head })).filter(ours)
+  if (runs.length === 0) return none(`no review-gate run of PR #${n} (its own number, or ${repoName ?? 'an unknown repository'}:${pr.head?.ref ?? '?'} for a run that names no PR) on its head ${head.slice(0, 12)}: the next push runs it`)
   const latest = runs.reduce((a, b) => (b.id > a.id ? b : a))
   let status = latest.status
   for (let waited = 0; status !== 'completed'; waited += POLL_INTERVAL_MS) {
