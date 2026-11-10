@@ -62,7 +62,9 @@ const crTerminal = (check) => check !== null && typeof check === 'object' && CR_
 // a review whose run failed:
 //   - no own entry for `sha` (or no `coderabbitChecks` object, or `sha` not a non-empty string): unknown -> true;
 //   - null (fetched, no CodeRabbit check run on that commit) -> false;
-//   - {conclusion, title} with a terminal conclusion -> true; any other object -> false;
+//   - {conclusion, title} with a terminal conclusion -> true; with conclusion null (the check has not finished) -> true,
+//     since a later failure would revoke the review and nothing re-runs the gate when the check completes;
+//     any other object -> false;
 //   - anything else -> true.
 // The single place this rule lives: shared by slotState (coverage) and review-gate (fix evidence, rule (a)), so the two
 // cannot drift.
@@ -73,7 +75,7 @@ export function coderabbitFailedOn(state, sha) {
   const c = checks[sha]
   if (c === null) return false
   if (typeof c !== 'object' || Array.isArray(c)) return true
-  return crTerminal(c)
+  return c.conclusion === null || c.conclusion === undefined || crTerminal(c)
 }
 const short = (sha) => (typeof sha === 'string' ? sha.slice(0, 12) : String(sha))
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
@@ -308,7 +310,9 @@ function geminiRunsOnHead(state, pushedAt) {
   const pushed = ms(pushedAt)
   const prRunsOnHead = state.runs.filter(runOfPr(state.pr.number, state.pr.headRepo))
     .filter((r) => r.headSha === state.pr.head && r.name === GEMINI_WORKFLOW)
-  const dispatched = state.geminiDispatchRuns.filter((r) => ms(r.createdAt) >= pushed)
+  // A dispatched run still active holds whatever its created_at: a re-run keeps the original created_at but reviews
+  // the PR's head when it executes (plan M1). A completed one counts only when created after the identity arrived.
+  const dispatched = state.geminiDispatchRuns.filter((r) => r.status !== 'completed' || ms(r.createdAt) >= pushed)
   return [...prRunsOnHead, ...dispatched]
 }
 

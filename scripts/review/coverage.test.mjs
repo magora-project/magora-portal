@@ -278,6 +278,7 @@ try {
   const FAILED = { conclusion: 'failure', title: 'x' }
   ok('D30: CodeRabbit review on the head plus a failure check on the head -> needs-substitute, not covered', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A2, '10:05')], coderabbitChecks: { [A2]: FAILED }, coderabbitCheck: FAILED }), 'needs-substitute', /concluded failure/))
   ok('D30: the same review with a successful check on the head -> covered', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A2, '10:05')], coderabbitChecks: crOk(A2), coderabbitCheck: CR_OK })).status === 'covered')
+  ok('the same review while its check has not finished -> not covered', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A2, '10:05')], coderabbitChecks: { [A2]: { conclusion: null, title: null } }, coderabbitCheck: { conclusion: null, title: null } })).status !== 'covered')
   ok('D30: a failed review on the head does not hide an earlier usable review on the same identity -> covered by the earlier one', await (async () => { const early = cr(A2, '09:30'); const r = await s({ bot: 'coderabbit', head: E, current: 'I2', reviews: [early, cr(E, '10:05')], coderabbitChecks: { [A2]: CR_OK, [E]: FAILED }, coderabbitCheck: FAILED }); return r.status === 'covered' && r.by === `review:${early.id}` })())
   // F2: usability reads the CodeRabbit check of the review's OWN commit, not only the head's.
   const evidencePushFx = (checks) => ({ bot: 'coderabbit', head: E, current: 'I2', reviews: [cr(A2, '09:30')], coderabbitChecks: checks, coderabbitCheck: { conclusion: 'skipped', title: 'No files to review' } })
@@ -295,7 +296,9 @@ try {
     coderabbitFailedOn({ coderabbitChecks: {} }, A2), coderabbitFailedOn({}, A2), coderabbitFailedOn({ coderabbitChecks: Object.create({ [A2]: null }) }, A2),
     coderabbitFailedOn({ coderabbitChecks: { [A2]: 'success' } }, A2), coderabbitFailedOn({ coderabbitChecks: { [A2]: [] } }, A2),
     coderabbitFailedOn({ coderabbitChecks: { '': null } }, ''), coderabbitFailedOn({ coderabbitChecks: { null: null } }, null),
-  ].every((x) => x === true) && coderabbitFailedOn({ coderabbitChecks: { [A2]: null } }, A2) === false && coderabbitFailedOn({ coderabbitChecks: { [A2]: { conclusion: null, title: null } } }, A2) === false)
+    // Pre-publish Codex review 2026-11-10: an unfinished check (conclusion null) is not yet usable.
+    coderabbitFailedOn({ coderabbitChecks: { [A2]: { conclusion: null, title: null } } }, A2),
+  ].every((x) => x === true) && coderabbitFailedOn({ coderabbitChecks: { [A2]: null } }, A2) === false && coderabbitFailedOn({ coderabbitChecks: { [A2]: { conclusion: 'success', title: null } } }, A2) === false)
   ok('F2: a state without a coderabbitChecks object throws', await (async () => {
     const st = { ...evidencePushFx(crOk(A2)) }
     for (const bad of [undefined, null, []]) {
@@ -338,7 +341,10 @@ try {
   ok('Gemini with a queued run at 31 minutes -> pending', (await s({ ...geminiInFlightAt31, runs: [gemRun(A2, '10:00', 'queued')] })).status === 'pending')
   ok('Gemini in-progress run on another head does not hold', (await s({ ...geminiInFlightAt31, runs: [gemRun(F1, '10:00', 'in_progress')] })).status === 'needs-substitute')
   ok('Gemini in-progress run of another PR on the head does not hold', (await s({ ...geminiInFlightAt31, runs: [{ ...gemRun(A2, '10:00', 'in_progress'), prNumbers: [12] }] })).status === 'needs-substitute')
-  ok('a dispatched run created before the head arrived does not hold', (await s({ ...geminiDispatchInFlightAt31, geminiDispatchRuns: [{ id: 5, status: 'in_progress', conclusion: null, createdAt: T('09:55') }] })).status === 'needs-substitute')
+  // Pre-publish Codex review 2026-11-10: a re-run keeps its original created_at but reviews the current head (plan M1).
+  ok('an active dispatched run created before the head arrived (a re-run) holds', (await s({ ...geminiDispatchInFlightAt31, geminiDispatchRuns: [{ id: 5, status: 'in_progress', conclusion: null, createdAt: T('09:55') }] })).status === 'pending')
+  ok('... and with a could-not-run verdict on the head it still holds', (await s({ ...geminiCouldNotRun, now: T('10:31'), geminiDispatchRuns: [{ id: 5, status: 'in_progress', conclusion: null, createdAt: T('09:55') }] })).status === 'pending')
+  ok('a completed dispatched run created before the head arrived does not count', (await s({ ...geminiDispatchInFlightAt31, geminiDispatchRuns: [{ id: 5, status: 'completed', conclusion: 'cancelled', createdAt: T('09:55') }] })).status === 'needs-substitute')
   ok('Gemini cancelled run but a verdict names the head -> not the job-timeout case', (await s({ ...geminiJobTimedOut, geminiVerdicts: [verdict(A2, 'I2', 'skipped-same-identity', '10:05')] })).status === 'pending')
   ok('Gemini cancelled run, a newer run in flight -> pending', (await s({ ...geminiJobTimedOut, runs: [gemRun(A2, '10:00', 'completed', 'cancelled'), gemRun(A2, '10:10', 'in_progress')] })).status === 'pending')
   ok('Gemini latest completed run succeeded after an earlier cancel -> not terminal', (await s({ ...geminiJobTimedOut, runs: [gemRun(A2, '10:00', 'completed', 'cancelled'), gemRun(A2, '10:10', 'completed', 'success')] })).status === 'pending')
