@@ -97,6 +97,19 @@ ok('a marker the model tried to emit is defanged: the posted body still parses t
   return read(b ?? '')[0]?.verdict === 'could-not-run' && (await skips(b)) === false
 })())
 
+// Output past the 55000-character cap: the finding after the cut is lost, so the verdict must not be coverage.
+const pad = (n) => `${'x'.repeat(n - 1)}\n`
+const first = '1. P1 | src/a.js:3 | the guard is inverted\n'
+body = await post({ out: `${first}${pad(60000)}2. P0 | src/b.js:9 | token logged` })
+v = read(body ?? '')
+ok('truncated output -> verdict could-not-run, carrying only the findings before the cut',
+  v.length === 1 && v[0].verdict === 'could-not-run' && JSON.stringify(v[0].findings) === '[{"index":1,"severity":"P1"}]')
+ok('... the comment says it was truncated, and a later run on the same identity reviews again',
+  /truncated/.test(body) && !body.includes('token logged') && (await skips(body)) === false)
+body = await post({ out: `${first}${pad(55000 - first.length - 'NO'.length)}NO` })
+ok('output of exactly 55000 characters is not truncated: numbered findings -> verdict findings',
+  read(body ?? '')[0]?.verdict === 'findings' && !/truncated/.test(body))
+
 // ---------------------------------------------------------------- D19: the skip step accepts what geminiVerdicts accepts
 // Each case is the marker's raw JSON text (some are not expressible through JSON.stringify), and whether a
 // same-identity skip may rest on it. `agree` holds the reader and the skip step to the same answer.

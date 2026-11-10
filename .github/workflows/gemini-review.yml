@@ -467,10 +467,24 @@ jobs:
           else:
               # `gemini_review.py` numbers each finding line `N. P1 | ...`. Parsed from the SAME
               # truncated text that is posted, so the marker never names an index the comment omits.
-              out = out[:55000]
+              cap = 55000
+              truncated = len(out) > cap
+              out = out[:cap]
               findings = [{"index": int(i), "severity": sev.upper()}
                           for i, sev in re.findall(r"^(\d+)\. (P[01])\b", out, re.MULTILINE | re.IGNORECASE)]
-              if findings:
+              if truncated:
+                  # Findings past the cut are gone, so the visible ones are not the whole review: a
+                  # `findings` verdict here would be skip-eligible coverage that hides them. The
+                  # visible findings stay in the marker (each still needs a disposition), but the
+                  # verdict is `could-not-run`: never coverage, and the next run reviews again.
+                  body = (
+                      "## Gemini review truncated\n\n"
+                      f"Head `{sha}`, {nbytes} byte diff. The output exceeded {cap} characters and was cut, "
+                      "so any finding past the cut is missing: this is recorded as a review that could not "
+                      "run, not as coverage, and a later run on the same input identity reviews again. "
+                      "The findings before the cut, unverified:\n\n```\n" + out + "\n```"
+                  )
+              elif findings:
                   verdict = "findings"
                   body = (
                       "## Gemini review\n\n"
