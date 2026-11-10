@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "4a5a96fb2c03641a7b96cfbacf2f6f4143b00ce8",
+    "mergeBase": "b1a11c818eda425ff12d92ee8cc14e4eb9fab919",
+    "head": "4151f0b2be73264bc77129890afa953d2e614538"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "D18",
+      "severity": "P2",
+      "summary": "D18: T22 says empty reviews are ignored, but incrementalInputs retains them for rewrite detection, so an empty review on a rewritten-away commit can require a full-review request and prevent otherwise valid coverage.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 207
+    },
+    {
+      "id": "D19",
+      "severity": "P3",
+      "summary": "D19: T20 promises skipping an earlier usable verdict, but the skip parser validates only identity and verdict while T21 also requires head and findings, so a malformed marker can suppress the model call without providing usable gate evidence.",
+      "file": ".github/workflows/gemini-review.yml",
+      "line": 300
+    },
+    {
+      "id": "D20",
+      "severity": "P3",
+      "summary": "D20: The stated skip safeguards require tests, but the supplied diff includes no behavioral tests for identity failure, comment-list failure, parser crashes, skip-comment posting failure, or marker generation across posting outcomes, leaving those safeguards unverified.",
+      "file": ".github/workflows/gemini-review.yml",
+      "line": 246
+    }
+  ],
+  "supersedes": null,
+  "conformance": {
+    "tasks": [
+      "T20",
+      "T21",
+      "T22"
+    ],
+    "deviations": [
+      "D18",
+      "D19",
+      "D20"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "5280ea3b62356eb4803b30728235b18e401e3367"
+    }
+  },
+  "createdAt": "2026-11-10T12:05:10.391Z"
+}
