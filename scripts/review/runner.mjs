@@ -284,7 +284,7 @@ export const buildPrompt = ({ slotPrompt, mode, full, fullLabel, delta, deltaLab
 
 // ---------- CLI ----------
 
-const RUN_OPTIONS = {
+export const RUN_OPTIONS = {
   slot: { type: 'string' }, author: { type: 'string' }, reviewer: { type: 'string' }, path: { type: 'string' },
   supersedes: { type: 'string' }, base: { type: 'string' }, model: { type: 'string' }, 'timeout-min': { type: 'string' },
   tasks: { type: 'string' }, rev: { type: 'string' },
@@ -541,6 +541,20 @@ export const runReview = async (o, ctx, conf = null) => {
       }
     }
   }
+  // A substitute run (scripts/review/pr-record.mjs runSubstitute) passes the bot's live findings that still need a
+  // verifying review, under their gate IDs (plan Tasks 22, 23). One already in the chain (carried with its
+  // disposition, or inherited undisposed) is not added again, so a fix verified by an earlier review of this chain is
+  // never sent back to the reviewer.
+  if (Array.isArray(ctx.inheritExtra) && ctx.inheritExtra.length) {
+    if (!isSubstitute(o.slot)) usage(`slot ${o.slot} takes no inherited gate findings`)
+    const have = new Set([...carried, ...toAssess].map((f) => f.id))
+    for (const f of ctx.inheritExtra) {
+      if (!isGateId(f.id) || have.has(f.id)) continue
+      toAssess.push(f)
+      have.add(f.id)
+    }
+    if (mode === 'delta' && toAssess.length) mode = 'full+delta'
+  }
   if (mode === 'delta') full = null
   const inheritedIds = toAssess.map((f) => f.id)
 
@@ -572,7 +586,7 @@ export const runReview = async (o, ctx, conf = null) => {
   const diffBytes = Buffer.byteLength(full ?? '', 'utf8') + Buffer.byteLength(delta ?? '', 'utf8')
     + context.reduce((n, c) => n + Buffer.byteLength(c.text, 'utf8'), 0)
 
-  const adapter = ADAPTERS[reviewer]
+  const adapter = (ctx.adapters ?? ADAPTERS)[reviewer]
   const model = reviewer === 'claude' ? (o.model ?? 'opus') : reviewer === 'gemini' ? gemini.DEFAULT_MODEL : codex.MODEL
   io.out(`reviewing ${o.slot} (${mode}) with ${reviewer}/${model}\n`)
   const res = await adapter.run({
@@ -581,6 +595,7 @@ export const runReview = async (o, ctx, conf = null) => {
   })
   const c = classifyOutcome({ ...res, inheritedIds, preFindings: preFindings.length })
 
+  let built = null
   const { path, stem } = writeWithStem(root, o.slot, input.identity, (newStem) => {
     let findings
     if (c.outcome === 'completed') {
@@ -594,7 +609,7 @@ export const runReview = async (o, ctx, conf = null) => {
     } else {
       findings = [...preFindings, ...toAssess, ...carried] // nobody reviewed: carry everything forward undisposed
     }
-    return {
+    built = {
       schema: 1, type: recordType(o.slot), slot: o.slot, input,
       reviewer: { vendor: ADAPTER_VENDOR[reviewer], model }, authorVendor: o.author,
       outcome: c.outcome, verdict: c.verdict, findings, supersedes: old ? old.stem : null,
@@ -602,7 +617,9 @@ export const runReview = async (o, ctx, conf = null) => {
       ...(conf ? { conformance: { tasks: [...conf.plan.tasks], deviations: deviationIds(findings), commands: checked.commands, plan: { path: conf.plan.path, blob: conf.plan.blob } } } : {}),
       createdAt: (ctx.now ?? (() => new Date()))().toISOString(),
     }
+    return built
   })
+  ctx.onWritten?.({ path, stem, record: built, inheritedIds })
   if (c.outcome !== 'completed' && res.stderr) io.err(`${res.stderr.trim()}\n`)
   io.out(`outcome: ${c.outcome}${c.outcome === 'completed' ? ` (verdict ${c.verdict}, ${c.findings.length} new finding(s))` : ''}\nrecord: ${path} (${stem})\n`)
   return c.outcome === 'completed' ? 0 : 1

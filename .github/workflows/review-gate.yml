@@ -1,0 +1,56 @@
+# review-gate (shared dev process spec §5.5, §5.6; plan Task 23): every bot slot the PR's depth requires is covered
+# or substituted, and every finding that blocks by default has an acceptable disposition in the committed PR review
+# record .review/pr/<n>.json. The job's pass/fail IS the check; it posts no status with any credential (§2.1).
+# PR state (labels, head, base, reviews, threads, comments, check runs, workflow runs) is read live from the API when
+# the job runs, not from the event payload. The job checks out the PR HEAD (not GitHub's merge commit), so the records
+# and the input identity come from the real head; the script requires the API's current head to equal that checkout,
+# else it fails "could not judge" (a newer push has its own run). fetch-depth: 0 so merge bases and the ancestry of
+# reviewed and fix commits can be read; a commit not in the clone is fetched without credentials, and one that cannot
+# be fetched counts as no ancestor (fail closed). Grandfathering reads the `review-gate` key of
+# .github/review-activation.json from the BASE branch via the API.
+# `pull_request_review` runs re-judge when a bot review lands; Gemini's verdict and Codex's marker are issue comments,
+# which review-gate-retrigger.yml answers by re-running this workflow's latest run on the head.
+# Fork PRs: only read permissions and no secrets are used, so the job runs the same on a fork's read-only token. Like
+# every pull_request workflow, it runs the PR's own copy of this file and of scripts/ci/review-gate.mjs; both are
+# control files (AGENTS.md), read by the merging maintainer.
+# Concurrency is keyed on the PR and head SHA, with cancel-in-progress: false: a running run for a head is never
+# cancelled, and later events queue behind it. GitHub keeps at most one PENDING run per group, so a newer event
+# replaces (cancels) an older pending one; not every label, body or review event gets its own completed run. That is
+# safe because the job reads the PR's state live: the newest run judges the latest state. A run for an older head
+# fails "could not judge" (the checkout is no longer the PR's head) and the new head's own run judges it.
+name: review-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: read
+
+concurrency:
+  group: review-gate-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  review-gate:
+    name: review-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/ci/review-gate.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
