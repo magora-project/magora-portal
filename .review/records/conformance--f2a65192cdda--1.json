@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "f2a65192cddacd7b183b9d6ea199b4c403a4736c",
+    "mergeBase": "b1a11c818eda425ff12d92ee8cc14e4eb9fab919",
+    "head": "2d0a24528ec649a6133cfee4dd42f5182862a436"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--5ae32ffa725b--2#conformance--0f11761f51ac--2#conformance--3801d1b4d9f6--2#conformance--94a505e6f1fb--2#conformance--4a5a96fb2c03--1#D20",
+      "severity": "P3",
+      "summary": "D20: The stated skip safeguards require tests, but the supplied diff includes no behavioral tests for identity failure, comment-list failure, parser crashes, skip-comment posting failure, or marker generation across posting outcomes, leaving those safeguards unverified.",
+      "file": ".github/workflows/gemini-review.yml",
+      "line": 246
+    }
+  ],
+  "supersedes": "conformance--5ae32ffa725b--2",
+  "conformance": {
+    "tasks": [
+      "T20",
+      "T21",
+      "T22"
+    ],
+    "deviations": [
+      "conformance--5ae32ffa725b--2#conformance--0f11761f51ac--2#conformance--3801d1b4d9f6--2#conformance--94a505e6f1fb--2#conformance--4a5a96fb2c03--1#D20"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "5280ea3b62356eb4803b30728235b18e401e3367"
+    }
+  },
+  "createdAt": "2026-11-10T19:28:47.219Z"
+}
