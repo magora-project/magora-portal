@@ -160,9 +160,11 @@ export function blockingFindings(state) {
   for (const v of state.geminiVerdicts ?? []) {
     for (const f of v.findings ?? []) {
       const body = bodyOf.get(v.commentId) ?? ''
-      const line = new RegExp(`^${f.index}\\. (.*)$`, 'm').exec(body)?.[1]
+      // f.index is an integer (geminiVerdicts drops a finding whose index fails Number.isInteger), so
+      // these patterns hold no caller text: the semgrep non-literal-RegExp findings are suppressed.
+      const line = new RegExp(`^${f.index}\\. (.*)$`, 'm').exec(body)?.[1] // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
       // The numbered item through the line before the next numbered item, the marker, or the end of the comment.
-      const item = new RegExp(`^${f.index}\\. [\\s\\S]*?(?=^\\d+\\. |^<!-- gemini-review:v1 |(?![\\s\\S]))`, 'm').exec(body)?.[0]
+      const item = new RegExp(`^${f.index}\\. [\\s\\S]*?(?=^\\d+\\. |^<!-- gemini-review:v1 |(?![\\s\\S]))`, 'm').exec(body)?.[0] // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
       out.push({ id: `gemini:${v.commentId}:${f.index}`, source: 'gemini', severity: f.severity, raisedAt: v.at ?? null, kind: 'gemini', reported: [v.head ?? null], resolved: false, path: null, summary: line ? summaryOf(line) : `Gemini finding ${f.index} (${f.severity}) in comment ${v.commentId}`, detail: detailOf(item) })
     }
   }

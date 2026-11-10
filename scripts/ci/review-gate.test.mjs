@@ -343,9 +343,10 @@ try {
   })())
 
   // ---------------------------------------------------------------- the workflow
-  const wf =readFileSync(new URL('../../.github/workflows/review-gate.yml', import.meta.url), 'utf8')
-  const block = (name) => (new RegExp(`^${name}:\\n((?:  .*\\n)+)`, 'm').exec(wf)?.[1] ?? '').trim().split('\n').map((l) => l.trim()).sort().join('|')
-  ok('workflow: read-only permissions, exactly contents, pull-requests, checks, actions', block('permissions') === 'actions: read|checks: read|contents: read|pull-requests: read')
+  // CRLF normalised: a Windows checkout (core.autocrlf=true) rewrites the file's line endings.
+  const wf = readFileSync(new URL('../../.github/workflows/review-gate.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+  const permissions = (/^permissions:\n((?: {2}.*\n)+)/m.exec(wf)?.[1] ?? '').trim().split('\n').map((l) => l.trim()).sort().join('|')
+  ok('workflow: read-only permissions, exactly contents, pull-requests, checks, actions', permissions ==='actions: read|checks: read|contents: read|pull-requests: read')
   ok('workflow: pull_request (seven types) and pull_request_review (submitted, dismissed); never pull_request_target', /pull_request:\n {4}types: \[opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review\]\n {2}pull_request_review:\n {4}types: \[submitted, dismissed\]/.test(wf) && !/pull_request_target/.test(wf))
   ok('workflow: PR-head checkout, full history, no persisted credentials; job and check named review-gate', /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/.test(wf) && /fetch-depth: 0/.test(wf) && /persist-credentials: false/.test(wf) && /^ {2}review-gate:\n {4}name: review-gate$/m.test(wf) && /run: node scripts\/ci\/review-gate\.mjs/.test(wf))
   ok('workflow: concurrency on PR and head, not cancelled', /group: review-gate-\$\{\{ github\.event\.pull_request\.number \}\}-\$\{\{ github\.event\.pull_request\.head\.sha \}\}\n {2}cancel-in-progress: false/.test(wf))

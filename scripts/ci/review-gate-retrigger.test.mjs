@@ -96,9 +96,10 @@ ok('a Gemini run listing two PRs re-runs each PR\'s own gate run', await (async 
 })())
 
 // The workflow's trust boundary, read from the file: it is what keeps PR code away from the write token.
-const wf = readFileSync(new URL('../../.github/workflows/review-gate-retrigger.yml', import.meta.url), 'utf8')
-const block = (name) => (new RegExp(`^${name}:\\n((?:  .*\\n)+)`, 'm').exec(wf)?.[1] ?? '').trim().split('\n').map((l) => l.trim()).sort().join('|')
-ok('workflow: permissions are exactly actions: write, contents: read, pull-requests: read', block('permissions') === 'actions: write|contents: read|pull-requests: read')
+// CRLF normalised: a Windows checkout (core.autocrlf=true) rewrites the file's line endings.
+const wf = readFileSync(new URL('../../.github/workflows/review-gate-retrigger.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+const permissions = (/^permissions:\n((?: {2}.*\n)+)/m.exec(wf)?.[1] ?? '').trim().split('\n').map((l) => l.trim()).sort().join('|')
+ok('workflow: permissions are exactly actions: write, contents: read, pull-requests: read', permissions ==='actions: write|contents: read|pull-requests: read')
 ok('workflow: triggers are workflow_run of Gemini review (completed) and issue_comment (created, edited) only', /^on:\n {2}workflow_run:\n {4}workflows: \['Gemini review'\]\n {4}types: \[completed\]\n {2}issue_comment:\n {4}types: \[created, edited\]\npermissions:/m.test(wf.replace(/\n\n/g, '\n')))
 ok('workflow: the if: admits only the Codex bot\'s PR comment carrying the marker', /github\.event\.issue\.pull_request &&\s+github\.event\.comment\.user\.login == 'chatgpt-codex-connector\[bot\]' &&\s+contains\(github\.event\.comment\.body, 'codex-review-state:v1'\)/.test(wf))
 ok('workflow: one checkout, of the default branch, without credentials, sparse to the script and .nvmrc', (wf.match(/actions\/checkout@/g) ?? []).length === 1 && /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/.test(wf) && /persist-credentials: false/.test(wf) && /sparse-checkout: \|\n\s+scripts\/ci\/review-gate-retrigger\.mjs\n\s+\.nvmrc\n\s+sparse-checkout-cone-mode: false/.test(wf))
