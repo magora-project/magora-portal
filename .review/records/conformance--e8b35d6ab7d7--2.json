@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "e8b35d6ab7d7870caedafba4432062074735a285",
+    "mergeBase": "1315191ec42fa0a020dcb4fc04e9b772aa003c0c",
+    "head": "5df29d88d5190cd8ecdb766343321900d0472cf1"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--99fc4d95db9e--4#conformance--c1648e9c643a--4#conformance--a20f6e17bd7e--4#conformance--3e250f7cef4f--4#conformance--d01a67a6682c--4#conformance--9b2caf2b1710--1#conformance--7abdac72c3eb--1#conformance--9159d5c9f2c3--1#conformance--7ae1ae42a5bb--1#conformance--c835c4c9d59c--4#conformance--9f27026ed414--4#D13",
+      "severity": "P3",
+      "summary": "D13: The plan says blockingFindings excludes accepted bot-resolved threads, but it returns them and delegates exclusion to gateFindings, so the exported interface differs although the gate behaves correctly.",
+      "file": "scripts/ci/review-gate.mjs",
+      "line": 114,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "blockingFindings stays synchronous because the plan's own tests call it synchronously; the async bot-resolution check lives in gateFindings, which every caller (the gate, the pr-record draft, the substitute carry list) uses, so an accepted bot-resolved thread never reaches the gate as blocking"
+      }
+    },
+    {
+      "id": "conformance--99fc4d95db9e--4#conformance--c1648e9c643a--4#conformance--a20f6e17bd7e--4#conformance--3e250f7cef4f--4#conformance--d01a67a6682c--4#conformance--9b2caf2b1710--1#conformance--7abdac72c3eb--1#conformance--9159d5c9f2c3--1#conformance--7ae1ae42a5bb--1#conformance--c835c4c9d59c--4#conformance--9f27026ed414--4#D14",
+      "severity": "P3",
+      "summary": "D14: The plan says each recorded slot identifies the review it relies on, but the gate accepts any non-empty by value and even a different bot's slot entry, weakening record traceability while live coverage still controls passage.",
+      "file": "scripts/ci/review-gate.mjs",
+      "line": 427
+    },
+    {
+      "id": "conformance--99fc4d95db9e--4#conformance--c1648e9c643a--4#conformance--a20f6e17bd7e--4#conformance--3e250f7cef4f--4#conformance--d01a67a6682c--4#conformance--9b2caf2b1710--1#conformance--7abdac72c3eb--1#conformance--9159d5c9f2c3--1#conformance--7ae1ae42a5bb--1#conformance--c835c4c9d59c--4#conformance--9f27026ed414--4#D15",
+      "severity": "P3",
+      "summary": "D15: Task 23 does not propose changing control-file parsing, but the diff relocates the reviewers instruction and adds a label-gate regression test to exclude .review/ from parsed control files, a harmless additional fix.",
+      "file": "AGENTS.md",
+      "line": 32
+    }
+  ],
+  "supersedes": "conformance--e8b35d6ab7d7--1",
+  "conformance": {
+    "tasks": [
+      "T23"
+    ],
+    "deviations": [
+      "conformance--99fc4d95db9e--4#conformance--c1648e9c643a--4#conformance--a20f6e17bd7e--4#conformance--3e250f7cef4f--4#conformance--d01a67a6682c--4#conformance--9b2caf2b1710--1#conformance--7abdac72c3eb--1#conformance--9159d5c9f2c3--1#conformance--7ae1ae42a5bb--1#conformance--c835c4c9d59c--4#conformance--9f27026ed414--4#D13",
+      "conformance--99fc4d95db9e--4#conformance--c1648e9c643a--4#conformance--a20f6e17bd7e--4#conformance--3e250f7cef4f--4#conformance--d01a67a6682c--4#conformance--9b2caf2b1710--1#conformance--7abdac72c3eb--1#conformance--9159d5c9f2c3--1#conformance--7ae1ae42a5bb--1#conformance--c835c4c9d59c--4#conformance--9f27026ed414--4#D14",
+      "conformance--99fc4d95db9e--4#conformance--c1648e9c643a--4#conformance--a20f6e17bd7e--4#conformance--3e250f7cef4f--4#conformance--d01a67a6682c--4#conformance--9b2caf2b1710--1#conformance--7abdac72c3eb--1#conformance--9159d5c9f2c3--1#conformance--7ae1ae42a5bb--1#conformance--c835c4c9d59c--4#conformance--9f27026ed414--4#D15"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "5280ea3b62356eb4803b30728235b18e401e3367"
+    }
+  },
+  "createdAt": "2026-11-10T21:49:06.713Z"
+}
