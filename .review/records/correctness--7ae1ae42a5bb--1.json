@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "7ae1ae42a5bb44d9c08e9eb31c5796d9782e1d85",
+    "mergeBase": "5b2086cc12208e581a1309b67a276b62c81b9b4c",
+    "head": "f269f6289cf7553baa0efc56c39756934b135269"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "correctness--24003aa3e6f2--1#F1",
+      "severity": "P2",
+      "summary": "Substitute reviewers receive only a shortened summary—outside-diff CodeRabbit findings become merely “CodeRabbit outside-diff finding (Major) in <path>”—so they never receive the defect description needed to verify the fix, yet their response can clear that blocking finding.",
+      "file": "scripts/review/pr-record.mjs",
+      "line": 141
+    }
+  ],
+  "supersedes": "correctness--24003aa3e6f2--1",
+  "createdAt": "2026-11-10T15:32:31.504Z"
+}
