@@ -228,8 +228,8 @@ const NODE_QUERY = `query($id: ID!, $cursor: String) {
 // (`status` is code_review.status, or null). Entries are kept whatever their status: a `running`
 // entry names a sha whose review has not finished, so consumers treat only `completed` entries as
 // reviews. Each `userContentEdits` diff is the full comment body after that edit, not a unified diff.
-// Sources: the current body (`at`: the comment's `updatedAt`) and each edit's diff (`at`: that
-// edit's `editedAt`). `complete` is false
+// Sources: the current body (time: the comment's `updatedAt`) and each edit's diff (time: that
+// edit's `editedAt`); an entry's `at` is the time of the body that first carried it (below). `complete` is false
 // when anything fails to read or the edits read fall short of `totalCount`; it never throws.
 // Anyone with write access can edit the bot's comment, so a body counts only when the Codex bot wrote it: an edit's
 // diff when that edit's editor is the Codex Bot, the current body when its last editor is the Codex Bot (or it was
@@ -239,19 +239,46 @@ const NODE_QUERY = `query($id: ID!, $cursor: String) {
 // #44 and #87: every edit of Codex's summary comment is by `chatgpt-codex-connector` (Bot).
 // An edit's diff is the body that edit WROTE, not the one it replaced: on PR #87 (comment IC_kwDOSsky088AAAABkDfhMw,
 // 13 edits) the newest edit's `editedAt` equals the comment's `lastEditedAt` and its diff equals the current body.
+//
+// Codex re-emits an unchanged code_review block on every edit of its comment (a security-review-only edit included),
+// so a state is timed by the trusted body that FIRST carried it, not by each body that repeats it (issue #93): the
+// trusted bodies are read oldest first, and a state counts only where the previous trusted body did not carry it.
+// A state that leaves and comes back (completed, then running, then completed on the same sha) is a new review and
+// counts again at its return. `current.at` is likewise the time its state first appeared in that last run, never the
+// comment's `updatedAt`. Untrusted bodies are skipped, so a human edit cannot end a run and make a re-emit look new.
 export async function codexHistory({ repo, token, commentId, fetchImpl = fetch }) {
   const reviews = []
-  let currentTrusted = false, current = null
+  let currentTrusted = false, current = null, complete
   const byCodex = (actor) => authorLogin(actor) === CODEX_LOGIN
-  const add = (text, at) => {
+  const bodies = []
+  const add = (text, at) => bodies.push({ text, at })
+  const states = (text) => {
     const entries = new Map()
     for (const m of (text ?? '').matchAll(/<!-- codex-review-state:v1 (\{.*?\}) -->/g)) {
       const cr = parseJson(m[1])?.code_review
       if (typeof cr?.commit_sha === 'string' && cr.commit_sha !== '') {
-        entries.set(`${cr.commit_sha}|${cr.status ?? ''}`, { sha: cr.commit_sha, at, status: typeof cr.status === 'string' ? cr.status : null })
+        const status = typeof cr.status === 'string' ? cr.status : null
+        entries.set(`${cr.commit_sha}|${status ?? ''}`, { sha: cr.commit_sha, status })
       }
     }
-    reviews.push(...entries.values())
+    return entries
+  }
+  // Oldest first; an unreadable time sorts last (it cannot be shown to precede anything).
+  const time = (at) => { const t = Date.parse(at); return Number.isNaN(t) ? Infinity : t }
+  const settle = () => {
+    let prev = new Map()
+    const firstAt = new Map()
+    for (const b of bodies.map((b, i) => ({ ...b, i })).sort((x, y) => time(x.at) - time(y.at) || x.i - y.i)) {
+      const now = states(b.text)
+      for (const [k, s] of now) {
+        if (!prev.has(k)) { reviews.push({ sha: s.sha, at: b.at, status: s.status }); firstAt.set(k, b.at) }
+      }
+      prev = now
+    }
+    if (current) {
+      const at = firstAt.get(`${current.commitSha}|${current.status ?? ''}`)
+      if (at !== undefined) current = { ...current, at }
+    }
   }
   try {
     const comment = await http(fetchImpl, token, `${API}/repos/${repo}/issues/comments/${commentId}`)
@@ -281,10 +308,12 @@ export async function codexHistory({ repo, token, commentId, fetchImpl = fetch }
       cursor = edits.pageInfo.endCursor
       if (!cursor) throw new Error('edit history has a next page but no cursor')
     }
-    return { reviews, complete: Number.isInteger(total) && seen >= total, currentTrusted, current }
+    complete = Number.isInteger(total) && seen >= total
   } catch {
-    return { reviews, complete: false, currentTrusted, current }
+    complete = false
   }
+  settle()
+  return { reviews, complete, currentTrusted, current }
 }
 
 // ---------------------------------------------------------------- Gemini (Task 20 marker)

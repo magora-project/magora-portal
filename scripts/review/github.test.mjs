@@ -280,7 +280,9 @@ ok('a running and a completed marker for the same sha are both kept, with their 
   const h = await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 2, pages: [[edit('2026-11-03T00:00:00Z', mk(A)), edit('2026-11-02T00:00:00Z', mk(A, 'running'))]] }) })
   const forA = h.reviews.filter((r) => r.sha === A)
   const running = forA.filter((r) => r.status === 'running'), completed = forA.filter((r) => r.status === 'completed')
-  return h.complete === true && forA.length === 3 && running.length === 1 && running[0].at === '2026-11-02T00:00:00Z' && completed.length === 2 &&
+  // The body at 11-04 re-emits the 11-03 completed state, so it is one review timed at 11-03 (issue #93).
+  return h.complete === true && forA.length === 2 && running.length === 1 && running[0].at === '2026-11-02T00:00:00Z' &&
+    completed.length === 1 && completed[0].at === '2026-11-03T00:00:00Z' &&
     JSON.stringify(Object.keys(forA[0])) === '["sha","at","status"]'
 })())
 ok('a marker with no status has status null', (await codexHistory({ ...base, commentId: 777, fetchImpl: history({ total: 0, pages: [[]], current: '<!-- codex-review-state:v1 {"code_review":{"commit_sha":"' + A + '"}} -->' }) })).reviews[0].status === null)
