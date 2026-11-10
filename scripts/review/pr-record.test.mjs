@@ -109,7 +109,7 @@ try {
   // not reviewed U and is past its wait; CodeRabbit and Gemini cover U.
   const liveAtU = (extra = {}) => gateState(repo, sha.U, {
     reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U),
-    codexState: { commitSha: sha.F, status: 'completed', at: T(10), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.F, at: T(10), status: 'completed' }], complete: true },
+    codexState: { commitSha: sha.F, status: 'completed', at: T(10), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.F, at: T(10), status: 'completed' }], complete: true, currentTrusted: true, current: { commitSha: sha.F, status: 'completed', at: T(10) } },
     geminiVerdicts: [verdict(80, sha.U, id.U, 'no-findings')],
     threads: [thread('PRRT_1', CODEX_LOGIN, sha.R, { resolved: true, resolvedBy: 'dev' })],
     ...extra,

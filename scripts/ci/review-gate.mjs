@@ -267,8 +267,9 @@ function botEvidence(bot, state) {
   const reviewsBy = (login) => (state.reviews ?? []).filter((r) => r.login === login && r.empty !== true && typeof r.commitId === 'string').map((r) => ({ sha: r.commitId }))
   if (bot === 'coderabbit') return reviewsBy(CODERABBIT_LOGIN).filter((e) => !coderabbitFailedOn(state, e.sha))
   if (bot === 'codex') {
-    // The marker's current body counts only when the Codex bot made its last edit (codexHistory.currentTrusted).
-    const cs = state.codexHistory?.currentTrusted === true ? state.codexState : null
+    // The current marker comes from the body GraphQL authenticated as Codex's (codexHistory.current), never from
+    // codexState's separate REST read.
+    const cs = state.codexHistory?.current ?? null
     return [...reviewsBy(CODEX_LOGIN), ...(cs && cs.status === 'completed' && typeof cs.commitSha === 'string' ? [{ sha: cs.commitSha }] : [])]
   }
   if (bot === 'gemini') {

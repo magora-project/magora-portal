@@ -248,7 +248,7 @@ try {
   const subCodex = subRecord({ bot: 'codex', vendor: 'anthropic', identity: id.U, stem: 'substitute-codex--u--1', fixedIds: ['thread:PRRT_1'] })
   const fixUnrelatedThenFail = st(sha.U, {
     reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U),
-    codexState: { commitSha: sha.F, status: 'completed', at: T(10), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.F, at: T(10), status: 'completed' }], complete: true, currentTrusted: true },
+    codexState: { commitSha: sha.F, status: 'completed', at: T(10), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.F, at: T(10), status: 'completed' }], complete: true, currentTrusted: true, current: { commitSha: sha.F, status: 'completed', at: T(10) } },
     geminiVerdicts: [verdict(80, sha.U, id.U, 'no-findings')],
     threads: [codexThreadOnR('PRRT_1', { resolved: true, resolvedBy: 'dev' })], records: [subCodex],
   })
@@ -283,14 +283,19 @@ try {
   // botEvidence: a `running` Codex marker is never fix evidence (gate point 3).
   const codexRunningOnFix = st(sha.E, {
     reviews: [review(2, CODERABBIT_LOGIN, sha.E, T(40))], ...crOk(sha.E), threads: [codexThreadOnR('PRRT_1', { resolved: true, resolvedBy: 'dev' })],
-    codexState: { commitSha: sha.E, status: 'running', at: T(20), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.E, at: T(20), status: 'running' }], complete: true, currentTrusted: true },
+    codexState: { commitSha: sha.E, status: 'running', at: T(20), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.E, at: T(20), status: 'running' }], complete: true, currentTrusted: true, current: { commitSha: sha.E, status: 'running', at: T(20) } },
   })
   ok('I-2: a running Codex marker on the fix is not fix evidence', failsOn(await evaluateGate({ state: codexRunningOnFix, record: fixedRec, depth: 'standard' }), /^FAIL thread:PRRT_1\b.*no usable codex review/))
   ok('I-2: ... the same marker completed is (control)', (await evaluateGate({ state: { ...codexRunningOnFix, ...codexCovers(sha.E) }, record: fixedRec, depth: 'standard' })).ok)
   // A completed marker in a body a human last edited is no fix evidence (pre-publish Codex review, 2026-11-10).
   ok('a completed Codex marker in a human-edited body is not fix evidence', await (async () => {
     const cov = codexCovers(sha.E)
-    const r = await evaluateGate({ state: { ...codexRunningOnFix, ...cov, codexHistory: { ...cov.codexHistory, reviews: [], currentTrusted: false } }, record: fixedRec, depth: 'standard' })
+    const r = await evaluateGate({ state: { ...codexRunningOnFix, ...cov, codexHistory: { ...cov.codexHistory, reviews: [], currentTrusted: false, current: null } }, record: fixedRec, depth: 'standard' })
+    return failsOn(r, /^FAIL thread:PRRT_1\b.*no usable codex review/)
+  })())
+  ok('a completed REST marker whose authenticated body says running is not fix evidence', await (async () => {
+    const cov = codexCovers(sha.E)
+    const r = await evaluateGate({ state: { ...codexRunningOnFix, ...cov, codexHistory: { ...cov.codexHistory, reviews: [], current: { ...cov.codexHistory.current, status: 'running' } } }, record: fixedRec, depth: 'standard' })
     return failsOn(r, /^FAIL thread:PRRT_1\b.*no usable codex review/)
   })())
   // botEvidence: a could-not-run Gemini verdict, and one with identity "", are never fix evidence.

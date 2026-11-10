@@ -92,7 +92,7 @@ export const addressedIn = (from, to) => crStatus(`✅ Addressed in ${to ? `comm
 export const review = (id, login, sha, at, body = 'Review body') => ({ id, login, commitId: sha, submittedAt: at, body, empty: body.trim() === '' })
 export const codexCovers = (sha, at = T(20), commentId = 900) => ({
   codexState: { commitSha: sha, status: 'completed', at, commentId },
-  codexHistory: { reviews: [{ sha, at, status: 'completed' }], complete: true, currentTrusted: true },
+  codexHistory: { reviews: [{ sha, at, status: 'completed' }], complete: true, currentTrusted: true, current: { commitSha: sha, status: 'completed', at } },
 })
 export const verdict = (commentId, head, identity, verdictName, indices = [], at = T(15)) => ({
   head, identity, verdict: verdictName, findings: indices.map((index) => ({ index, severity: 'P1' })), commentId, at,
