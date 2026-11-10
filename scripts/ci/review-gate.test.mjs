@@ -5,11 +5,12 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { listThreads } from '../review/github.mjs'
 import {
   AGENTS, CODERABBIT_LOGIN, CODEX_LOGIN, CODEX_P1, CR_FINDING_END, CR_MAJOR_HEADER, CR_MINOR, CR_OK, T, addressedIn, buildGateRepo, crOk, crStatus, codexCovers, fixedAt, g, gateState,
   outsideDiffBody, prRecord, review, subRecord, thread, verdict,
 } from '../review/fixtures/gate-repo.mjs'
-import { blockingFindings, evaluateGate, judgedDepth, main, makeResolveCommit, readGateState } from './review-gate.mjs'
+import { BOT_RESOLVERS, blockingFindings, evaluateGate, judgedDepth, main, makeResolveCommit, readGateState } from './review-gate.mjs'
 
 let pass = 0, fail = 0
 // A thenable condition is a failure: a Promise is truthy even when it resolves to false.
@@ -408,6 +409,20 @@ try {
     const pr = prObj('2026-11-05T00:00:01Z', { base: { sha: M2, ref: 'main', repo: { full_name: 'o/r' } } })
     const s = await readGateState({ repo: 'o/r', token: 't', fetchImpl: activationFile({})({ pr, threads: [] }), pr, cwd: clone, now: Date.parse(T(120)) })
     return s.currentIdentity === id.E && s.pr.base === M2
+  })())
+
+  // Live shape (PR #52, 2026-11-10): resolvedBy is typed User and already carries the [bot] suffix.
+  const liveResolvedBy = async (login) => {
+    const node = {
+      id: 'PRRT_live', isResolved: true, path: null, resolvedBy: { login, __typename: 'User' },
+      comments: { totalCount: 1, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ author: { login: 'coderabbitai', __typename: 'Bot' }, editor: null, lastEditedAt: null, body: 'x', url: 'u', originalCommit: { oid: 'a'.repeat(40) } }] },
+    }
+    const stub = async () => ({ ok: true, status: 200, json: async () => ({ data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [node] } } } } }) })
+    return (await listThreads({ repo: 'o/r', pr: 1, token: 't', fetchImpl: stub }))[0]
+  }
+  ok('live resolvedBy coderabbitai[bot] passes through listThreads and is in BOT_RESOLVERS', await (async () => {
+    const t = await liveResolvedBy('coderabbitai[bot]')
+    return t.resolvedBy === 'coderabbitai[bot]' && BOT_RESOLVERS.has(t.resolvedBy)
   })())
 } finally {
   process.chdir(startCwd)

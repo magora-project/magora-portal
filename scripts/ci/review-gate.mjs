@@ -66,7 +66,9 @@ const BOT_OF_LOGIN = new Map([[CODERABBIT_LOGIN, 'coderabbit'], [CODEX_LOGIN, 'c
 // thread as the bot. Only CodeRabbit: Codex resolved no thread on the PRs read (#44, #46, #52, #54, #69, #87, #88,
 // 2026-11-10), so its format is unknown and its resolutions are not accepted; nor is github-actions[bot]'s, which any
 // workflow holding the job token can make, a PR's own copy included.
-const BOT_RESOLVERS = new Set([CODERABBIT_LOGIN])
+// GraphQL `resolvedBy` is typed `User` and returns the login WITH the `[bot]` suffix (`coderabbitai[bot]`, measured on
+// PR #52, 15 threads, 2026-11-10), unlike comment authors (typed `Bot`, returned without it and suffixed by listThreads).
+export const BOT_RESOLVERS = new Set([CODERABBIT_LOGIN])
 // CodeRabbit appends a status to its own first comment (an edit by the coderabbitai Bot) when it sees a later push
 // address the finding. Measured live 2026-11-10 on all 41 CodeRabbit threads of PRs #44, #46, #52, #54, #69, #87: the
 // finding ends with its `<!-- cr-comment:v1:<hex> -->` marker; after the last one there may be a `_Source: Path
