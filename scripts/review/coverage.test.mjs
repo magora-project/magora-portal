@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  BOT_VENDOR, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, diffTooLarge, headPushedAt, makeIdentityOf, makeIsAncestor, requiredMet,
+  BOT_VENDOR, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, coderabbitFailedOn, diffTooLarge, headPushedAt, makeIdentityOf, makeIsAncestor, requiredMet,
   slotState, substituteOk, substitutionClockStart,
 } from './coverage.mjs'
 import { geminiDispatchRuns } from './github.mjs'
@@ -63,6 +63,9 @@ try {
   const review = (login, sha, at, body = 'Reviewed', id = Math.floor(Math.random() * 1e9)) => ({ id, login, commitId: sha, submittedAt: T(at), body, empty: body.trim() === '' })
   const cr = (sha, at, body) => review(CR, sha, at, body)
   const req = (bot, at) => ({ bot, at: T(at) })
+  // coderabbitChecks entries: a CodeRabbit review is usable only when its own commit has a non-failed entry (F2).
+  const CR_OK = { conclusion: 'success', title: 'Review completed' }
+  const crOk = (...shas) => Object.fromEntries(shas.map((x) => [x, CR_OK]))
   const verdict = (head, identity, v, at, findings = []) => ({ head, identity, verdict: v, findings, commentId: 7, at: T(at) })
   const runOn = (pr, head, at, extra = {}) => ({ id: 1, name: 'CI', event: 'pull_request', status: 'completed', conclusion: 'success', headSha: head, headRepo: 'o/r', createdAt: at, prNumbers: [pr], ...extra })
   const run = (pr, at) => runOn(pr, 'A', at)
@@ -71,7 +74,7 @@ try {
 
   const baseState = (head) => ({
     pr: { number: 44, head, headRepo: 'o/r', draft: false, fork: false, dependabot: false },
-    reviews: [], requests: [], codexState: null, codexHistory: null, geminiVerdicts: [], coderabbitCheck: null, runs: [], geminiDispatchRuns: [],
+    reviews: [], requests: [], codexState: null, codexHistory: null, geminiVerdicts: [], coderabbitCheck: null, coderabbitChecks: {}, runs: [], geminiDispatchRuns: [],
   })
   // fx: { bot, head, current, now, pushed, ...state overrides }
   const s = (fx) => {
@@ -90,18 +93,18 @@ try {
 
   // ------------------------------------------------------------ the brief's cases
   const codexMarkerOnly = codexFx({ head: A2, current: 'I2', history: [hist(A2, '10:05')] })
-  const crSkippedOnEvidenceHead = { bot: 'coderabbit', head: E, current: 'I2', reviews: [cr(A2, '09:30')], coderabbitCheck: { conclusion: 'skipped', title: 'No files to review' } }
-  const crFullThenEmpties = { bot: 'coderabbit', head: E, current: 'I2', reviews: [cr(A2, '09:30'), cr(E, '10:02', ''), cr(E, '10:03', '  ')] }
+  const crSkippedOnEvidenceHead = { bot: 'coderabbit', head: E, current: 'I2', reviews: [cr(A2, '09:30')], coderabbitChecks: crOk(A2), coderabbitCheck: { conclusion: 'skipped', title: 'No files to review' } }
+  const crFullThenEmpties = { bot: 'coderabbit', head: E, current: 'I2', reviews: [cr(A2, '09:30'), cr(E, '10:02', ''), cr(E, '10:03', '  ')], coderabbitChecks: crOk(A2) }
   const crRateLimited = { bot: 'coderabbit', head: A2, current: 'I2', coderabbitCheck: { conclusion: 'failure', title: 'Review rate limit exceeded' } }
   const geminiCouldNotRun = { bot: 'gemini', head: A2, current: 'I2', geminiVerdicts: [verdict(A2, 'I2', 'could-not-run', '10:04')] }
   const geminiDraft = { bot: 'gemini', head: A2, current: 'I2', pr: { draft: true }, now: T('10:01') }
-  const forcePushIncrementalOnly = { bot: 'coderabbit', head: F1, current: 'IF1', reviews: [cr(A2, '09:30'), cr(F1, '10:02')], requests: [req('coderabbit', '10:05')] }
-  const forcePushNoRequest = { bot: 'coderabbit', head: F1, current: 'IF1', reviews: [cr(A2, '09:30'), cr(F1, '10:02')] }
-  const ordinaryPushIncremental = { bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A1, '09:30'), cr(A2, '10:02')] }
+  const forcePushIncrementalOnly = { bot: 'coderabbit', head: F1, current: 'IF1', reviews: [cr(A2, '09:30'), cr(F1, '10:02')], requests: [req('coderabbit', '10:05')], coderabbitChecks: crOk(A2, F1) }
+  const forcePushNoRequest = { bot: 'coderabbit', head: F1, current: 'IF1', reviews: [cr(A2, '09:30'), cr(F1, '10:02')], coderabbitChecks: crOk(A2, F1) }
+  const ordinaryPushIncremental = { bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A1, '09:30'), cr(A2, '10:02')], coderabbitChecks: crOk(A1, A2) }
   const geminiAfterForcePush = { bot: 'gemini', head: F1, current: 'IF1', geminiVerdicts: [verdict(A2, 'I2', 'findings', '09:30', [{ index: 1, severity: 'P1' }]), verdict(F1, 'IF1', 'no-findings', '10:05')] }
-  const crRebaseSameIdentity = { bot: 'coderabbit', head: R2, current: 'I2', reviews: [cr(A1, '09:20'), cr(A2, '09:30')] }
-  const forcePushAnswered = { bot: 'coderabbit', head: F1, current: 'IF1', reviews: [cr(A2, '09:30'), cr(F1, '10:03')], requests: [req('coderabbit', '10:01')] }
-  const unfetchable = { bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(UNFETCHABLE, '09:30')] }
+  const crRebaseSameIdentity = { bot: 'coderabbit', head: R2, current: 'I2', reviews: [cr(A1, '09:20'), cr(A2, '09:30')], coderabbitChecks: crOk(A1, A2) }
+  const forcePushAnswered = { bot: 'coderabbit', head: F1, current: 'IF1', reviews: [cr(A2, '09:30'), cr(F1, '10:03')], requests: [req('coderabbit', '10:01')], coderabbitChecks: crOk(A2, F1) }
+  const unfetchable = { bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(UNFETCHABLE, '09:30')], coderabbitChecks: crOk(UNFETCHABLE) }
   const at29 = { bot: 'coderabbit', head: A2, current: 'I2', now: T('10:29') }
   const at31 = { bot: 'coderabbit', head: A2, current: 'I2', now: T('10:31') }
   const failedNoRuns = { bot: 'coderabbit', head: A2, current: 'I2', pushed: headPushedAt({ runs: [], pr: 44, head: A2, headRepo: 'o/r', prCreatedAt: T('09:00') }), coderabbitCheck: { conclusion: 'failure', title: 'x' }, now: T('11:00') }
@@ -247,7 +250,7 @@ try {
   ok('a rebase after an unanswered identity-changing force-push does not launder it', await (async () => {
     // A2 (I2) reviewed; rewritten to L1 (IF1), reviewed incrementally with no request; then rebased to F1 (still IF1).
     // The latest rewritten-away review (L1) kept the identity, but the A2 -> L1 rewrite changed it and was never answered.
-    const r = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [cr(A2, '09:30'), cr(L1, '09:50')] })
+    const r = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [cr(A2, '09:30'), cr(L1, '09:50')], coderabbitChecks: crOk(A2, L1) })
     return is(r, 'pending', /post "@coderabbitai full review"/)
   })())
   ok('a rewrite whose latest rewritten-away review kept the identity, after earlier pushes, stays covered (D-10)', (await s(crRebaseSameIdentity)).status === 'covered')
@@ -262,26 +265,56 @@ try {
   const nullCommit = { ...cr(A2, '09:30'), commitId: null }
   ok('(a) CodeRabbit review with commitId null plus a failure check -> needs-substitute', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit], coderabbitCheck: { conclusion: 'failure', title: 'x' } }), 'needs-substitute', /concluded failure/))
   // D30: a review on the head whose CodeRabbit check concluded a terminal failure is not usable (§5.5 "Usable").
-  ok('D30: CodeRabbit review on the head plus a failure check on the head -> needs-substitute, not covered', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A2, '10:05')], coderabbitCheck: { conclusion: 'failure', title: 'x' } }), 'needs-substitute', /concluded failure/))
-  ok('D30: the same review with a successful check on the head -> covered', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A2, '10:05')], coderabbitCheck: { conclusion: 'success', title: 'ok' } })).status === 'covered')
-  ok('D30: a failed review on the head does not hide an earlier usable review on the same identity -> covered by the earlier one', await (async () => { const early = cr(A2, '09:30'); const r = await s({ bot: 'coderabbit', head: E, current: 'I2', reviews: [early, cr(E, '10:05')], coderabbitCheck: { conclusion: 'failure', title: 'x' } }); return r.status === 'covered' && r.by === `review:${early.id}` })())
-  ok('(b) null-commit review, a full-review request answered by a usable review on the current identity -> covered', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '10:05')], requests: [req('coderabbit', '10:01')] }), 'covered'))
-  ok('(b\') the same review before the request does not answer it', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '09:50')], requests: [req('coderabbit', '10:01')] }), 'pending', /full review request/))
-  ok('a null-commit review with no request -> pending naming the request (the author can clear it)', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '10:05')] }), 'pending', /post "@coderabbitai full review"/))
+  const FAILED = { conclusion: 'failure', title: 'x' }
+  ok('D30: CodeRabbit review on the head plus a failure check on the head -> needs-substitute, not covered', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A2, '10:05')], coderabbitChecks: { [A2]: FAILED }, coderabbitCheck: FAILED }), 'needs-substitute', /concluded failure/))
+  ok('D30: the same review with a successful check on the head -> covered', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A2, '10:05')], coderabbitChecks: crOk(A2), coderabbitCheck: CR_OK })).status === 'covered')
+  ok('D30: a failed review on the head does not hide an earlier usable review on the same identity -> covered by the earlier one', await (async () => { const early = cr(A2, '09:30'); const r = await s({ bot: 'coderabbit', head: E, current: 'I2', reviews: [early, cr(E, '10:05')], coderabbitChecks: { [A2]: CR_OK, [E]: FAILED }, coderabbitCheck: FAILED }); return r.status === 'covered' && r.by === `review:${early.id}` })())
+  // F2: usability reads the CodeRabbit check of the review's OWN commit, not only the head's.
+  const evidencePushFx = (checks) => ({ bot: 'coderabbit', head: E, current: 'I2', reviews: [cr(A2, '09:30')], coderabbitChecks: checks, coderabbitCheck: { conclusion: 'skipped', title: 'No files to review' } })
+  ok('F2 (a): review on A2 whose own check failed, evidence-only head E (same identity) skipped -> needs-substitute, not covered', is(await s(evidencePushFx({ [A2]: FAILED })), 'needs-substitute', /concluded skipped/))
+  ok('F2 (b): review on A2 whose own check succeeded, same head E -> covered (the plan\'s evidence-only case)', is(await s(evidencePushFx(crOk(A2))), 'covered'))
+  ok('F2 (c): review on A2 with no entry for A2 (unknown) -> not covered', is(await s(evidencePushFx({})), 'needs-substitute') && is(await s({ ...evidencePushFx({ [E]: CR_OK }), coderabbitCheck: null }), 'pending', /no usable review yet/))
+  ok('F2 (d): review on A2 with a null entry (fetched, no CodeRabbit check on A2) -> covered', is(await s(evidencePushFx({ [A2]: null })), 'covered'))
+  ok('F2: every terminal conclusion on the review\'s own commit makes it unusable', await (async () => {
+    for (const c of ['skipped', 'failure', 'cancelled', 'timed_out', 'action_required']) {
+      if ((await s({ ...evidencePushFx({ [A2]: { conclusion: c, title: 'x' } }), coderabbitCheck: null })).status === 'covered') return false
+    }
+    return true
+  })())
+  ok('F2: coderabbitFailedOn fails closed on a missing, inherited or malformed entry', [
+    coderabbitFailedOn({ coderabbitChecks: {} }, A2), coderabbitFailedOn({}, A2), coderabbitFailedOn({ coderabbitChecks: Object.create({ [A2]: null }) }, A2),
+    coderabbitFailedOn({ coderabbitChecks: { [A2]: 'success' } }, A2), coderabbitFailedOn({ coderabbitChecks: { [A2]: [] } }, A2),
+    coderabbitFailedOn({ coderabbitChecks: { '': null } }, ''), coderabbitFailedOn({ coderabbitChecks: { null: null } }, null),
+  ].every((x) => x === true) && coderabbitFailedOn({ coderabbitChecks: { [A2]: null } }, A2) === false && coderabbitFailedOn({ coderabbitChecks: { [A2]: { conclusion: null, title: null } } }, A2) === false)
+  ok('F2: a state without a coderabbitChecks object throws', await (async () => {
+    const st = { ...evidencePushFx(crOk(A2)) }
+    for (const bad of [undefined, null, []]) {
+      try { await s({ ...st, coderabbitChecks: bad }); return false } catch (e) { if (!/coderabbitChecks/.test(e.message)) return false }
+    }
+    return true
+  })())
+  // D18: an empty review is ignored (V4), so one on a rewritten-away commit does not force a full-review request.
+  ok('D18: an empty CodeRabbit review on a rewritten-away commit, usable review on the current identity -> covered, no request', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(F1, '09:20', ''), cr(A2, '10:05')], coderabbitChecks: crOk(F1, A2) }), 'covered'))
+  ok('D18: ... and an empty Codex review object on a rewritten-away commit likewise', is(await s({ bot: 'codex', head: A2, current: 'I2', reviews: [review(CODEX, F1, '09:20', ''), review(CODEX, A2, '10:05')] }), 'covered'))
+  ok('D18 control: the same rewritten-away review, non-empty, still demands a full review', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(F1, '09:20'), cr(A2, '10:05')], coderabbitChecks: crOk(F1, A2) }), 'pending', /post "@coderabbitai full review"/))
+  ok('(b) null-commit review, a full-review request answered by a usable review on the current identity -> covered', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '10:05')], requests: [req('coderabbit', '10:01')], coderabbitChecks: crOk(A2) }), 'covered'))
+  ok('(b\') the same review before the request does not answer it', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '09:50')], requests: [req('coderabbit', '10:01')], coderabbitChecks: crOk(A2) }), 'pending', /full review request/))
+  ok('a null-commit review with no request -> pending naming the request (the author can clear it)', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit, cr(A2, '10:05')], coderabbitChecks: crOk(A2) }), 'pending', /post "@coderabbitai full review"/))
   ok('(c) null-commit review, a request, nothing after it, 31 minutes -> needs-substitute', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit], requests: [req('coderabbit', '10:01')], now: T('10:32') }), 'needs-substitute', /last full-review request/))
   ok('(c\') ... and 29 minutes after the request -> pending', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [nullCommit], requests: [req('coderabbit', '10:01')], now: T('10:30') }), 'pending', /full review request/))
   const badTime = { ...cr(A2, '10:05'), submittedAt: 'not a time' }
-  ok('(d) an unparseable submittedAt on the head is never coverage: pending at 10 minutes', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [badTime] }), 'pending', /no usable review yet/))
-  ok('(d) ... and needs-substitute at 31 minutes (not pending forever)', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [badTime], now: T('10:31') }), 'needs-substitute'))
+  ok('(d) an unparseable submittedAt on the head is never coverage: pending at 10 minutes', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [badTime], coderabbitChecks: crOk(A2) }), 'pending', /no usable review yet/))
+  ok('(d) ... and needs-substitute at 31 minutes (not pending forever)', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [badTime], coderabbitChecks: crOk(A2), now: T('10:31') }), 'needs-substitute'))
   ok('(d) an unparseable time on a rewritten-away review: any request counts after it; answered -> covered, unanswered at 31 min -> needs-substitute', await (async () => {
     const old = { ...cr(A2, '09:30'), submittedAt: 'garbage' }
-    const answered = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [old, cr(F1, '10:05')], requests: [req('coderabbit', '10:01')] })
-    const late = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [old], requests: [req('coderabbit', '10:01')], now: T('10:32') })
-    const none = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [old, cr(F1, '10:05')] })
+    const checks = crOk(A2, F1)
+    const answered = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [old, cr(F1, '10:05')], requests: [req('coderabbit', '10:01')], coderabbitChecks: checks })
+    const late = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [old], requests: [req('coderabbit', '10:01')], now: T('10:32'), coderabbitChecks: checks })
+    const none = await s({ bot: 'coderabbit', head: F1, current: 'IF1', reviews: [old, cr(F1, '10:05')], coderabbitChecks: checks })
     return is(answered, 'covered') && is(late, 'needs-substitute') && is(none, 'pending', /full review/)
   })())
   ok('a Codex history entry with no sha and an unreadable time is never coverage and does not pin the slot', is(await s({ ...codexFx({ head: A2, current: 'I2', history: [{ sha: null, at: 'x', status: 'completed' }], marker: null }), codexState: { commitSha: A2, status: 'running', at: T('10:05'), commentId: 9 }, requests: [req('codex', '10:01')], now: T('10:32') }), 'needs-substitute'))
-  ok('latest usable review on an older identity -> not covered (ordinary push not yet reviewed)', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A1, '09:30')] })).status === 'pending')
+  ok('latest usable review on an older identity -> not covered (ordinary push not yet reviewed)', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [cr(A1, '09:30')], coderabbitChecks: crOk(A1) })).status === 'pending')
   ok('reviews from another login are not CodeRabbit evidence', (await s({ bot: 'coderabbit', head: A2, current: 'I2', reviews: [review('mallory', A2, '10:05')] })).status === 'pending')
   // 30-minute boundary and clocks.
   ok('exactly 30 minutes -> needs-substitute', (await s({ ...at29, now: T('10:30') })).status === 'needs-substitute')

@@ -21,7 +21,13 @@
 // @property {?object} codexHistory        codexHistory({commentId: codexState.commentId}) {reviews: [{sha, at, status}], complete};
 //                                         null when codexState is null (and then it is not read)
 // @property {Array}   geminiVerdicts      geminiVerdicts(comments)       [{head, identity, verdict, findings, commentId, at}]
-// @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {conclusion, title} | null
+// @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {conclusion, title} | null: the head's check, read
+//                                         only as a substitution ground
+// @property {object}  coderabbitChecks    { [sha]: coderabbitCheck({sha}) }: {conclusion, title} | null for EVERY commit that
+//                                         carries a CodeRabbit review (null: fetched, and that commit has no CodeRabbit check
+//                                         run). A CodeRabbit review is usable only when its commit has an entry here that is
+//                                         not a terminal failure; a commit with no entry is unknown and its review is not
+//                                         usable (fail closed). See coderabbitFailedOn.
 // @property {Array}   runs                prRuns({headRef})              [{id, name, status, conclusion, headSha, headRepo, createdAt, prNumbers}]
 // @property {Array}   geminiDispatchRuns  geminiDispatchRuns({pr})       [{id, status, conclusion, createdAt}]
 //
@@ -48,12 +54,26 @@ const GEMINI_RUN_TERMINAL = new Set(['cancelled', 'failure', 'timed_out'])
 
 const ms = (t) => (typeof t === 'number' ? t : Date.parse(t))
 
-// Whether a CodeRabbit review on commit `sha` is unusable because its run failed (§5.5 "Usable": a failed review never
-// establishes coverage): `sha` is the head, the commit whose CodeRabbit check the state carries, and that check
-// concluded a terminal failure. A review on an earlier commit keeps its standing. Shared by slotState (coverage) and
-// review-gate (fix evidence, rule (a)), so the two cannot drift.
+const crTerminal = (check) => check !== null && typeof check === 'object' && CR_TERMINAL.has(check.conclusion)
+
+// Whether a CodeRabbit review on commit `sha` is NOT usable evidence because its run failed, or cannot be shown not to
+// have failed (§5.5 "Usable": a failed review never establishes coverage). Reads `state.coderabbitChecks[sha]`, the
+// CodeRabbit check of the review's OWN commit, so a later identity-preserving commit (an evidence commit) cannot revive
+// a review whose run failed:
+//   - no own entry for `sha` (or no `coderabbitChecks` object, or `sha` not a non-empty string): unknown -> true;
+//   - null (fetched, no CodeRabbit check run on that commit) -> false;
+//   - {conclusion, title} with a terminal conclusion -> true; any other object -> false;
+//   - anything else -> true.
+// The single place this rule lives: shared by slotState (coverage) and review-gate (fix evidence, rule (a)), so the two
+// cannot drift.
 export function coderabbitFailedOn(state, sha) {
-  return typeof sha === 'string' && sha !== '' && sha === state?.pr?.head && CR_TERMINAL.has(state?.coderabbitCheck?.conclusion)
+  if (typeof sha !== 'string' || sha === '') return true
+  const checks = state?.coderabbitChecks
+  if (checks === null || typeof checks !== 'object' || Array.isArray(checks) || !Object.hasOwn(checks, sha)) return true
+  const c = checks[sha]
+  if (c === null) return false
+  if (typeof c !== 'object' || Array.isArray(c)) return true
+  return crTerminal(c)
 }
 const short = (sha) => (typeof sha === 'string' ? sha.slice(0, 12) : String(sha))
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
@@ -184,11 +204,13 @@ const safe = async (fn, fallback) => { try { return await fn() } catch { return 
 
 // CodeRabbit and Codex: what the bot reviewed, and what of it is usable evidence. `entries` is every commit the
 // bot is known to have reviewed or started (rewrite detection); `evidence` is the usable subset (coverage and
-// the "latest rewritten-away review" ordering). Empty reviews are entries, never evidence (V4); for Codex every
+// the "latest rewritten-away review" ordering). An empty review is neither: it is ignored (V4: never usable and never a
+// failure signal), so an empty review on a rewritten-away commit cannot demand a full review. For Codex every
 // edit-history entry is an entry, and only a `completed` one is evidence (gate point 3).
-// A CodeRabbit review on the head, when the CodeRabbit check on that head (the one check the state carries) concluded a
-// terminal failure, is an entry and never evidence: a failed review never establishes coverage (§5.5 "Usable"). A review
-// on an earlier commit keeps its standing, so an evidence-only head that CodeRabbit skips stays covered.
+// A CodeRabbit review whose own commit's CodeRabbit check concluded a terminal failure, or whose commit has no entry in
+// `coderabbitChecks` (unknown), is an entry and never evidence (coderabbitFailedOn): a failed review never establishes
+// coverage (§5.5 "Usable"). A review whose own check did not fail keeps its standing, so an evidence-only head that
+// CodeRabbit skips stays covered by it.
 // An entry with no commit (REST allows a null `commit_id`) or an unreadable time is never evidence. It stays an
 // entry, and the rewrite check treats it like an unfetchable commit: not an ancestor of the head, so it takes the
 // full-review-request path. It never blocks the slot, because nobody can delete a bot's review.
@@ -204,8 +226,8 @@ function incrementalInputs(bot, state) {
     if (usable && hasCommit(e) && readable(e)) evidence.push(e)
   }
   for (const r of state.reviews) {
-    if (r.login !== login) continue
-    add({ sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }, !r.empty && !(bot === 'coderabbit' && coderabbitFailedOn(state, r.commitId)))
+    if (r.login !== login || r.empty) continue
+    add({ sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }, !(bot === 'coderabbit' && coderabbitFailedOn(state, r.commitId)))
   }
   if (bot === 'codex') {
     const cs = state.codexState
@@ -292,6 +314,8 @@ const requireArrays = (state) => {
     if (!Array.isArray(state?.[k])) throw new TypeError(`slotState: state.${k} must be an array`)
   }
   if (!state.pr || typeof state.pr.head !== 'string') throw new TypeError('slotState: state.pr.head must be a string')
+  const cc = state.coderabbitChecks
+  if (cc === null || typeof cc !== 'object' || Array.isArray(cc)) throw new TypeError('slotState: state.coderabbitChecks must be an object')
 }
 
 export async function slotState({ bot, state, identityOf, isAncestor, currentIdentity, now, headPushedAt: pushedAt }) {
@@ -334,7 +358,7 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
   }
 
   // Terminal failure on the head.
-  if (bot === 'coderabbit' && state.coderabbitCheck && CR_TERMINAL.has(state.coderabbitCheck.conclusion)) {
+  if (bot === 'coderabbit' && crTerminal(state.coderabbitCheck)) {
     return substitute(`CodeRabbit check on ${short(head)} concluded ${state.coderabbitCheck.conclusion}${state.coderabbitCheck.title ? ` ("${state.coderabbitCheck.title}")` : ''}`)
   }
   const geminiRuns = bot === 'gemini' ? geminiRunsOnHead(state, pushedAt) : []
