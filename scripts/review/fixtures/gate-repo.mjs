@@ -103,8 +103,12 @@ export const outsideDiffBody = (marker, path = 'app.js') => [
   '',
   '> [!CAUTION]',
   '> Some comments are outside the diff and can’t be posted inline.',
+  '> ',
+  // The heading line as live CodeRabbit bodies carry it (fixtures/bot-formats.json); the parser accepts no other form.
+  '> **⚠️ Outside diff range comments (1)**',
+  '> ',
   '> <details>',
-  '> <summary>⚠️ Outside diff range comments (1)</summary><blockquote>',
+  '> <summary>Major · The return is wrong.</summary><blockquote>',
   '> ',
   `> \`${path}:3\``,
   '> **🟠 Major** The return is wrong.',
