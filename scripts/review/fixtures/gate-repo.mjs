@@ -138,8 +138,8 @@ export const gateState = (repo, head, extra = {}) => ({
 })
 
 // A substitute record (schema 1) that substituteOk accepts on `identity`, by `vendor`, holding `fixedIds` as fixed by itself.
-export const subRecord = ({ bot, vendor, identity, stem, fixedIds = [], openIds = [], supersedes = null }) => ({
-  schema: 1, type: 'substitute', slot: `substitute:${bot}`, input: { kind: 'pr', identity, mergeBase: 'm', head: 'h' },
+export const subRecord = ({ bot, vendor, identity, stem, fixedIds = [], openIds = [], supersedes = null, head = 'h' }) => ({
+  schema: 1, type: 'substitute', slot: `substitute:${bot}`, input: { kind: 'pr', identity, mergeBase: 'm', head },
   reviewer: { vendor, model: 'm' }, authorVendor: 'anthropic', outcome: 'completed', verdict: openIds.length ? 'fail' : 'pass',
   findings: [
     ...fixedIds.map((id) => ({ id, severity: 'P1', summary: 'inherited', disposition: { kind: 'fixed', by: stem } })),

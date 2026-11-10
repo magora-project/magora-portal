@@ -213,6 +213,24 @@ try {
     return r.ok === false && r.lines.some((l) => /^FAIL cr:abc123\b.*does not hold/.test(l))
   })())
   ok('a substitute for another bot does not verify a cr: finding', (await evaluateGate({ state: { ...crIssueCommentFixed, records: [{ ...crSub, slot: 'substitute:gemini' }] }, record: crFixedWithSub, depth: 'standard' })).ok === false)
+  // Gemini on #92 at cd88f7b: S1 verified cr:abc123 at F; S2 (at U) carries that disposition forward. CodeRabbit then
+  // re-reports the same marker on U and its check fails there, so the slot needs a substitute. S1 did not see U.
+  const reReported = (onU) => st(sha.U, {
+    ...codexCovers(sha.U), coderabbitChecks: { [sha.R]: { conclusion: 'success', title: 'Review completed' }, [sha.U]: { conclusion: 'failure', title: 'x' } },
+    coderabbitCheck: { conclusion: 'failure', title: 'x' },
+    reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), outsideDiffBody('abc123')), ...(onU ? [review(3, CODERABBIT_LOGIN, sha.U, T(60), outsideDiffBody('abc123'))] : [])],
+    records: [
+      subRecord({ bot: 'coderabbit', vendor: 'anthropic', identity: id.F, stem: 'substitute-coderabbit--f--1', fixedIds: ['cr:abc123'], head: sha.F }),
+      { ...subRecord({ bot: 'coderabbit', vendor: 'anthropic', identity: id.U, stem: 'substitute-coderabbit--u--1', supersedes: 'substitute-coderabbit--f--1', head: sha.U }),
+        findings: [{ id: 'cr:abc123', severity: 'P1', summary: 'inherited', disposition: { kind: 'fixed', by: 'substitute-coderabbit--f--1' } }] },
+    ],
+  })
+  const reReportedRec = prRecord([fixedAt('cr:abc123', sha.F, 'substitute-coderabbit--u--1')], { slots: STD_SLOTS })
+  ok('a cr: finding re-reported after the substitute that verified its fix is not verified by the carried disposition', await (async () => {
+    const r = await evaluateGate({ state: reReported(true), record: reReportedRec, depth: 'standard' })
+    return r.ok === false && r.lines.some((l) => /^FAIL cr:abc123\b.*does not descend from/.test(l))
+  })())
+  ok('... the same chain with no re-report verifies it (control)', (await evaluateGate({ state: reReported(false), record: reReportedRec, depth: 'standard' })).ok)
   const crReviewFixedReReviewed = st(sha.E, { ...crOk(sha.R, sha.E), reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), outsideDiffBody('abc123')), review(2, CODERABBIT_LOGIN, sha.E, T(40))] })
   ok('fixed cr: finding from a review body, fix commit strictly descends from its reported commit and changes the identity, later usable CodeRabbit review on the fix -> ok (gate point 4)', (await evaluateGate({ state: crReviewFixedReReviewed, record: crFixedRec, depth: 'standard' })).ok)
   ok('the same cr: finding repeated in the review on the fix is reported there too -> FAIL', (await evaluateGate({ state: st(sha.E, { ...crOk(sha.R, sha.E), reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5), outsideDiffBody('abc123')), review(2, CODERABBIT_LOGIN, sha.E, T(40), outsideDiffBody('abc123'))] }), record: crFixedRec, depth: 'standard' })).ok === false)
@@ -245,7 +263,7 @@ try {
   ok('a thread resolved by a person is not bot-resolved', blockingFindings(authorResolvedP1).length === 1)
 
   // ---------------------------------------------------------------- fixed: rule (b) and D-7
-  const subCodex = subRecord({ bot: 'codex', vendor: 'anthropic', identity: id.U, stem: 'substitute-codex--u--1', fixedIds: ['thread:PRRT_1'] })
+  const subCodex = subRecord({ bot: 'codex', vendor: 'anthropic', identity: id.U, stem: 'substitute-codex--u--1', fixedIds: ['thread:PRRT_1'], head: sha.U })
   const fixUnrelatedThenFail = st(sha.U, {
     reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U),
     codexState: { commitSha: sha.F, status: 'completed', at: T(10), commentId: 900 }, codexHistory: { reviews: [{ sha: sha.F, at: T(10), status: 'completed' }], complete: true, currentTrusted: true, current: { commitSha: sha.F, status: 'completed', at: T(10) } },
@@ -259,7 +277,7 @@ try {
   const geminiFixedThenFailed = st(sha.U, {
     reviews: [review(2, CODERABBIT_LOGIN, sha.U, T(40))], ...crOk(sha.U), ...codexCovers(sha.U),
     geminiVerdicts: [verdict(61, sha.R, id.R, 'findings', [1], T(5)), verdict(81, sha.U, '', 'could-not-run', [], T(30))],
-    records: [subRecord({ bot: 'gemini', vendor: 'anthropic', identity: id.U, stem: 'substitute-gemini--u--1', fixedIds: ['gemini:61:1'] })],
+    records: [subRecord({ bot: 'gemini', vendor: 'anthropic', identity: id.U, stem: 'substitute-gemini--u--1', fixedIds: ['gemini:61:1'], head: sha.U })],
   })
   ok('Gemini finding -> fix -> Gemini could-not-run -> substitute resolves it -> ok', (await evaluateGate({ state: geminiFixedThenFailed, record: withSubResolving, depth: 'subtle-correctness' })).ok)
   const geminiRepeats = st(sha.U, {

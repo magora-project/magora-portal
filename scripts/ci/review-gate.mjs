@@ -307,8 +307,13 @@ async function ruleA(f, fix, state) {
   return `no usable ${f.source} review on ${short(fix)} or a later commit with the current input identity (the review that raised a finding cannot verify its own fix)`
 }
 
-// Rule (b): null when `by` names a record in an accepted substitute:<bot> chain whose head holds the finding fixed.
-function ruleB(f, by, state, accepted, counted) {
+// Rule (b): null when `by` names a record in an accepted substitute:<bot> chain whose head holds the finding fixed, and
+// the record that verified the fix (the head's disposition.by) reviewed a commit on or after every known commit the
+// finding was reported on, by ancestry. A finding re-reported under the same ID after that review (a CodeRabbit
+// outside-diff marker after a revert) is not verified by it, although a later record in the chain carries the
+// disposition forward without re-assessing it (Gemini on #92 at cd88f7b). A report on an unknown commit (an issue
+// comment) cannot be ordered and is not checked.
+async function ruleB(f, by, state, accepted, counted) {
   const slot = SUBSTITUTE(f.source)
   if (!BOTS.includes(f.source)) return `no substitute slot for source ${f.source}`
   const subs = substituteRecords(state).filter((r) => r.slot === slot)
@@ -322,6 +327,14 @@ function ruleB(f, by, state, accepted, counted) {
   }
   const g = head.findings.find((x) => x.id === f.id)
   if (!g || g.disposition?.kind !== 'fixed') return `${head.stem}, the head of that ${slot} chain, does not hold ${f.id} as fixed`
+  const verifier = byStem.get(g.disposition.by ?? head.stem)
+  if (!verifier || !chainOf(head).includes(verifier)) return `${g.disposition.by ?? head.stem}, which ${head.stem} names as verifying ${f.id}, is not in that ${slot} chain`
+  const reviewed = verifier.input?.head
+  for (const r of f.reported ?? []) {
+    if (typeof r !== 'string' || !SHA.test(r)) continue
+    const after = typeof reviewed === 'string' && SHA.test(reviewed) && await safe(() => state.isAncestor(r, reviewed), false)
+    if (!after) return `${verifier.stem} verified ${f.id} on ${typeof reviewed === 'string' ? short(reviewed) : 'an unknown commit'}, which does not descend from ${short(r)}, a commit it was reported on: a substitute must re-assess it`
+  }
   return null
 }
 
@@ -447,7 +460,7 @@ export async function evaluateGate({ state, record, depth }) {
     const own = await judgeOwn(f, record, state)
     if (own.ok) { lines.push(`ok ${tag}: ${own.how}`); continue }
     if (own.fixed && nonEmpty(own.by)) {
-      const b = ruleB(f, own.by, state, accepted, counted)
+      const b = await ruleB(f, own.by, state, accepted, counted)
       if (b === null) { lines.push(`ok ${tag}: fixed, verified by ${own.by} (${SUBSTITUTE(f.source)})`); continue }
       failLine(`${tag}: ${own.why}; and by ${own.by}: ${b}`)
       continue
