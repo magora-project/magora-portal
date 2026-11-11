@@ -21,18 +21,20 @@
 // @property {?object} codexHistory        codexHistory({commentId: codexState.commentId}) {reviews: [{sha, at, status}], complete, currentTrusted, current};
 //                                         null when codexState is null (and then it is not read)
 // @property {Array}   geminiVerdicts      geminiVerdicts(comments)       [{head, identity, verdict, findings, commentId, at}]
-// @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {id, conclusion, title, startedAt, completedAt, successes} | null:
+// @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {id, conclusion, title, startedAt, completedAt, successes, runs} | null:
 //                                         the head's check, read as a substitution ground (crTerminal) and for the
 //                                         manual-review skip's pending line
-// @property {object}  coderabbitChecks    { [sha]: coderabbitCheck({sha}) }: {id, conclusion, title, startedAt, completedAt, successes} |
+// @property {object}  coderabbitChecks    { [sha]: coderabbitCheck({sha}) }: {id, conclusion, title, startedAt, completedAt, successes, runs} |
 //                                         null for EVERY commit that carries a CodeRabbit review, the head, and every head SHA
 //                                         of the PR's runs (null: fetched, and that commit has no CodeRabbit check run). A
 //                                         CodeRabbit review is usable only when its commit has an entry here that is not a
 //                                         terminal failure; a commit with no entry is unknown and its review is not usable
 //                                         (fail closed). See coderabbitFailedOn. `successes` ([{id, startedAt, completedAt}],
 //                                         newest first) is every run on the commit that concluded success, the newest
-//                                         included; a requested one is CodeRabbit evidence on its commit, unless the newest
-//                                         check revokes it (coderabbitCheckEvidence).
+//                                         included; a requested one is CodeRabbit evidence on its commit, unless the deciding
+//                                         run revokes it (coderabbitCheckEntries). `runs` ([{id, conclusion, title}], newest
+//                                         first) is every run on the commit; the deciding run is the newest that is neither
+//                                         a rate-limit nor a manual-review check (coderabbitFailedOn).
 // @property {Array}   runs                prRuns({headRef})              [{id, name, path, status, conclusion, headSha, headRepo, createdAt, prNumbers}]
 // @property {Array}   geminiDispatchRuns  geminiDispatchRuns({pr})       [{id, status, conclusion, createdAt}]
 //
@@ -87,15 +89,30 @@ export const crTerminal = (check) => isCheck(check)
 //     since it reviewed nothing and so revokes no earlier review on that commit; another terminal check (crTerminal)
 //     -> true; any other object, the manual-review skip included (it is not terminal) -> false;
 //   - anything else -> true.
+// The run judged is the deciding run: with a `runs` array (every run on the commit, newest first), the newest run that
+// is neither exactly CR_RATE_LIMITED nor exactly CR_MANUAL_REVIEW, since neither revokes and so neither may hide an
+// earlier run that does (success, failure, rate limited -> true); none -> false; a non-object run met before it -> true.
+// Without a `runs` array, the check itself.
 // The single place this rule lives: shared by slotState (coverage) and review-gate (fix evidence, rule (a)), so the two
 // cannot drift.
 export function coderabbitFailedOn(state, sha) {
   if (typeof sha !== 'string' || sha === '') return true
   const checks = state?.coderabbitChecks
   if (checks === null || typeof checks !== 'object' || Array.isArray(checks) || !Object.hasOwn(checks, sha)) return true
-  const c = checks[sha]
-  if (c === null) return false
-  if (typeof c !== 'object' || Array.isArray(c)) return true
+  const top = checks[sha]
+  if (top === null) return false
+  if (typeof top !== 'object' || Array.isArray(top)) return true
+  let c = top
+  if (Array.isArray(top.runs)) {
+    c = null
+    for (const r of top.runs) {
+      if (!isCheck(r)) return true
+      if (crIs(r, CR_RATE_LIMITED) || crIs(r, CR_MANUAL_REVIEW)) continue
+      c = r
+      break
+    }
+    if (c === null) return false
+  }
   if (c.conclusion === null || c.conclusion === undefined) return true
   if (crIs(c, CR_RATE_LIMITED)) return false
   return crTerminal(c)
@@ -268,24 +285,25 @@ const botRequests = (state, bot) => state.requests.filter((r) => r.bot === bot &
 
 // A requested clean CodeRabbit full review (§5.5 "CodeRabbit clean full review", issue #102): CodeRabbit posts no review
 // object for it, so its `CodeRabbit` check run counts as a usable review on its own commit, timed at its completedAt.
-// At most one entry { sha, at, by: 'check:<id>' } per [sha, check] in state.coderabbitChecks, and none when the newest
-// check revokes (coderabbitFailedOn: a failure or unfinished check does; a rate-limit or manual-review check does not, so
-// it cannot hide an earlier success). Candidates are every success run on the commit (`check.successes`; without that
-// array, the check itself when it is a success). A candidate counts when its id, startedAt and completedAt are present
-// and readable, its commit's last arrival on the PR (lastArrivalAt over state.runs) is known, and some CodeRabbit
-// full-review request falls strictly after that arrival and strictly before its startedAt; the entry is the counting
-// candidate completed last. An unrequested `success` is no entry. The one place this rule lives: shared by slotState
-// (through incrementalInputs) and review-gate (fix evidence, §5.6), so the two cannot drift.
-export function coderabbitCheckEvidence(state) {
+// At most one entry { sha, at, by: 'check:<id>', usable } per [sha, check] in state.coderabbitChecks, whether or not
+// the check revokes: a revoked one stays an entry for rewrite detection, as a revoked review does. `usable` is
+// !coderabbitFailedOn (its deciding run revokes as it revokes a review: a failure or unfinished check does; a rate-limit
+// or manual-review check does not, so neither hides an earlier success or an earlier failure). Candidates are every
+// success run on the commit (`check.successes`; without that array, the check itself when it is a success). A candidate
+// counts when its id, startedAt and completedAt are present and readable, its commit's last arrival on the PR
+// (lastArrivalAt over state.runs) is known, and some CodeRabbit full-review request falls strictly after that arrival and
+// strictly before its startedAt; the entry is the counting candidate completed last. An unrequested `success` is no
+// entry. The one place this rule lives: shared by slotState (through incrementalInputs) and review-gate (fix evidence,
+// §5.6, through coderabbitCheckEvidence), so the two cannot drift.
+export function coderabbitCheckEntries(state) {
   const checks = state?.coderabbitChecks
   if (!isCheck(checks)) return []
   const requests = (Array.isArray(state.requests) ? state.requests : []).filter((r) => r?.bot === 'coderabbit' && readable(r)).map((r) => ms(r.at))
   const time = (t) => (typeof t === 'string' && !Number.isNaN(Date.parse(t)) ? Date.parse(t) : null)
   const out = []
   for (const [sha, c] of Object.entries(checks)) {
-    // The newest check revokes as it revokes a review (a later failure or unfinished check does; a rate-limit or
-    // manual-review check does not).
-    if (!isCheck(c) || !hasCommit({ sha }) || coderabbitFailedOn(state, sha)) continue
+    if (!isCheck(c) || !hasCommit({ sha })) continue
+    const usable = !coderabbitFailedOn(state, sha)
     const candidates = Array.isArray(c.successes) ? c.successes : c.conclusion === 'success' ? [c] : []
     const arrivedAt = lastArrivalAt({ runs: state.runs, pr: state.pr?.number, headRepo: state.pr?.headRepo, sha })
     if (arrivedAt === null) continue
@@ -299,10 +317,13 @@ export function coderabbitCheckEvidence(state) {
       if (!requests.some((at) => arrived < at && at < started)) continue
       if (best === null || completed > best.completed) best = { k, completed }
     }
-    if (best) out.push({ sha, at: best.k.completedAt, by: `check:${best.k.id}` })
+    if (best) out.push({ sha, at: best.k.completedAt, by: `check:${best.k.id}`, usable })
   }
   return out
 }
+
+// The usable coderabbitCheckEntries, without the flag: CodeRabbit evidence (coverage and §5.6 fix evidence).
+export const coderabbitCheckEvidence = (state) => coderabbitCheckEntries(state).filter((e) => e.usable).map(({ sha, at, by }) => ({ sha, at, by }))
 
 function incrementalInputs(bot, state) {
   const login = bot === 'coderabbit' ? CODERABBIT_LOGIN : CODEX_LOGIN
@@ -315,8 +336,9 @@ function incrementalInputs(bot, state) {
     if (r.login !== login || r.empty) continue
     add({ sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }, !(bot === 'coderabbit' && coderabbitFailedOn(state, r.commitId)))
   }
-  // A requested clean full review is a review on its commit: an entry (rewrite detection) and evidence (coverage).
-  if (bot === 'coderabbit') for (const e of coderabbitCheckEvidence(state)) add(e, true)
+  // A requested clean full review is a review on its commit: an entry (rewrite detection), revoked or not, and, when
+  // usable, evidence (coverage).
+  if (bot === 'coderabbit') for (const { sha, at, by, usable } of coderabbitCheckEntries(state)) add({ sha, at, by }, usable)
   if (bot === 'codex') {
     // The current marker comes from the body GraphQL authenticated as Codex's (codexHistory.current), not from
     // codexState's separate REST read of it.
