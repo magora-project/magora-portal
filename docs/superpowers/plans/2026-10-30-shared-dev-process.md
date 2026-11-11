@@ -997,6 +997,73 @@ ok('a review-evidence key alone does not exempt from review-gate (failingState h
 - [ ] **Step 5: Run `npm test`.** Expected: exit 0.
 - [ ] **Step 6: Commit** (`feat(ci): PR review record and review-gate`). Push PR D with approval.
 
+### Task 26: CodeRabbit check rulings (issues #100, #102)
+
+Added 2026-11-11, after Task 24 Steps 1–2 (PR #96) and **before Task 24 Step 3**: Step 3 makes `review-gate` required, and until this task lands a clean CodeRabbit full review never covers and the manual-review skip on every push demands a substitute. Implements spec §5.5 "CodeRabbit clean full review", "Substitution" and the re-run note, and the §5.6 sentence on fix evidence (all 2026-11-11). Numbered 26 because task IDs are integers (`plan-targets.mjs` `HEADING`).
+
+**Files:**
+- modify: `scripts/review/github.mjs`
+- modify: `scripts/review/github.test.mjs`
+- modify: `scripts/review/coverage.mjs`
+- modify: `scripts/review/coverage.test.mjs`
+- modify: `scripts/ci/review-gate.mjs`
+- modify: `scripts/ci/review-gate.test.mjs`
+- modify: `.claude/rules/process.md`
+- command: `npm test`
+- command: `npm run lint:ratchet`
+
+**Interfaces:**
+- Consumes: Task 21's readers, Task 22's `slotState`, `coderabbitFailedOn` and arrival logic, Task 23's `botEvidence` and `readGateState`.
+- Produces:
+  - `github.mjs` `coderabbitCheck({sha}) -> {id, conclusion, title, startedAt, completedAt} | null`, still the newest `CodeRabbit` run from app `coderabbitai`; `startedAt`/`completedAt` are the API's `started_at`/`completed_at` (`null` when absent).
+  - `coverage.mjs`:
+    - `CR_RATE_LIMITED = { conclusion: 'neutral', title: 'Review rate limited' }` and `CR_MANUAL_REVIEW = { conclusion: 'skipped', title: 'Review skipped: manual review required for this OSS repository' }`. Titles match exactly, no trimming or case folding.
+    - `crTerminal(check) -> boolean` (exported): `true` for a conclusion in `skipped`, `failure`, `cancelled`, `timed_out`, `action_required`, **except** an exact `CR_MANUAL_REVIEW`; and `true` for an exact `CR_RATE_LIMITED`. Every other check, any other `neutral` included, is `false`. `slotState`'s head substitution ground uses it.
+    - `coderabbitFailedOn(state, sha)` keeps its contract, with one change: a check that is terminal only because it is `CR_RATE_LIMITED` returns `false` (it reviewed nothing, so an earlier review on that commit stays usable). `CR_MANUAL_REVIEW` returns `false` because it is not terminal. An unfinished check (conclusion `null`) still returns `true`.
+    - `runOfPr(pr, headRepo)` exported unchanged, for the gate's check reads.
+    - `lastArrivalAt({runs, pr, headRepo, sha}) -> string | null`: when `sha` last arrived on the PR. Among the PR's runs (`runOfPr`), with L the latest run on `sha` and P the latest run on another SHA created strictly before L, it is the `createdAt` of the earliest run on `sha` created after P (all runs on `sha` when there is no P). `null` when no run is on `sha` or any of the PR's run times is unreadable. For the head it equals `headPushedAt`'s arrival before the `prCreatedAt` floor.
+    - `coderabbitCheckEvidence(state) -> [{sha, at, by}]` (exported, the one place the rule lives, shared by `slotState` and `review-gate`): one entry per `[sha, check]` in `state.coderabbitChecks` where `check.conclusion === 'success'`, `check.id`, `startedAt` and `completedAt` are present and readable, `lastArrivalAt` for `sha` over `state.runs`/`state.pr` is not `null`, and some `state.requests` entry with `bot === 'coderabbit'` and a readable `at` satisfies `arrival < at < startedAt` (both strict). `at` is `completedAt`, `by` is `check:<id>`.
+    - `incrementalInputs('coderabbit', state)` adds each `coderabbitCheckEvidence` entry as an entry **and** as evidence, so the ordinary rules apply: it covers when it is the latest usable evidence on the current identity, an identity-preserving later commit keeps it, and a rewrite that removes its commit needs a new full-review request. An unrequested `success` is neither.
+    - `slotState` for CodeRabbit, when not covered and `state.coderabbitCheck` is exactly `CR_MANUAL_REVIEW`: never `needs-substitute` on that ground; its `pending` reason contains `post "@coderabbitai full review"`. The 30-minute timeout is unchanged and still substitutes.
+  - `review-gate.mjs`: `botEvidence('coderabbit', state)` also returns `{ sha }` for each `coderabbitCheckEvidence(state)` entry (§5.6). `readGateState` reads `coderabbitCheck` for the head, every non-empty CodeRabbit review's commit, **and every `headSha` of the PR's runs** (`runs.filter(runOfPr(n, headRepo))`), deduplicated, into `coderabbitChecks`. A read error still throws (could not judge). A slot covered by a check carries `by: 'check:<id>'` in the PR review record.
+
+- [ ] **Step 1: Write the failing tests.** In `coverage.test.mjs`, add a check helper `crRun(id, conclusion, title, startedHHMM, completedHHMM)` and use `runOn` for arrivals (A arrives 10:00 unless stated):
+
+```js
+ok('crTerminal: rate limited is terminal; other neutral is not', crTerminal(CR_RATE_LIMITED) && crTerminal({ conclusion: 'neutral', title: 'Review paused' }) === false)
+ok('crTerminal: manual-review skip is not terminal; "No files to review" is; a near-miss title is', crTerminal(CR_MANUAL_REVIEW) === false && crTerminal({ conclusion: 'skipped', title: 'No files to review' }) && crTerminal({ ...CR_MANUAL_REVIEW, title: `${CR_MANUAL_REVIEW.title} ` }))
+ok('a rate-limited check on a reviewed commit leaves its review usable; a failure check does not', coderabbitFailedOn({ coderabbitChecks: { [A2]: CR_RATE_LIMITED } }, A2) === false && coderabbitFailedOn({ coderabbitChecks: { [A2]: { conclusion: 'failure', title: 'x' } } }, A2) === true)
+ok('a manual-review check revokes nothing; an unfinished check still does', coderabbitFailedOn({ coderabbitChecks: { [A2]: CR_MANUAL_REVIEW } }, A2) === false && coderabbitFailedOn({ coderabbitChecks: { [A2]: { conclusion: null, title: null } } }, A2) === true)
+ok('head rate limited, no usable review -> needs-substitute at once', (await s(crHeadRateLimited)).status === 'needs-substitute')
+ok('head rate limited after a usable review on the same commit -> covered', (await s(crReviewThenRateLimited)).status === 'covered')
+ok('head manual-review skip, 10 minutes -> pending naming the request; 31 minutes -> needs-substitute', await (async () => { const a = await s(crManualAt10); const b = await s(crManualAt31); return a.status === 'pending' && /@coderabbitai full review/.test(a.reason) && b.status === 'needs-substitute' })())
+ok('requested clean full review (request 10:05, started 10:06, success 10:09) -> covered by check:<id>', await (async () => { const r = await s(crRequestedSuccess); return r.status === 'covered' && r.by === 'check:501' })())
+ok('unrequested success -> not covered', (await s(crUnrequestedSuccess)).status !== 'covered')
+ok('request before the commit arrived (09:55) -> not covered', (await s(crRequestBeforeArrival)).status !== 'covered')
+ok('request after started_at -> not covered; request exactly at arrival or at started_at -> not covered', (await s(crRequestAfterStart)).status !== 'covered' && (await s(crRequestAtArrival)).status !== 'covered' && (await s(crRequestAtStart)).status !== 'covered')
+ok('unreadable started_at, completed_at, or no run for the check\'s commit -> not covered', (await s(crNoStartedAt)).status !== 'covered' && (await s(crNoCompletedAt)).status !== 'covered' && (await s(crCheckCommitNoRun)).status !== 'covered')
+ok('a @codex review request does not make a CodeRabbit success requested', (await s(crSuccessCodexRequestOnly)).status !== 'covered')
+ok('a requested success with conclusion failure is not evidence', (await s(crRequestedFailure)).status !== 'covered')
+ok('A -> B -> A: a request after A\'s first arrival but before its last does not count; one after its last does', (await s(crReturningRequestEarly)).status !== 'covered' && (await s(crReturningRequestLate)).status === 'covered')
+ok('evidence-only head E (same identity, its own check a manual-review skip) keeps a requested success on A2', (await s(crRequestedSuccessThenEvidenceHead)).status === 'covered')
+ok('a rewrite that removes the requested-success commit and changes the identity -> not covered, reason names the request', await (async () => { const r = await s(crRequestedSuccessRewritten); return r.status !== 'covered' && /full review/.test(r.reason) })())
+ok('lastArrivalAt: A -> B -> A gives A\'s second arrival; no run on the sha -> null', lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(44, B, T('10:10')), runOn(44, A2, T('10:20')), runOn(44, A2, T('10:25'))], pr: 44, headRepo: 'o/r', sha: A2 }) === T('10:20') && lastArrivalAt({ runs: [runOn(44, B, T('10:10'))], pr: 44, headRepo: 'o/r', sha: A2 }) === null)
+```
+
+In `github.test.mjs`, change the two exact-JSON assertions to the five-field shape and add: `ok('coderabbitCheck returns id, started_at and completed_at', …id === 9 && startedAt === '2026-11-11T10:06:00Z' && completedAt === '2026-11-11T10:09:00Z')`. In `review-gate.test.mjs`:
+
+```js
+ok('fixed CodeRabbit thread verified by a requested clean full review on the fix commit -> ok (§5.6)', (await evaluateGate({ state: crThreadFixedByRequestedCheck, record: fixedRec, depth: 'standard' })).ok)
+ok('the same with an unrequested success -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: crThreadFixedByUnrequestedCheck, record: fixedRec, depth: 'standard' }); return r.ok === false && /thread:/.test(r.lines.join()) })())
+ok('readGateState reads the CodeRabbit check of every PR-run head SHA, including one with no review', await (async () => { const seen = []; await readGateState(gateStateArgs(recordCheckPaths(seen))); return [HEAD, REVIEWED, RUN_ONLY].every((sha) => seen.includes(`/repos/o/r/commits/${sha}/check-runs`)) })())
+```
+
+- [ ] **Step 2: Run `npm test`.** Expected: FAIL (missing exports `crTerminal`, `CR_RATE_LIMITED`, `CR_MANUAL_REVIEW`, `lastArrivalAt`, `coderabbitCheckEvidence`; old two-field `coderabbitCheck`).
+- [ ] **Step 3: Implement** the Interfaces above in `github.mjs`, `coverage.mjs` (update the `SlotStateInput` typedef for `coderabbitCheck`/`coderabbitChecks`) and `review-gate.mjs`. `lastArrivalAt` and `arrivalOf` share one walk; do not duplicate the run filter.
+- [ ] **Step 4: Edit `.claude/rules/process.md` § Review slots and dispatch, Substitution paragraph,** to mirror spec §5.5: the exact-title terminal list including `neutral` "Review rate limited"; the manual-review skip is not terminal (pending, "post `@coderabbitai full review`", the timeout still substitutes); a rate-limit check revokes no earlier review; a requested clean full review (request after the commit last arrived and before the check started) counts as a CodeRabbit review on its commit and as §5.6 fix evidence; and re-run `review-gate` after the requested `CodeRabbit` check completes `success`. Wording only; no rule beyond the spec's.
+- [ ] **Step 5: Run `npm test` and `npm run lint:ratchet`.** Expected: exit 0 for both.
+- [ ] **Step 6: Commit** (`feat(review): CodeRabbit check rulings: rate limit, manual-review skip, requested clean review (#100, #102)`). The PR is `subtle-correctness`, `Plan:` this plan `T26`; push with approval.
+
 ### Task 24 (operator): Attachment, acceptance cases, then make `review-gate` required
 
 - [ ] **Step 1:** on a test PR, submit a review and read `gh api repos/magora-project/magora-portal/commits/<head>/check-runs --jq '.check_runs[] | select(.name=="review-gate") | [.head_sha, .conclusion] | @tsv'`. Record whether the `pull_request_review` run's check is on the PR head (§5.5). If it is not, remove `pull_request_review` from the triggers in a follow-up commit; the record commit is the trigger.
