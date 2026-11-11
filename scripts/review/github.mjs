@@ -164,13 +164,15 @@ export async function listThreads({ repo, pr, token, fetchImpl = fetch }) {
 // The check run named `CodeRabbit` from app `coderabbitai` on `sha` (plan V3), newest first; null if
 // there is none. A same-named run from another app is ignored. -> { id, conclusion, title, startedAt, completedAt }:
 // startedAt and completedAt are the API's started_at and completed_at (null when absent), which time a requested
-// clean full review (spec §5.5).
+// clean full review (spec §5.5). `successes` is every such run on `sha` that concluded success, newest first, so a later
+// rate-limit or manual-review check cannot hide an earlier requested clean full review.
 export async function coderabbitCheck({ repo, token, sha, fetchImpl = fetch }) {
   const runs = await paginateKey(fetchImpl, token, `${API}/repos/${repo}/commits/${sha}/check-runs?check_name=CodeRabbit`, 'check_runs')
   const mine = runs.filter((r) => r.name === 'CodeRabbit' && r.app?.slug === 'coderabbitai').sort((a, b) => b.id - a.id)
   if (!mine.length) return null
   const c = mine[0]
-  return { id: c.id ?? null, conclusion: c.conclusion ?? null, title: c.output?.title ?? null, startedAt: c.started_at ?? null, completedAt: c.completed_at ?? null }
+  const successes = mine.filter((r) => r.conclusion === 'success').map((r) => ({ id: r.id ?? null, startedAt: r.started_at ?? null, completedAt: r.completed_at ?? null }))
+  return { id: c.id ?? null, conclusion: c.conclusion ?? null, title: c.output?.title ?? null, startedAt: c.started_at ?? null, completedAt: c.completed_at ?? null, successes }
 }
 
 // Every `pull_request` run on the PR's head branch (gate point 1). Needs `actions: read`.

@@ -180,6 +180,11 @@ try {
   })
   const crThreadFixedByUnrequestedCheck = { ...crThreadFixedByRequestedCheck, requests: [] }
   ok('fixed CodeRabbit thread verified by a requested clean full review on the fix commit -> ok (§5.6)', (await evaluateGate({ state: crThreadFixedByRequestedCheck, record: fixedRec, depth: 'standard' })).ok)
+  // F1 amendment: a later rate-limited check on E (as coderabbitCheck returns it) keeps E's requested success in `successes`.
+  const crRateLimitedOnE = { id: 602, conclusion: 'neutral', title: 'Review rate limited', startedAt: T(10), completedAt: T(11), successes: [{ id: 601, startedAt: T(6), completedAt: T(9) }] }
+  const crThreadFixedByRequestedCheckThenRateLimited = { ...crThreadFixedByRequestedCheck, coderabbitCheck: crRateLimitedOnE, coderabbitChecks: { [sha.R]: CR_OK, [sha.E]: crRateLimitedOnE } }
+  ok('fix evidence survives a later rate-limited check on the fix commit (F1 amendment)', (await evaluateGate({ state: crThreadFixedByRequestedCheckThenRateLimited, record: fixedRec, depth: 'standard' })).ok)
+  ok('...but not a later failure check on the fix commit', (await evaluateGate({ state: { ...crThreadFixedByRequestedCheckThenRateLimited, coderabbitChecks: { [sha.R]: CR_OK, [sha.E]: { ...crRateLimitedOnE, conclusion: 'failure', title: 'x' } } }, record: fixedRec, depth: 'standard' })).ok === false)
   ok('the same with an unrequested success -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: crThreadFixedByUnrequestedCheck, record: fixedRec, depth: 'standard' }); return r.ok === false && /thread:/.test(r.lines.join()) })())
   ok('the same requested success with no completed_at, or no started_at, is no fix evidence', await (async () => {
     const without = (k) => { const c = { ...crCheckOnE, [k]: null }; return { ...crThreadFixedByRequestedCheck, coderabbitCheck: c, coderabbitChecks: { [sha.R]: CR_OK, [sha.E]: c } } }

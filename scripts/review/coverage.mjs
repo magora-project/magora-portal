@@ -278,15 +278,23 @@ export function coderabbitCheckEvidence(state) {
   const time = (t) => (typeof t === 'string' && !Number.isNaN(Date.parse(t)) ? Date.parse(t) : null)
   const out = []
   for (const [sha, c] of Object.entries(checks)) {
-    if (!isCheck(c) || c.conclusion !== 'success' || !hasCommit({ sha })) continue
-    if (!((typeof c.id === 'number' && Number.isFinite(c.id)) || (typeof c.id === 'string' && c.id !== ''))) continue
-    const started = time(c.startedAt), completed = time(c.completedAt)
-    if (started === null || completed === null) continue
+    // The newest check revokes as it revokes a review (a later failure or unfinished check does; a rate-limit or
+    // manual-review check does not).
+    if (!isCheck(c) || !hasCommit({ sha }) || coderabbitFailedOn(state, sha)) continue
+    const candidates = Array.isArray(c.successes) ? c.successes : c.conclusion === 'success' ? [c] : []
     const arrivedAt = lastArrivalAt({ runs: state.runs, pr: state.pr?.number, headRepo: state.pr?.headRepo, sha })
     if (arrivedAt === null) continue
     const arrived = ms(arrivedAt)
-    if (!requests.some((at) => arrived < at && at < started)) continue
-    out.push({ sha, at: c.completedAt, by: `check:${c.id}` })
+    let best = null
+    for (const k of candidates) {
+      if (!isCheck(k)) continue
+      if (!((typeof k.id === 'number' && Number.isFinite(k.id)) || (typeof k.id === 'string' && k.id !== ''))) continue
+      const started = time(k.startedAt), completed = time(k.completedAt)
+      if (started === null || completed === null) continue
+      if (!requests.some((at) => arrived < at && at < started)) continue
+      if (best === null || completed > best.completed) best = { k, completed }
+    }
+    if (best) out.push({ sha, at: best.k.completedAt, by: `check:${best.k.id}` })
   }
   return out
 }

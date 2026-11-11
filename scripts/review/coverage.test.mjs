@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  BOT_VENDOR, CR_MANUAL_REVIEW, CR_RATE_LIMITED, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, coderabbitFailedOn, crTerminal, diffTooLarge, headPushedAt, lastArrivalAt,
+  BOT_VENDOR, CR_MANUAL_REVIEW, CR_RATE_LIMITED, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, coderabbitCheckEvidence, coderabbitFailedOn, crTerminal, diffTooLarge, headPushedAt, lastArrivalAt,
   makeIdentityOf, makeIsAncestor, requiredMet, slotState, substituteOk, substitutionClockStart,
 } from './coverage.mjs'
 import { codexHistory, geminiDispatchRuns } from './github.mjs'
@@ -455,6 +455,22 @@ try {
     ...crRequestedSuccess, head: F1, current: 'IF1', runs: [runOn(44, A2, T('10:00')), runOn(44, F1, T('10:20'))], now: T('10:25'), pushed: T('10:20'),
     coderabbitCheck: null, coderabbitChecks: { [A2]: CR_SUCCESS, [F1]: null },
   }
+  // F1 amendment: the check on A2 as coderabbitCheck returns it, a newest run plus every success run on the commit.
+  const succ = ({ id, startedAt, completedAt }) => ({ id, startedAt, completedAt })
+  const newestWith = (newest, ...successes) => ({ ...newest, successes: successes.map(succ) })
+  const later = (conclusion, title) => crRun(503, conclusion, title, '10:12', '10:12')
+  const crRequestedSuccessThenRateLimited = { ...crRequestedSuccess, ...crOn(A2, newestWith(later('neutral', CR_RATE_LIMITED.title), CR_SUCCESS)) }
+  const crRequestedSuccessThenManual = { ...crRequestedSuccess, ...crOn(A2, newestWith(later('skipped', CR_MANUAL_REVIEW.title), CR_SUCCESS)) }
+  const crRequestedSuccessThenFailure = { ...crRequestedSuccess, ...crOn(A2, newestWith(later('failure', 'x'), CR_SUCCESS)) }
+  const crRequestedSuccessThenUnfinished = { ...crRequestedSuccess, ...crOn(A2, newestWith({ ...later(null, null), completedAt: null }, CR_SUCCESS)) }
+  const CR_SUCCESS_2 = crRun(502, 'success', 'Review completed', '10:16', '10:19')
+  const crTwoRequestedSuccesses = {
+    ...baseState(A2), runs: [runOn(44, A2, T('10:00'))], requests: [req('coderabbit', '10:05'), req('coderabbit', '10:15')],
+    // Newest is a later rate limit; the successes are listed out of completion order, so the pick must be by completedAt.
+    coderabbitChecks: { [A2]: newestWith(crRun(504, 'neutral', CR_RATE_LIMITED.title, '10:25', '10:25'), CR_SUCCESS, CR_SUCCESS_2) },
+  }
+  // 501 started 10:06 with no request before it; the request at 10:10 came after it started, then 503 was rate limited.
+  const crUnrequestedSuccessThenRateLimitedAfterRequest = { ...crUnrequestedSuccess, requests: [req('coderabbit', '10:10')], ...crOn(A2, newestWith(later('neutral', CR_RATE_LIMITED.title), CR_SUCCESS)) }
 
   ok('crTerminal: rate limited is terminal; other neutral is not', crTerminal(CR_RATE_LIMITED) && crTerminal({ conclusion: 'neutral', title: 'Review paused' }) === false)
   ok('crTerminal: manual-review skip is not terminal; "No files to review" is; a near-miss title is', crTerminal(CR_MANUAL_REVIEW) === false && crTerminal({ conclusion: 'skipped', title: 'No files to review' }) && crTerminal({ ...CR_MANUAL_REVIEW, title: `${CR_MANUAL_REVIEW.title} ` }))
@@ -478,6 +494,11 @@ try {
   ok('evidence-only head E (same identity, its own check a manual-review skip) keeps a requested success on A2', (await s(crRequestedSuccessThenEvidenceHead)).status === 'covered')
   ok('a rewrite that removes the requested-success commit and changes the identity -> not covered, reason names the request', await (async () => { const r = await s(crRequestedSuccessRewritten); return r.status !== 'covered' && /full review/.test(r.reason) })())
   ok('lastArrivalAt: A -> B -> A gives A\'s second arrival; no run on the sha -> null', lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(44, B, T('10:10')), runOn(44, A2, T('10:20')), runOn(44, A2, T('10:25'))], pr: 44, headRepo: 'o/r', sha: A2 }) === T('10:20') && lastArrivalAt({ runs: [runOn(44, B, T('10:10'))], pr: 44, headRepo: 'o/r', sha: A2 }) === null)
+  ok('a requested success then a rate-limited check on the same commit -> still covered by the success', await (async () => { const r = await s(crRequestedSuccessThenRateLimited); return r.status === 'covered' && r.by === 'check:501' })())
+  ok('a requested success then a manual-review check on the same commit -> still covered by the success', (await s(crRequestedSuccessThenManual)).status === 'covered')
+  ok('a requested success then a failure check, or an unfinished one, on the same commit -> not covered', (await s(crRequestedSuccessThenFailure)).status !== 'covered' && (await s(crRequestedSuccessThenUnfinished)).status !== 'covered')
+  ok('two requested successes on one commit -> one entry, the later completed', coderabbitCheckEvidence(crTwoRequestedSuccesses).length === 1 && coderabbitCheckEvidence(crTwoRequestedSuccesses)[0].by === 'check:502')
+  ok('an earlier unrequested success does not count because a later run on the commit was requested', (await s(crUnrequestedSuccessThenRateLimitedAfterRequest)).status !== 'covered')
   // Beyond the plan's list: the remaining lastArrivalAt contract, and the strict request window at a one-second margin.
   ok('lastArrivalAt: the commit\'s last arrival stands after the PR moved on; an unreadable run time -> null; another PR\'s run is ignored', lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(44, B, T('10:10'))], pr: 44, headRepo: 'o/r', sha: A2 }) === T('10:00')
     && lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(44, B, 'garbage')], pr: 44, headRepo: 'o/r', sha: A2 }) === null
