@@ -173,7 +173,7 @@ export async function coderabbitCheck({ repo, token, sha, fetchImpl = fetch }) {
 export async function prRuns({ repo, token, headRef, fetchImpl = fetch }) {
   const runs = await paginateKey(fetchImpl, token, `${API}/repos/${repo}/actions/runs?branch=${encodeURIComponent(headRef)}&event=pull_request`, 'workflow_runs')
   return runs.map((r) => ({
-    id: r.id, name: r.name, event: r.event, status: r.status, conclusion: r.conclusion ?? null, headSha: r.head_sha,
+    id: r.id, name: r.name, path: r.path ?? null, event: r.event, status: r.status, conclusion: r.conclusion ?? null, headSha: r.head_sha,
     headRepo: r.head_repository?.full_name ?? null, createdAt: r.created_at, prNumbers: (r.pull_requests ?? []).map((p) => p.number),
   }))
 }
