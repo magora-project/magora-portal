@@ -6,9 +6,9 @@
 // What it reads, all live from the API when the job runs (never the event payload): the PR (labels, head, base,
 // draft, creation time), reviews and their commit_ids, issue comments (Codex's state marker and its edit history,
 // Gemini's verdict markers, CodeRabbit's outside-diff findings, full-review requests), review threads, CodeRabbit's
-// check run on the head and on every commit a CodeRabbit review is on, and the PR's workflow runs. From the PR-head
-// checkout: the PR review record and the substitute records under .review/records/ that this PR adds. Every read error
-// fails the job "could not judge" (fail closed).
+// check run on the head, on every commit a CodeRabbit review is on and on every head SHA of the PR's workflow runs, and
+// those runs. From the PR-head checkout: the PR review record and the substitute records under .review/records/ that
+// this PR adds. Every read error fails the job "could not judge" (fail closed).
 //
 // The PR review record (schema 1):
 //   { schema: 1, pr, slots: [{ bot, status: 'covered' | 'substituted', by }], findings: [{ id, source, severity,
@@ -22,8 +22,9 @@
 // Fixed findings (§5.6). The fix commit must be an ancestor of the head, and then either
 //   (a) it strictly descends from every commit the finding was reported on, its input identity differs from each,
 //       and the finding's bot has usable evidence on the fix commit or a descendant of it with the current identity
-//       (CodeRabbit: a non-empty review; Codex: a non-empty review or its completed state marker, V2; Gemini: a usable
-//       verdict on the current identity), and a thread is resolved; or
+//       (CodeRabbit: a non-empty review, or a requested clean full review, its `success` check (coderabbitCheckEvidence);
+//       Codex: a non-empty review or its completed state marker, V2; Gemini: a usable verdict on the current identity), and
+//       a thread is resolved; or
 //   (b) `by` names a record in an accepted (substituteOk) `substitute:<bot>` chain whose head holds the finding's gate
 //       ID with a `fixed` disposition.
 // Every ordering is by ancestry, never by dates. A reported commit that is unknown (a cr: finding read from an issue
@@ -39,8 +40,8 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  BOTS, BOT_VENDOR, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, coderabbitFailedOn, diffTooLarge, makeHave, makeIdentityOf, makeIsAncestor, requiredMet,
-  slotState, substituteOk, substitutionClockStart,
+  BOTS, BOT_VENDOR, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, coderabbitCheckEvidence, coderabbitFailedOn, diffTooLarge, makeHave, makeIdentityOf, makeIsAncestor,
+  requiredMet, runOfPr, slotState, substituteOk, substitutionClockStart,
 } from '../review/coverage.mjs'
 import {
   GEMINI_LOGIN, codexHistory, codexState, coderabbitCheck, fullReviewRequests, geminiDispatchRuns, geminiVerdicts,
@@ -264,10 +265,13 @@ export function readPrRecord({ cwd, pr }) {
 // The bot's usable evidence: [{ sha, identity? }] (identity known only for Gemini, whose marker carries it). A CodeRabbit
 // review is usable only when its OWN commit's CodeRabbit check is known and not a terminal failure: a failed or unknown
 // check (no entry in state.coderabbitChecks) makes it unusable (coverage.mjs coderabbitFailedOn, the same rule slotState
-// applies).
+// applies). A requested clean CodeRabbit full review is evidence on its commit as a review is (§5.6;
+// coverage.mjs coderabbitCheckEvidence, the rule slotState applies).
 function botEvidence(bot, state) {
   const reviewsBy = (login) => (state.reviews ?? []).filter((r) => r.login === login && r.empty !== true && typeof r.commitId === 'string').map((r) => ({ sha: r.commitId }))
-  if (bot === 'coderabbit') return reviewsBy(CODERABBIT_LOGIN).filter((e) => !coderabbitFailedOn(state, e.sha))
+  if (bot === 'coderabbit') {
+    return [...reviewsBy(CODERABBIT_LOGIN).filter((e) => !coderabbitFailedOn(state, e.sha)), ...coderabbitCheckEvidence(state).map((e) => ({ sha: e.sha }))]
+  }
   if (bot === 'codex') {
     // The current marker comes from the body GraphQL authenticated as Codex's (codexHistory.current), never from
     // codexState's separate REST read. `current` is null unless that body is trusted (codexHistory sets it only when
@@ -495,9 +499,14 @@ export async function readGateState({ repo, token, fetchImpl = fetch, pr, cwd, r
     geminiDispatchRuns(args), coderabbitCheck({ ...args, sha: head }),
   ])
   // Each CodeRabbit review is judged by its OWN commit's CodeRabbit check (coverage.mjs coderabbitChecks): read it for
-  // every distinct commit carrying a non-empty CodeRabbit review, plus the head. A read error throws (could not judge).
-  // A commitId that is not a SHA is not read: it has no entry, so its review is not usable (fail closed).
-  const crShas = [...new Set([head, ...reviews.filter((r) => r.login === CODERABBIT_LOGIN && r.empty !== true && typeof r.commitId === 'string' && SHA.test(r.commitId)).map((r) => r.commitId)])]
+  // every distinct commit carrying a non-empty CodeRabbit review, plus the head. A requested clean full review posts no
+  // review, so the check of every head SHA of the PR's runs is read too (coverage.mjs coderabbitCheckEvidence). A read
+  // error throws (could not judge). A commitId that is not a SHA is not read: it has no entry, so its review is not
+  // usable (fail closed).
+  const headRepo = pr.head.repo?.full_name ?? null
+  const crReviewed = reviews.filter((r) => r.login === CODERABBIT_LOGIN && r.empty !== true && typeof r.commitId === 'string' && SHA.test(r.commitId)).map((r) => r.commitId)
+  const runShas = runs.filter(runOfPr(n, headRepo)).map((r) => r.headSha).filter((s) => typeof s === 'string' && SHA.test(s))
+  const crShas = [...new Set([head, ...crReviewed, ...runShas])]
   const coderabbitChecks = {}
   for (const sha of crShas) coderabbitChecks[sha] = sha === head ? crCheck : await coderabbitCheck({ ...args, sha })
   const cs = codexState(comments)
@@ -506,7 +515,6 @@ export async function readGateState({ repo, token, fetchImpl = fetch, pr, cwd, r
   const rh = recordsHead ?? head
   const added = await addedRecordStems({ cwd, mergeBase: await mergeBase({ cwd, base, head: rh }), head: rh, untracked })
   const records = readRecords({ cwd }).filter((r) => added.has(r.stem))
-  const headRepo = pr.head.repo?.full_name ?? null
   return {
     pr: {
       number: n, head, headRef: pr.head.ref, headRepo, base, draft: pr.draft === true,

@@ -170,6 +170,23 @@ try {
   ok('F2: ... and with no check entry for that commit (unknown) -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: fixVerifiedOnF(undefined), record: fixedRec, depth: 'standard' }); return r.ok === false && r.lines.some((l) => /^FAIL thread:PRRT_1\b.*no usable coderabbit review/.test(l)) })())
   ok('F2: ... the same with that commit\'s check successful -> ok (control)', (await evaluateGate({ state: fixVerifiedOnF(CR_OK), record: fixedRec, depth: 'standard' })).ok)
   ok('F2: ... and with that commit fetched and carrying no CodeRabbit check (null) -> ok', (await evaluateGate({ state: fixVerifiedOnF(null), record: fixedRec, depth: 'standard' })).ok)
+  // Task 26 (§5.6): a requested clean CodeRabbit full review is fix evidence as a review is. The head E (the fix's
+  // identity) arrived at T(0) (gateState's run); "@coderabbitai full review" at T(5); CodeRabbit check 601 on E started
+  // at T(6) and completed success at T(9), posting no review. Codex covers the slot, so only the thread is judged.
+  const crCheckOnE = { id: 601, conclusion: 'success', title: 'Review completed', startedAt: T(6), completedAt: T(9) }
+  const crThreadFixedByRequestedCheck = st(sha.E, {
+    ...codexCovers(sha.E), threads: [crThreadResolved], reviews: [review(1, CODERABBIT_LOGIN, sha.R, T(5))], requests: [{ bot: 'coderabbit', at: T(5) }],
+    coderabbitCheck: crCheckOnE, coderabbitChecks: { [sha.R]: CR_OK, [sha.E]: crCheckOnE },
+  })
+  const crThreadFixedByUnrequestedCheck = { ...crThreadFixedByRequestedCheck, requests: [] }
+  ok('fixed CodeRabbit thread verified by a requested clean full review on the fix commit -> ok (§5.6)', (await evaluateGate({ state: crThreadFixedByRequestedCheck, record: fixedRec, depth: 'standard' })).ok)
+  ok('the same with an unrequested success -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: crThreadFixedByUnrequestedCheck, record: fixedRec, depth: 'standard' }); return r.ok === false && /thread:/.test(r.lines.join()) })())
+  ok('the same requested success with no completed_at, or no started_at, is no fix evidence', await (async () => {
+    const without = (k) => { const c = { ...crCheckOnE, [k]: null }; return { ...crThreadFixedByRequestedCheck, coderabbitCheck: c, coderabbitChecks: { [sha.R]: CR_OK, [sha.E]: c } } }
+    for (const k of ['completedAt', 'startedAt']) { const r = await evaluateGate({ state: without(k), record: fixedRec, depth: 'standard' }); if (!(r.ok === false && r.lines.some((l) => /^FAIL thread:PRRT_1\b.*no usable coderabbit review/.test(l)))) return false }
+    return true
+  })())
+  ok('a slot covered by a requested clean full review reports check:<id>', await (async () => { const r = await evaluateGate({ state: { ...crThreadFixedByRequestedCheck, codexState: null, codexHistory: null }, record: prRecord([fixedAt('thread:PRRT_1', sha.F)], { slots: [{ bot: 'coderabbit', status: 'covered', by: 'check:601' }] }), depth: 'standard' }); return r.ok && r.lines.some((l) => l === 'ok slot coderabbit: covered (check:601)') })())
   ok('the same, with the thread still open -> FAIL naming the thread', await (async () => { const r = await evaluateGate({ state: { ...fixedReReviewed, threads: [crThreadOnR('PRRT_1')] }, record: fixedRec, depth: 'standard' }); return r.ok === false && r.lines.some((l) => /^FAIL thread:PRRT_1\b.*resolved/.test(l)) })())
   ok('the same, with a fix commit that is not in the head\'s history -> FAIL', (await evaluateGate({ state: fixedReReviewed, record: prRecord([fixedAt('thread:PRRT_1', sha.Y)], { slots: STD_SLOTS }), depth: 'standard' })).ok === false)
   ok('a fix commit off the head\'s history fails even with a review on it at the current identity', await (async () => {
@@ -385,7 +402,10 @@ try {
       const c = scen.checks?.[cr[1]] ?? []
       return typeof c === 'number' ? res(c, { message: 'boom' }) : res(200, { total_count: c.length, check_runs: c })
     }
-    if (p === '/repos/o/r/actions/runs') return res(200, { total_count: 1, workflow_runs: [{ id: 1, name: 'ci', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: sha.E, head_repository: { full_name: 'o/r' }, created_at: T(0), pull_requests: [{ number: 1 }] }] })
+    if (p === '/repos/o/r/actions/runs') {
+      const runs = scen.runs ?? [{ id: 1, name: 'ci', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: sha.E, head_repository: { full_name: 'o/r' }, created_at: T(0), pull_requests: [{ number: 1 }] }]
+      return res(200, { total_count: runs.length, workflow_runs: runs })
+    }
     if (p === '/repos/o/r/actions/workflows/gemini-review.yml/runs') return res(200, { total_count: 0, workflow_runs: [] })
     return res(404, { message: `no stub for ${p}` })
   }
@@ -433,6 +453,20 @@ try {
     const keys = Object.keys(s.coderabbitChecks).sort().join()
     return keys === [sha.E, sha.F].sort().join() && s.coderabbitChecks[sha.E] === null && s.coderabbitCheck === null
       && s.coderabbitChecks[sha.F]?.conclusion === 'failure' && s.coderabbitChecks[sha.F]?.title === 'Review completed'
+  })())
+  // Task 26: a requested clean full review posts no review, so the check of every commit the PR ran on is read too
+  // (`scen.runs` replaces the stub's one run on the head). Y's run belongs to another PR and is not read.
+  const HEAD = sha.E, REVIEWED = sha.F, RUN_ONLY = sha.S
+  const rawRun = (id, headSha, at, prNumber = 1) => ({ id, name: 'ci', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: headSha, head_repository: { full_name: 'o/r' }, created_at: at, pull_requests: [{ number: prNumber }] })
+  const runOnlyScen = { pr: prObj('2026-11-05T00:00:01Z'), threads: [], reviews: [rawReview(1, CODERABBIT_LOGIN, REVIEWED)], runs: [rawRun(1, RUN_ONLY, T(-10)), rawRun(2, HEAD, T(0)), rawRun(3, sha.Y, T(-5), 2)] }
+  const recordCheckPaths = (seen) => async (url, init) => { seen.push(new URL(url).pathname); return activationFile({})(runOnlyScen)(url, init) }
+  const gateStateArgs = (fetchImpl) => ({ repo: 'o/r', token: 't', fetchImpl, pr: runOnlyScen.pr, cwd: repo.dir, now: Date.parse(T(120)) })
+  ok('readGateState reads the CodeRabbit check of every PR-run head SHA, including one with no review', await (async () => { const seen = []; await readGateState(gateStateArgs(recordCheckPaths(seen))); return [HEAD, REVIEWED, RUN_ONLY].every((sha) => seen.includes(`/repos/o/r/commits/${sha}/check-runs`)) })())
+  ok('... once each, keyed in coderabbitChecks, and never another PR\'s run commit', await (async () => {
+    const seen = []
+    const s = await readGateState(gateStateArgs(recordCheckPaths(seen)))
+    const reads = seen.filter((p) => /\/check-runs$/.test(p))
+    return reads.length === 3 && !reads.includes(`/repos/o/r/commits/${sha.Y}/check-runs`) && Object.keys(s.coderabbitChecks).sort().join() === [HEAD, REVIEWED, RUN_ONLY].sort().join()
   })())
   // Minor 6: main moved after the checkout, so the PR's base (read from the API afterwards) is not in the clone. The
   // gate fetches it from origin; an unfetchable base fails "could not judge", naming it.

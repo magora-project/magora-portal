@@ -162,11 +162,15 @@ export async function listThreads({ repo, pr, token, fetchImpl = fetch }) {
 // ---------------------------------------------------------------- checks and workflow runs
 
 // The check run named `CodeRabbit` from app `coderabbitai` on `sha` (plan V3), newest first; null if
-// there is none. A same-named run from another app is ignored.
+// there is none. A same-named run from another app is ignored. -> { id, conclusion, title, startedAt, completedAt }:
+// startedAt and completedAt are the API's started_at and completed_at (null when absent), which time a requested
+// clean full review (spec §5.5).
 export async function coderabbitCheck({ repo, token, sha, fetchImpl = fetch }) {
   const runs = await paginateKey(fetchImpl, token, `${API}/repos/${repo}/commits/${sha}/check-runs?check_name=CodeRabbit`, 'check_runs')
   const mine = runs.filter((r) => r.name === 'CodeRabbit' && r.app?.slug === 'coderabbitai').sort((a, b) => b.id - a.id)
-  return mine.length ? { conclusion: mine[0].conclusion ?? null, title: mine[0].output?.title ?? null } : null
+  if (!mine.length) return null
+  const c = mine[0]
+  return { id: c.id ?? null, conclusion: c.conclusion ?? null, title: c.output?.title ?? null, startedAt: c.started_at ?? null, completedAt: c.completed_at ?? null }
 }
 
 // Every `pull_request` run on the PR's head branch (gate point 1). Needs `actions: read`.

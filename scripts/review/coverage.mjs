@@ -21,13 +21,16 @@
 // @property {?object} codexHistory        codexHistory({commentId: codexState.commentId}) {reviews: [{sha, at, status}], complete, currentTrusted, current};
 //                                         null when codexState is null (and then it is not read)
 // @property {Array}   geminiVerdicts      geminiVerdicts(comments)       [{head, identity, verdict, findings, commentId, at}]
-// @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {conclusion, title} | null: the head's check, read
-//                                         only as a substitution ground
-// @property {object}  coderabbitChecks    { [sha]: coderabbitCheck({sha}) }: {conclusion, title} | null for EVERY commit that
-//                                         carries a CodeRabbit review (null: fetched, and that commit has no CodeRabbit check
-//                                         run). A CodeRabbit review is usable only when its commit has an entry here that is
-//                                         not a terminal failure; a commit with no entry is unknown and its review is not
-//                                         usable (fail closed). See coderabbitFailedOn.
+// @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {id, conclusion, title, startedAt, completedAt} | null:
+//                                         the head's check, read as a substitution ground (crTerminal) and for the
+//                                         manual-review skip's pending line
+// @property {object}  coderabbitChecks    { [sha]: coderabbitCheck({sha}) }: {id, conclusion, title, startedAt, completedAt} |
+//                                         null for EVERY commit that carries a CodeRabbit review, the head, and every head SHA
+//                                         of the PR's runs (null: fetched, and that commit has no CodeRabbit check run). A
+//                                         CodeRabbit review is usable only when its commit has an entry here that is not a
+//                                         terminal failure; a commit with no entry is unknown and its review is not usable
+//                                         (fail closed). See coderabbitFailedOn. A requested `success` entry is itself
+//                                         CodeRabbit evidence on its commit (coderabbitCheckEvidence).
 // @property {Array}   runs                prRuns({headRef})              [{id, name, path, status, conclusion, headSha, headRepo, createdAt, prNumbers}]
 // @property {Array}   geminiDispatchRuns  geminiDispatchRuns({pr})       [{id, status, conclusion, createdAt}]
 //
@@ -58,7 +61,18 @@ const GEMINI_RUN_TERMINAL = new Set(['cancelled', 'failure', 'timed_out'])
 
 const ms = (t) => (typeof t === 'number' ? t : Date.parse(t))
 
-const crTerminal = (check) => check !== null && typeof check === 'object' && CR_TERMINAL.has(check.conclusion)
+// CodeRabbit check outcomes with a ruling of their own (spec §5.5, David, 2026-11-11). Titles match exactly: no trimming
+// or case folding.
+export const CR_RATE_LIMITED = { conclusion: 'neutral', title: 'Review rate limited' }
+export const CR_MANUAL_REVIEW = { conclusion: 'skipped', title: 'Review skipped: manual review required for this OSS repository' }
+const isCheck = (check) => check !== null && typeof check === 'object' && !Array.isArray(check)
+const crIs = (check, rule) => isCheck(check) && check.conclusion === rule.conclusion && check.title === rule.title
+
+// Whether a CodeRabbit check is a terminal failure (§5.5 "After a terminal failure"): a conclusion in CR_TERMINAL, except
+// the manual-review skip CodeRabbit concludes on every new commit here (issue #102); and the rate-limit `neutral` (issue
+// #100). Any other `neutral` is not terminal.
+export const crTerminal = (check) => isCheck(check)
+  && ((CR_TERMINAL.has(check.conclusion) && !crIs(check, CR_MANUAL_REVIEW)) || crIs(check, CR_RATE_LIMITED))
 
 // Whether a CodeRabbit review on commit `sha` is NOT usable evidence because its run failed, or cannot be shown not to
 // have failed (§5.5 "Usable": a failed review never establishes coverage). Reads `state.coderabbitChecks[sha]`, the
@@ -66,9 +80,10 @@ const crTerminal = (check) => check !== null && typeof check === 'object' && CR_
 // a review whose run failed:
 //   - no own entry for `sha` (or no `coderabbitChecks` object, or `sha` not a non-empty string): unknown -> true;
 //   - null (fetched, no CodeRabbit check run on that commit) -> false;
-//   - {conclusion, title} with a terminal conclusion -> true; with conclusion null (the check has not finished) -> true,
-//     since a later failure would revoke the review and nothing re-runs the gate when the check completes;
-//     any other object -> false;
+//   - {conclusion, title} with conclusion null (the check has not finished) -> true, since a later failure would revoke
+//     the review and nothing re-runs the gate when the check completes; the rate-limit check (CR_RATE_LIMITED) -> false,
+//     since it reviewed nothing and so revokes no earlier review on that commit; another terminal check (crTerminal)
+//     -> true; any other object, the manual-review skip included (it is not terminal) -> false;
 //   - anything else -> true.
 // The single place this rule lives: shared by slotState (coverage) and review-gate (fix evidence, rule (a)), so the two
 // cannot drift.
@@ -79,7 +94,9 @@ export function coderabbitFailedOn(state, sha) {
   const c = checks[sha]
   if (c === null) return false
   if (typeof c !== 'object' || Array.isArray(c)) return true
-  return c.conclusion === null || c.conclusion === undefined || crTerminal(c)
+  if (c.conclusion === null || c.conclusion === undefined) return true
+  if (crIs(c, CR_RATE_LIMITED)) return false
+  return crTerminal(c)
 }
 const short = (sha) => (typeof sha === 'string' ? sha.slice(0, 12) : String(sha))
 const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
@@ -95,8 +112,8 @@ export function requiredMet(depth, statuses) {
 // ---------------------------------------------------------------- the substitution clock
 
 // A run belongs to the PR when its PR list names it, or when the list is empty (fork runs, merged PRs) and the
-// run's head repository is the PR's.
-const runOfPr = (pr, headRepo) => (r) => (Array.isArray(r.prNumbers) && r.prNumbers.includes(pr))
+// run's head repository is the PR's. Exported for review-gate's check reads.
+export const runOfPr = (pr, headRepo) => (r) => (Array.isArray(r.prNumbers) && r.prNumbers.includes(pr))
   || ((r.prNumbers?.length ?? 0) === 0 && typeof headRepo === 'string' && headRepo !== '' && r.headRepo === headRepo)
 
 // When the current head last arrived on the PR (plan Task 22, gate point 1): the earliest of the PR's runs on `head`
@@ -104,12 +121,34 @@ const runOfPr = (pr, headRepo) => (r) => (Array.isArray(r.prNumbers) && r.prNumb
 // or when a time cannot be read (the caller then stays pending: fail closed).
 export function headPushedAt({ runs, pr, head, headRepo, prCreatedAt }) {
   const floor = ms(prCreatedAt)
-  if (Number.isNaN(floor) || !Array.isArray(runs)) return null
-  const mine = runs.filter(runOfPr(pr, headRepo))
-  if (mine.some((r) => Number.isNaN(ms(r.createdAt)))) return null
+  if (Number.isNaN(floor)) return null
+  const mine = prRunsReadable(runs, pr, headRepo)
+  if (mine === null) return null
   const a = arrivalOf(mine, head)
   if (a === null) return null
   return ms(a.run.createdAt) >= floor ? a.run.createdAt : prCreatedAt
+}
+
+// The PR's runs (runOfPr), or null when `runs` is not an array or any of them has an unreadable time (fail closed). The
+// one run filter headPushedAt, substitutionClockStart and lastArrivalAt share.
+function prRunsReadable(runs, pr, headRepo) {
+  if (!Array.isArray(runs)) return null
+  const mine = runs.filter(runOfPr(pr, headRepo))
+  return mine.some((r) => Number.isNaN(ms(r.createdAt))) ? null : mine
+}
+
+// When `sha` last arrived on the PR, whether or not it is still the head (§5.5 "CodeRabbit clean full review"): with L the
+// latest of the PR's runs on `sha` and P the latest run on another SHA created strictly before L, the createdAt of the
+// earliest run on `sha` created after P (of all runs on `sha` when there is no P). null when no run is on `sha` or any of
+// the PR's run times is unreadable. The same walk as arrivalOf, over the runs up to L: for the head it is headPushedAt's
+// arrival before the prCreatedAt floor.
+export function lastArrivalAt({ runs, pr, headRepo, sha }) {
+  const mine = prRunsReadable(runs, pr, headRepo)
+  if (mine === null) return null
+  const onSha = mine.filter((r) => r.headSha === sha)
+  if (onSha.length === 0) return null
+  const last = Math.max(...onSha.map((r) => ms(r.createdAt)))
+  return arrivalOf(mine.filter((r) => r.headSha === sha || ms(r.createdAt) < last), sha)?.run.createdAt ?? null
 }
 
 // The last arrival of `sha` among `runs` (the PR's runs, every time readable): the earliest run on `sha` created after
@@ -135,9 +174,9 @@ function arrivalOf(runs, sha) {
 // the head, or an unreadable time): the caller then stays pending naming the missing run.
 export async function substitutionClockStart({ runs, pr, head, headRepo, prCreatedAt, identityOf, currentIdentity }) {
   const floor = ms(prCreatedAt)
-  if (Number.isNaN(floor) || !Array.isArray(runs)) return null
-  const mine = runs.filter(runOfPr(pr, headRepo))
-  if (mine.some((r) => Number.isNaN(ms(r.createdAt)))) return null
+  if (Number.isNaN(floor)) return null
+  const mine = prRunsReadable(runs, pr, headRepo)
+  if (mine === null) return null
   let a = arrivalOf(mine, head)
   if (a === null) return null
   let start = a.run.createdAt
@@ -224,6 +263,34 @@ const hasCommit = (e) => typeof e.sha === 'string' && e.sha !== ''
 const readable = (e) => !Number.isNaN(ms(e.at))
 // This bot's full-review requests. One with an unreadable time is ignored (GitHub always sets `created_at`).
 const botRequests = (state, bot) => state.requests.filter((r) => r.bot === bot && readable(r))
+
+// A requested clean CodeRabbit full review (§5.5 "CodeRabbit clean full review", issue #102): CodeRabbit posts no review
+// object for it, so its `CodeRabbit` check run counts as a usable review on its own commit, timed at its completedAt.
+// One entry { sha, at, by: 'check:<id>' } per [sha, check] in state.coderabbitChecks whose conclusion is `success`, whose
+// id, startedAt and completedAt are present and readable, whose commit's last arrival on the PR (lastArrivalAt over
+// state.runs) is known, and for which some CodeRabbit full-review request falls strictly after that arrival and strictly
+// before startedAt. An unrequested `success` is no entry. The one place this rule lives: shared by slotState (through
+// incrementalInputs) and review-gate (fix evidence, §5.6), so the two cannot drift.
+export function coderabbitCheckEvidence(state) {
+  const checks = state?.coderabbitChecks
+  if (!isCheck(checks)) return []
+  const requests = (Array.isArray(state.requests) ? state.requests : []).filter((r) => r?.bot === 'coderabbit' && readable(r)).map((r) => ms(r.at))
+  const time = (t) => (typeof t === 'string' && !Number.isNaN(Date.parse(t)) ? Date.parse(t) : null)
+  const out = []
+  for (const [sha, c] of Object.entries(checks)) {
+    if (!isCheck(c) || c.conclusion !== 'success' || !hasCommit({ sha })) continue
+    if (!((typeof c.id === 'number' && Number.isFinite(c.id)) || (typeof c.id === 'string' && c.id !== ''))) continue
+    const started = time(c.startedAt), completed = time(c.completedAt)
+    if (started === null || completed === null) continue
+    const arrivedAt = lastArrivalAt({ runs: state.runs, pr: state.pr?.number, headRepo: state.pr?.headRepo, sha })
+    if (arrivedAt === null) continue
+    const arrived = ms(arrivedAt)
+    if (!requests.some((at) => arrived < at && at < started)) continue
+    out.push({ sha, at: c.completedAt, by: `check:${c.id}` })
+  }
+  return out
+}
+
 function incrementalInputs(bot, state) {
   const login = bot === 'coderabbit' ? CODERABBIT_LOGIN : CODEX_LOGIN
   const entries = [], evidence = []
@@ -235,6 +302,8 @@ function incrementalInputs(bot, state) {
     if (r.login !== login || r.empty) continue
     add({ sha: r.commitId, at: r.submittedAt, by: `review:${r.id}` }, !(bot === 'coderabbit' && coderabbitFailedOn(state, r.commitId)))
   }
+  // A requested clean full review is a review on its commit: an entry (rewrite detection) and evidence (coverage).
+  if (bot === 'coderabbit') for (const e of coderabbitCheckEvidence(state)) add(e, true)
   if (bot === 'codex') {
     // The current marker comes from the body GraphQL authenticated as Codex's (codexHistory.current), not from
     // codexState's separate REST read of it.
@@ -389,6 +458,12 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
   // An identity-changing rewrite with no full-review request waits for the author.
   if (inc?.needsRequest) return pending(inc.reason)
 
+  // The manual-review skip (issue #102) is no terminal failure: CodeRabbit reviews only on request. The slot waits for the
+  // author; the timeout below still allows a substitute.
+  const manual = bot === 'coderabbit' && crIs(state.coderabbitCheck, CR_MANUAL_REVIEW)
+    ? `CodeRabbit skipped ${short(head)} ("${CR_MANUAL_REVIEW.title}"): post "${FULL_REVIEW_COMMAND.coderabbit}", then re-run review-gate once its CodeRabbit check completes success`
+    : null
+
   // Gemini hold (gate point 2): a run that has not completed is about to post a verdict.
   if (inFlight.length) {
     return pending(`${GEMINI_WORKFLOW} run ${inFlight.map((r) => `${r.id} (${r.status})`).join(', ')} on ${short(head)} has not finished`)
@@ -403,7 +478,7 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
   }
   // Nothing re-runs the gate when the 30 minutes pass, so the line says when to re-run it.
   const allowed = new Date(start + SUBSTITUTE_AFTER_MS).toISOString()
-  return pending(`${inc?.reason ?? `waiting for a ${bot} review of ${short(head)}`}; substitution allowed after ${allowed}; re-run review-gate then`)
+  return pending(`${manual ? `${manual}; ` : ''}${inc?.reason ?? `waiting for a ${bot} review of ${short(head)}`}; substitution allowed after ${allowed}; re-run review-gate then`)
 }
 
 // ---------------------------------------------------------------- substitutes
