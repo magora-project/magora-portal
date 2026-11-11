@@ -376,6 +376,8 @@ try {
   // Issue #97: the workflow is identified by its path; a run's `name` is its run-name, so it never equals 'Gemini review'.
   ok('an in-progress run of another workflow titled like Gemini does not hold', (await s({ ...geminiInFlightAt31, runs: [{ ...gemRun(A2, '10:00', 'in_progress'), path: '.github/workflows/other.yml' }] })).status === 'needs-substitute')
   ok('an in-progress run named exactly "Gemini review" at another path does not hold', (await s({ ...geminiInFlightAt31, runs: [{ ...gemRun(A2, '10:00', 'in_progress'), name: 'Gemini review', path: '.github/workflows/other.yml' }] })).status === 'needs-substitute')
+  ok('a ref-qualified Gemini path (gemini-review.yml@main) holds (PR #98 CodeRabbit)', (await s({ ...geminiInFlightAt31, runs: [{ ...gemRun(A2, '10:00', 'in_progress'), path: '.github/workflows/gemini-review.yml@main' }] })).status === 'pending')
+  ok('a path that only starts with the Gemini filename does not hold', (await s({ ...geminiInFlightAt31, runs: [{ ...gemRun(A2, '10:00', 'in_progress'), path: '.github/workflows/gemini-review.yml.bak' }] })).status === 'needs-substitute')
   ok('Gemini in-progress run of another PR on the head does not hold', (await s({ ...geminiInFlightAt31, runs: [{ ...gemRun(A2, '10:00', 'in_progress'), prNumbers: [12] }] })).status === 'needs-substitute')
   // Pre-publish Codex review 2026-11-10: a re-run keeps its original created_at but reviews the current head (plan M1).
   ok('an active dispatched run created before the head arrived (a re-run) holds', (await s({ ...geminiDispatchInFlightAt31, geminiDispatchRuns: [{ id: 5, status: 'in_progress', conclusion: null, createdAt: T('09:55') }] })).status === 'pending')

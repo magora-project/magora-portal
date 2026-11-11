@@ -44,6 +44,16 @@ ok('retrigger: a run at another workflow path -> none, even named or titled like
   const b = await retrigger({ event: 'workflow_run', payload: wfRun({ name: 'Gemini review', path: '.github/workflows/other.yml' }), api })
   return a.action === 'none' && b.action === 'none' && /other\.yml/.test(a.reason) && api.reruns.length === 0
 })())
+ok('retrigger: a ref-qualified Gemini path -> rerun; a longer filename -> none (PR #98 CodeRabbit)', await (async () => {
+  const a = await retrigger({ event: 'workflow_run', payload: wfRun({ path: '.github/workflows/gemini-review.yml@refs/heads/main' }), api: makeStub() })
+  const b = await retrigger({ event: 'workflow_run', payload: wfRun({ path: '.github/workflows/gemini-review.yml.bak' }), api: makeStub() })
+  return a.action === 'rerun' && b.action === 'none'
+})())
+ok('isGeminiWorkflowPath agrees between retrigger and coverage', await (async () => {
+  const a = (await import('./review-gate-retrigger.mjs')).isGeminiWorkflowPath, b = (await import('../review/coverage.mjs')).isGeminiWorkflowPath
+  const cases = ['.github/workflows/gemini-review.yml', '.github/workflows/gemini-review.yml@main', '.github/workflows/gemini-review.yml@', '.github/workflows/gemini-review.yml.bak', 'x/.github/workflows/gemini-review.yml', '', null, undefined, 7]
+  return cases.every((c) => a(c) === b(c)) && cases.map(a).join() === 'true,true,false,false,false,false,false,false,false'
+})())
 ok('GEMINI_WORKFLOW_PATH is gemini-review.yml, whose name is the GEMINI_WORKFLOW the trigger lists, and matches coverage.mjs', await (async () => {
   const { GEMINI_WORKFLOW, GEMINI_WORKFLOW_PATH } = await import('./review-gate-retrigger.mjs')
   const cov = await import('../review/coverage.mjs')

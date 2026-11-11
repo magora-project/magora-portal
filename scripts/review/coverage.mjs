@@ -51,6 +51,8 @@ export const GEMINI_DIFF_LIMIT = 400_000
 export const GEMINI_WORKFLOW = 'Gemini review'
 // Runs are matched by workflow path, never `name`: the workflow's `run-name` is what the API reports as `name` (issue #97).
 export const GEMINI_WORKFLOW_PATH = '.github/workflows/gemini-review.yml'
+// The API may qualify a run's path with a ref (`<path>@<ref>`, GitHub's documented form); accept that, and nothing else.
+export const isGeminiWorkflowPath = (p) => typeof p === 'string' && (p === GEMINI_WORKFLOW_PATH || (p.startsWith(`${GEMINI_WORKFLOW_PATH}@`) && p.length > GEMINI_WORKFLOW_PATH.length + 1))
 const CR_TERMINAL = new Set(['skipped', 'failure', 'cancelled', 'timed_out', 'action_required'])
 const GEMINI_RUN_TERMINAL = new Set(['cancelled', 'failure', 'timed_out'])
 
@@ -311,7 +313,7 @@ async function incrementalCoverage({ bot, state, entries, evidence, identityOf, 
 function geminiRunsOnHead(state, pushedAt) {
   const pushed = ms(pushedAt)
   const prRunsOnHead = state.runs.filter(runOfPr(state.pr.number, state.pr.headRepo))
-    .filter((r) => r.headSha === state.pr.head && r.path === GEMINI_WORKFLOW_PATH)
+    .filter((r) => r.headSha === state.pr.head && isGeminiWorkflowPath(r.path))
   // A dispatched run still active holds whatever its created_at: a re-run keeps the original created_at but reviews
   // the PR's head when it executes (plan M1). A completed one counts only when created after the identity arrived.
   const dispatched = state.geminiDispatchRuns.filter((r) => r.status !== 'completed' || ms(r.createdAt) >= pushed)
