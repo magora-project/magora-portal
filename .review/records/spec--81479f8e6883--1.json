@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "81479f8e68830a8219e4766bd28fdba5d4ee20ca",
+    "path": "docs/superpowers/specs/2026-10-29-shared-dev-process-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [],
+  "supersedes": "spec--4d2051d86bad--1",
+  "createdAt": "2026-11-11T09:20:44.917Z"
+}

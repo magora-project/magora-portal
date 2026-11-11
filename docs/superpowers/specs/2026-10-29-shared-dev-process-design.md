@@ -490,6 +490,15 @@ largest of the last 40 Dependabot diffs on `main` is 47,349 bytes, so only a nea
 rewrite can cross the limit. Such a PR cannot pass the gate, and a maintainer merges it by an
 override outside the gate. (PR #52 Gemini.)
 
+**Accepted limitation (David, 2026-11-10): a finding on a rewritten commit.** A fix must come
+strictly after the commit the finding was reported on, so once a rebase or a forced update rewrites
+that commit out of the head's history, no fix can satisfy the first rule above. Two paths remain:
+an accepted substitute that verifies the fix (the second rule, which the gate applies whether or
+not the bot covers the slot, and which needs a vendor not already counted on the PR); or a
+reclassification whose one-line reason names the fix commit and the later clean review. The gate
+accepts any non-empty reason and cannot check what it names, so the merging maintainer reads it.
+(Issue #94, raised by Gemini on PR #92.)
+
 **Pre-existing** applies only when:
 
 - the defect is present on the base revision under the same reachable conditions; and
