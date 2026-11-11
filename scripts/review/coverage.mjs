@@ -268,11 +268,14 @@ const botRequests = (state, bot) => state.requests.filter((r) => r.bot === bot &
 
 // A requested clean CodeRabbit full review (§5.5 "CodeRabbit clean full review", issue #102): CodeRabbit posts no review
 // object for it, so its `CodeRabbit` check run counts as a usable review on its own commit, timed at its completedAt.
-// One entry { sha, at, by: 'check:<id>' } per [sha, check] in state.coderabbitChecks whose conclusion is `success`, whose
-// id, startedAt and completedAt are present and readable, whose commit's last arrival on the PR (lastArrivalAt over
-// state.runs) is known, and for which some CodeRabbit full-review request falls strictly after that arrival and strictly
-// before startedAt. An unrequested `success` is no entry. The one place this rule lives: shared by slotState (through
-// incrementalInputs) and review-gate (fix evidence, §5.6), so the two cannot drift.
+// At most one entry { sha, at, by: 'check:<id>' } per [sha, check] in state.coderabbitChecks, and none when the newest
+// check revokes (coderabbitFailedOn: a failure or unfinished check does; a rate-limit or manual-review check does not, so
+// it cannot hide an earlier success). Candidates are every success run on the commit (`check.successes`; without that
+// array, the check itself when it is a success). A candidate counts when its id, startedAt and completedAt are present
+// and readable, its commit's last arrival on the PR (lastArrivalAt over state.runs) is known, and some CodeRabbit
+// full-review request falls strictly after that arrival and strictly before its startedAt; the entry is the counting
+// candidate completed last. An unrequested `success` is no entry. The one place this rule lives: shared by slotState
+// (through incrementalInputs) and review-gate (fix evidence, §5.6), so the two cannot drift.
 export function coderabbitCheckEvidence(state) {
   const checks = state?.coderabbitChecks
   if (!isCheck(checks)) return []
