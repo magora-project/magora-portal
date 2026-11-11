@@ -203,7 +203,11 @@ const run = (over) => ({ id: 1, name: 'CodeRabbit', app: { slug: 'coderabbitai' 
 const checks = (rows) => async (url) => {
   const u = new URL(url)
   ok('coderabbitCheck reads the check runs of the sha', u.pathname === '/repos/o/r/commits/abc/check-runs')
-  return res({ total_count: rows.length, check_runs: u.searchParams.get('page') === '1' ? rows : [] })
+  ok('coderabbitCheck asks for every run (filter=all), not only the latest', u.searchParams.get('filter') === 'all')
+  // As GitHub does: without filter=all the API returns only the most recent run of each check name.
+  const latestOnly = (rs) => rs.filter((r) => !rs.some((o) => o.name === r.name && o.id > r.id))
+  const shown = u.searchParams.get('filter') === 'all' ? rows : latestOnly(rows)
+  return res({ total_count: shown.length, check_runs: u.searchParams.get('page') === '1' ? shown : [] })
 }
 ok('coderabbitCheck returns the CodeRabbit run\'s conclusion and title', JSON.stringify(await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run()]) })) === '{"id":1,"conclusion":"skipped","title":"No files to review","startedAt":null,"completedAt":null,"successes":[]}')
 ok('a run named CodeRabbit from another app is ignored', await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run({ app: { slug: 'mallory' } })]) }) === null)

@@ -167,7 +167,7 @@ export async function listThreads({ repo, pr, token, fetchImpl = fetch }) {
 // clean full review (spec §5.5). `successes` is every such run on `sha` that concluded success, newest first, so a later
 // rate-limit or manual-review check cannot hide an earlier requested clean full review.
 export async function coderabbitCheck({ repo, token, sha, fetchImpl = fetch }) {
-  const runs = await paginateKey(fetchImpl, token, `${API}/repos/${repo}/commits/${sha}/check-runs?check_name=CodeRabbit`, 'check_runs')
+  const runs = await paginateKey(fetchImpl, token, `${API}/repos/${repo}/commits/${sha}/check-runs?check_name=CodeRabbit&filter=all`, 'check_runs')
   const mine = runs.filter((r) => r.name === 'CodeRabbit' && r.app?.slug === 'coderabbitai').sort((a, b) => b.id - a.id)
   if (!mine.length) return null
   const c = mine[0]
