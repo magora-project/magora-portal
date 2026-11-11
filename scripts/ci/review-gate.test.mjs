@@ -468,8 +468,10 @@ try {
   // (`scen.runs` replaces the stub's one run on the head). Y's run belongs to another PR and is not read.
   const HEAD = sha.E, REVIEWED = sha.F, RUN_ONLY = sha.S
   const rawRun = (id, headSha, at, prNumber = 1) => ({ id, name: 'ci', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: headSha, head_repository: { full_name: 'o/r' }, created_at: at, pull_requests: [{ number: prNumber }] })
-  const runOnlyScen = { pr: prObj('2026-11-05T00:00:01Z'), threads: [], reviews: [rawReview(1, CODERABBIT_LOGIN, REVIEWED)], runs: [rawRun(1, RUN_ONLY, T(-10)), rawRun(2, HEAD, T(0)), rawRun(3, sha.Y, T(-5), 2)] }
-  const recordCheckPaths = (seen) => async (url, init) => { seen.push(new URL(url).pathname); return activationFile({})(runOnlyScen)(url, init) }
+  // A CodeRabbit full-review request at T(-5), after RUN_ONLY's run at T(-10), so RUN_ONLY's check could qualify.
+  const rawRequest = (body, at) => ({ id: 900, user: { login: 'dev' }, body, created_at: at, updated_at: at })
+  const runOnlyScen = { pr: prObj('2026-11-05T00:00:01Z'), threads: [], reviews: [rawReview(1, CODERABBIT_LOGIN, REVIEWED)], runs: [rawRun(1, RUN_ONLY, T(-10)), rawRun(2, HEAD, T(0)), rawRun(3, sha.Y, T(-5), 2)], comments: [rawRequest('@coderabbitai full review', T(-5))] }
+  const recordCheckPaths = (seen, scen = runOnlyScen) => async (url, init) => { seen.push(new URL(url).pathname); return activationFile({})(scen)(url, init) }
   const gateStateArgs = (fetchImpl) => ({ repo: 'o/r', token: 't', fetchImpl, pr: runOnlyScen.pr, cwd: repo.dir, now: Date.parse(T(120)) })
   ok('readGateState reads the CodeRabbit check of every PR-run head SHA, including one with no review', await (async () => { const seen = []; await readGateState(gateStateArgs(recordCheckPaths(seen))); return [HEAD, REVIEWED, RUN_ONLY].every((sha) => seen.includes(`/repos/o/r/commits/${sha}/check-runs`)) })())
   ok('... once each, keyed in coderabbitChecks, and never another PR\'s run commit', await (async () => {
@@ -477,6 +479,17 @@ try {
     const s = await readGateState(gateStateArgs(recordCheckPaths(seen)))
     const reads = seen.filter((p) => /\/check-runs$/.test(p))
     return reads.length === 3 && !reads.includes(`/repos/o/r/commits/${sha.Y}/check-runs`) && Object.keys(s.coderabbitChecks).sort().join() === [HEAD, REVIEWED, RUN_ONLY].sort().join()
+  })())
+  // PR #104 CodeRabbit amendment: a run-only SHA's check is read only when a CodeRabbit request follows its earliest run.
+  ok('readGateState skips a run-only SHA when no CodeRabbit request follows its earliest run (none, a @codex one, one before it, one at it)', await (async () => {
+    for (const comments of [[], [rawRequest('@codex review', T(-5))], [rawRequest('@coderabbitai full review', T(-15))], [rawRequest('@coderabbitai full review', T(-10))]]) {
+      const seen = []
+      const s = await readGateState(gateStateArgs(recordCheckPaths(seen, { ...runOnlyScen, comments })))
+      const reads = seen.filter((p) => /\/check-runs$/.test(p))
+      if (reads.includes(`/repos/o/r/commits/${RUN_ONLY}/check-runs`) || Object.hasOwn(s.coderabbitChecks, RUN_ONLY)) return false
+      if (![HEAD, REVIEWED].every((x) => reads.includes(`/repos/o/r/commits/${x}/check-runs`))) return false
+    }
+    return true
   })())
   // Minor 6: main moved after the checkout, so the PR's base (read from the API afterwards) is not in the clone. The
   // gate fetches it from origin; an unfetchable base fails "could not judge", naming it.

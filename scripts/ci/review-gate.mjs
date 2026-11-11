@@ -500,12 +500,23 @@ export async function readGateState({ repo, token, fetchImpl = fetch, pr, cwd, r
   ])
   // Each CodeRabbit review is judged by its OWN commit's CodeRabbit check (coverage.mjs coderabbitChecks): read it for
   // every distinct commit carrying a non-empty CodeRabbit review, plus the head. A requested clean full review posts no
-  // review, so the check of every head SHA of the PR's runs is read too (coverage.mjs coderabbitCheckEvidence). A read
+  // review, so the check of a head SHA of the PR's runs is read too (coverage.mjs coderabbitCheckEntries), but only when
+  // some CodeRabbit full-review request falls strictly after that SHA's earliest PR run: a check qualifies only for a
+  // request after one of its commit's arrivals, each of which is a run, so no other SHA's check can count. That bounds
+  // the reads per gate run (the token's hourly API budget is shared). A run-only SHA not read has no entry. A read
   // error throws (could not judge). A commitId that is not a SHA is not read: it has no entry, so its review is not
   // usable (fail closed).
   const headRepo = pr.head.repo?.full_name ?? null
   const crReviewed = reviews.filter((r) => r.login === CODERABBIT_LOGIN && r.empty !== true && typeof r.commitId === 'string' && SHA.test(r.commitId)).map((r) => r.commitId)
-  const runShas = runs.filter(runOfPr(n, headRepo)).map((r) => r.headSha).filter((s) => typeof s === 'string' && SHA.test(s))
+  const crAsked = fullReviewRequests(comments).filter((q) => q.bot === 'coderabbit').map((q) => Date.parse(q.at)).filter((t) => !Number.isNaN(t))
+  const latestAsk = Math.max(-Infinity, ...crAsked)
+  const firstRun = new Map()
+  for (const r of runs.filter(runOfPr(n, headRepo))) {
+    const t = Date.parse(r.createdAt)
+    if (typeof r.headSha !== 'string' || !SHA.test(r.headSha) || Number.isNaN(t)) continue
+    if (!firstRun.has(r.headSha) || t < firstRun.get(r.headSha)) firstRun.set(r.headSha, t)
+  }
+  const runShas = [...firstRun].filter(([, t]) => t < latestAsk).map(([s]) => s)
   const crShas = [...new Set([head, ...crReviewed, ...runShas])]
   const coderabbitChecks = {}
   for (const sha of crShas) coderabbitChecks[sha] = sha === head ? crCheck : await coderabbitCheck({ ...args, sha })

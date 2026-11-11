@@ -160,10 +160,17 @@ function prRunsReadable(runs, pr, headRepo) {
 // latest of the PR's runs on `sha` and P the latest run on another SHA created strictly before L, the createdAt of the
 // earliest run on `sha` created after P (of all runs on `sha` when there is no P). null when no run is on `sha` or any of
 // the PR's run times is unreadable. The same walk as arrivalOf, over the runs up to L: for the head it is headPushedAt's
-// arrival before the prCreatedAt floor.
-export function lastArrivalAt({ runs, pr, headRepo, sha }) {
-  const mine = prRunsReadable(runs, pr, headRepo)
+// arrival before the prCreatedAt floor. With `asOf`, only runs created at or before it count (null when it is
+// unreadable), so a check is timed against the arrival that preceded its start and a later return cannot move it.
+export function lastArrivalAt({ runs, pr, headRepo, sha, asOf }) {
+  let mine = prRunsReadable(runs, pr, headRepo)
   if (mine === null) return null
+  // As of a time (a check's started_at, spec §5.5): only runs created at or before it, so a later arrival cannot move it.
+  // An unreadable asOf (NaN) keeps no run, so the result is null.
+  if (asOf !== undefined) {
+    const t = ms(asOf)
+    mine = mine.filter((r) => ms(r.createdAt) <= t)
+  }
   const onSha = mine.filter((r) => r.headSha === sha)
   if (onSha.length === 0) return null
   const last = Math.max(...onSha.map((r) => ms(r.createdAt)))
@@ -291,7 +298,7 @@ const botRequests = (state, bot) => state.requests.filter((r) => r.bot === bot &
 // or manual-review check does not, so neither hides an earlier success or an earlier failure). Candidates are every
 // success run on the commit (`check.successes`; without that array, the check itself when it is a success). A candidate
 // counts when its id, startedAt and completedAt are present and readable, its commit's last arrival on the PR
-// (lastArrivalAt over state.runs) is known, and some CodeRabbit full-review request falls strictly after that arrival and
+// as of its startedAt (lastArrivalAt over state.runs, asOf startedAt) is known, and some CodeRabbit full-review request falls strictly after that arrival and
 // strictly before its startedAt; the entry is the counting candidate completed last. An unrequested `success` is no
 // entry. The one place this rule lives: shared by slotState (through incrementalInputs) and review-gate (fix evidence,
 // §5.6, through coderabbitCheckEvidence), so the two cannot drift.
@@ -305,15 +312,16 @@ export function coderabbitCheckEntries(state) {
     if (!isCheck(c) || !hasCommit({ sha })) continue
     const usable = !coderabbitFailedOn(state, sha)
     const candidates = Array.isArray(c.successes) ? c.successes : c.conclusion === 'success' ? [c] : []
-    const arrivedAt = lastArrivalAt({ runs: state.runs, pr: state.pr?.number, headRepo: state.pr?.headRepo, sha })
-    if (arrivedAt === null) continue
-    const arrived = ms(arrivedAt)
     let best = null
     for (const k of candidates) {
       if (!isCheck(k)) continue
       if (!((typeof k.id === 'number' && Number.isFinite(k.id)) || (typeof k.id === 'string' && k.id !== ''))) continue
       const started = time(k.startedAt), completed = time(k.completedAt)
       if (started === null || completed === null) continue
+      // The commit's last arrival as of this check's start: a later return of the commit cannot unqualify it.
+      const arrivedAt = lastArrivalAt({ runs: state.runs, pr: state.pr?.number, headRepo: state.pr?.headRepo, sha, asOf: k.startedAt })
+      if (arrivedAt === null) continue
+      const arrived = ms(arrivedAt)
       if (!requests.some((at) => arrived < at && at < started)) continue
       if (best === null || completed > best.completed) best = { k, completed }
     }

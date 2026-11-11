@@ -483,6 +483,12 @@ try {
     ...crRequestedSuccessRewritten, reviews: [cr(F1, '10:22')],
     coderabbitChecks: { [A2]: newestWith(later('failure', 'x'), CR_SUCCESS), [F1]: null },
   }
+  // PR #104 CodeRabbit amendment: A2 (10:00), request 10:05, check 501 on A2 10:06-10:09 (qualified), F1 10:20 reviewed
+  // incrementally at 10:22, then A2 returns at 10:30 and F1 at 10:40. A2's later return must not unqualify 501.
+  const crQualifiedThenReturning = {
+    ...crRequestedSuccessRewritten, reviews: [cr(F1, '10:22')], now: T('10:45'), pushed: T('10:40'),
+    runs: [runOn(44, A2, T('10:00')), runOn(44, F1, T('10:20')), runOn(44, A2, T('10:30')), runOn(44, F1, T('10:40'))],
+  }
 
   ok('crTerminal: rate limited is terminal; other neutral is not', crTerminal(CR_RATE_LIMITED) && crTerminal({ conclusion: 'neutral', title: 'Review paused' }) === false)
   ok('crTerminal: manual-review skip is not terminal; "No files to review" is; a near-miss title is', crTerminal(CR_MANUAL_REVIEW) === false && crTerminal({ conclusion: 'skipped', title: 'No files to review' }) && crTerminal({ ...CR_MANUAL_REVIEW, title: `${CR_MANUAL_REVIEW.title} ` }))
@@ -519,6 +525,10 @@ try {
   ok('a requested success, then a failure, then a rate-limited check -> not covered', (await s(crRequestedSuccessFailureRateLimited)).status !== 'covered')
   ok('a requested success revoked by a later failure stays an entry: an identity-changing rewrite away from it still needs a full-review request', await (async () => { const r = await s(crRevokedRequestedSuccessRewritten); return r.status !== 'covered' && /full review/.test(r.reason) })())
   ok('... and a request after the rewrite, answered by the review on F1, covers (control)', (await s({ ...crRevokedRequestedSuccessRewritten, requests: [req('coderabbit', '10:21')] })).status === 'covered')
+  ok('A (10:00), request 10:05, check on A 10:06-10:09, F1 10:20 reviewed incrementally 10:22, A again 10:30, F1 again 10:40 -> not covered, reason names the request', await (async () => { const r = await s(crQualifiedThenReturning); return r.status !== 'covered' && /full review/.test(r.reason) })())
+  ok('... and with a request after F1\'s last arrival, answered by a review on F1, covered (control)', (await s({ ...crQualifiedThenReturning, requests: [req('coderabbit', '10:41')], reviews: [cr(F1, '10:43')] })).status === 'covered')
+  ok('lastArrivalAt asOf: A -> B -> A gives A\'s first arrival as of a time between B and A\'s return; no run by asOf -> null', lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(44, B, T('10:10')), runOn(44, A2, T('10:20'))], pr: 44, headRepo: 'o/r', sha: A2, asOf: T('10:15') }) === T('10:00') && lastArrivalAt({ runs: [runOn(44, A2, T('10:00'))], pr: 44, headRepo: 'o/r', sha: A2, asOf: T('09:59') }) === null)
+  ok('lastArrivalAt asOf: a run exactly at asOf counts; an unreadable asOf -> null', lastArrivalAt({ runs: [runOn(44, A2, T('10:00'))], pr: 44, headRepo: 'o/r', sha: A2, asOf: T('10:00') }) === T('10:00') && lastArrivalAt({ runs: [runOn(44, A2, T('10:00'))], pr: 44, headRepo: 'o/r', sha: A2, asOf: 'garbage' }) === null)
   // As s() builds it: the fixture over baseState.
   const stateOf = (fx) => {
     const st = { ...baseState(fx.head), ...fx }
