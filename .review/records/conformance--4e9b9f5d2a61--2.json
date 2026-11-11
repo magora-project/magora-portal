@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "4e9b9f5d2a61f2d548c5cd3c285a14ab47c3baaa",
+    "mergeBase": "5be0dcb9c2e75ae5875a52128732979aec89ee6b",
+    "head": "86961b4cda55db12b67614b143f68869cfec25bf"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "conformance--ea3c8cd0a78c--5#D1",
+      "severity": "P1",
+      "summary": "D1: T24 Step 1 requires recording whether a pull_request_review check attaches to the PR head; the input contains no attachment result, leaving the required trigger acceptance check unverified.",
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "see Deviations"
+      }
+    },
+    {
+      "id": "conformance--ea3c8cd0a78c--5#D2",
+      "severity": "P1",
+      "summary": "D2: T24 Step 2 requires live acceptance cases with run URLs and conclusions, including run_attempt > 1 after Gemini and Codex events; the diff supplies fixture tests but no live acceptance records."
+    },
+    {
+      "id": "conformance--ea3c8cd0a78c--5#D3",
+      "severity": "P1",
+      "summary": "D3: T24 Step 3 requires approved activation, readback, and a timestamped review-gate activation entry; the input provides no activation evidence or activation-file change, so the declared rollout task remains incomplete.",
+      "file": ".github/review-activation.json"
+    },
+    {
+      "id": "conformance--ea3c8cd0a78c--5#D4",
+      "severity": "P3",
+      "summary": "D4: T24 specifies operator acceptance and activation work; the diff additionally changes Gemini substitution eligibility to identify runs by workflow path and extends the API adapter and tests, a useful implementation repair not specified by that task.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 314
+    }
+  ],
+  "supersedes": "conformance--4e9b9f5d2a61--1",
+  "conformance": {
+    "tasks": [
+      "T24"
+    ],
+    "deviations": [
+      "conformance--ea3c8cd0a78c--5#D1",
+      "conformance--ea3c8cd0a78c--5#D2",
+      "conformance--ea3c8cd0a78c--5#D3",
+      "conformance--ea3c8cd0a78c--5#D4"
+    ],
+    "commands": [],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "5280ea3b62356eb4803b30728235b18e401e3367"
+    }
+  },
+  "createdAt": "2026-11-11T07:26:06.260Z"
+}
