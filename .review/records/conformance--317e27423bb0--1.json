@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "317e27423bb035ef87e77f372ad04a8b465c1a64",
+    "mergeBase": "7100b2ad577b59ec2eaf30021f2f911422bce6b4",
+    "head": "757ec6eb639335b1795dd9459cbc36ac9dc84bf4"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [],
+  "supersedes": "conformance--906165af6f68--1",
+  "conformance": {
+    "tasks": [
+      "T26"
+    ],
+    "deviations": [],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      },
+      {
+        "cmd": "npm run lint:ratchet",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "31c78cbab6b325856008319749834e342283b2d8"
+    }
+  },
+  "createdAt": "2026-11-11T16:16:34.836Z"
+}
