@@ -402,7 +402,12 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
   if (!BOTS.includes(bot)) throw new TypeError(`slotState: unknown bot ${bot}`)
   if (typeof identityOf !== 'function' || typeof isAncestor !== 'function') throw new TypeError('slotState: identityOf and isAncestor must be functions')
   requireArrays(state)
-  const pending = (reason) => ({ status: 'pending', reason })
+  // The manual-review skip (issue #102) is no terminal failure: CodeRabbit reviews only on request. Every pending line
+  // for the slot names the request; the timeout below still allows a substitute.
+  const manual = bot === 'coderabbit' && crIs(state.coderabbitCheck, CR_MANUAL_REVIEW)
+    ? `CodeRabbit skipped ${short(state.pr.head)} ("${CR_MANUAL_REVIEW.title}"): post "${FULL_REVIEW_COMMAND.coderabbit}", then re-run review-gate once its CodeRabbit check completes success`
+    : null
+  const pending = (reason) => ({ status: 'pending', reason: manual ? `${manual}; ${reason}` : reason })
   const substitute = (reason) => ({ status: 'needs-substitute', reason })
   if (typeof currentIdentity !== 'string' || currentIdentity === '') return pending('the current input identity is unknown')
   const head = state.pr.head
@@ -458,12 +463,6 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
   // An identity-changing rewrite with no full-review request waits for the author.
   if (inc?.needsRequest) return pending(inc.reason)
 
-  // The manual-review skip (issue #102) is no terminal failure: CodeRabbit reviews only on request. The slot waits for the
-  // author; the timeout below still allows a substitute.
-  const manual = bot === 'coderabbit' && crIs(state.coderabbitCheck, CR_MANUAL_REVIEW)
-    ? `CodeRabbit skipped ${short(head)} ("${CR_MANUAL_REVIEW.title}"): post "${FULL_REVIEW_COMMAND.coderabbit}", then re-run review-gate once its CodeRabbit check completes success`
-    : null
-
   // Gemini hold (gate point 2): a run that has not completed is about to post a verdict.
   if (inFlight.length) {
     return pending(`${GEMINI_WORKFLOW} run ${inFlight.map((r) => `${r.id} (${r.status})`).join(', ')} on ${short(head)} has not finished`)
@@ -478,7 +477,7 @@ export async function slotState({ bot, state, identityOf, isAncestor, currentIde
   }
   // Nothing re-runs the gate when the 30 minutes pass, so the line says when to re-run it.
   const allowed = new Date(start + SUBSTITUTE_AFTER_MS).toISOString()
-  return pending(`${manual ? `${manual}; ` : ''}${inc?.reason ?? `waiting for a ${bot} review of ${short(head)}`}; substitution allowed after ${allowed}; re-run review-gate then`)
+  return pending(`${inc?.reason ?? `waiting for a ${bot} review of ${short(head)}`}; substitution allowed after ${allowed}; re-run review-gate then`)
 }
 
 // ---------------------------------------------------------------- substitutes
