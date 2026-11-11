@@ -300,7 +300,8 @@ nor the `correctness` reviewer.
 1. The outcome is `completed`, with a recognized, non-empty result. Any other outcome fails,
    whatever the finding count.
 2. The input identity matches the current one. For conformance records, the task IDs must also match
-   the Plan field, and the unfixed deviation IDs must exactly match the Deviations field.
+   the Plan field, the plan the record checked must be the Plan field's path at its blob at the
+   head, and the unfixed deviation IDs must exactly match the Deviations field.
 3. The slot ID is the required one, and the vendor meets the independence rule.
 4. Every recorded finding has an acceptable disposition, **whatever the verdict.**
 
