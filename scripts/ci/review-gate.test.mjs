@@ -113,7 +113,7 @@ try {
   ok('subtle-correctness with all three bots failed and three substitutes from three vendors -> ok', (await evaluateGate({ state: allFailed, record: threeSubs, depth: 'subtle-correctness' })).ok)
   ok('two substitutes from one vendor -> FAIL', (await evaluateGate({ state: st(sha.E, { ...failedBots, records: [allFailedRecords[0], allFailedRecords[1], { ...allFailedRecords[2], reviewer: { vendor: 'anthropic', model: 'm' } }] }), record: threeSubs, depth: 'subtle-correctness' })).ok === false)
   ok('a substitute for a bot whose review is still pending does not fill its slot (Gemini hold)', await (async () => {
-    const inFlight = st(sha.E, { coderabbitCheck: failedBots.coderabbitCheck, records: allFailedRecords, runs: [...st(sha.E).runs, { id: 5, name: 'Gemini review', event: 'pull_request', status: 'in_progress', conclusion: null, headSha: sha.E, headRepo: 'o/r', createdAt: T(1), prNumbers: [1] }] })
+    const inFlight = st(sha.E, { coderabbitCheck: failedBots.coderabbitCheck, records: allFailedRecords, runs: [...st(sha.E).runs, { id: 5, name: 'Gemini review PR #1', path: '.github/workflows/gemini-review.yml', event: 'pull_request', status: 'in_progress', conclusion: null, headSha: sha.E, headRepo: 'o/r', createdAt: T(1), prNumbers: [1] }] })
     const r = await evaluateGate({ state: inFlight, record: threeSubs, depth: 'subtle-correctness' })
     return r.ok === false && /gemini/.test(r.lines.join('\n'))
   })())

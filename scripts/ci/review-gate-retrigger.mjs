@@ -24,6 +24,11 @@ import { fileURLToPath } from 'node:url'
 export const CODEX_LOGIN = 'chatgpt-codex-connector[bot]'
 export const CODEX_MARKER = 'codex-review-state:v1'
 export const GEMINI_WORKFLOW = 'Gemini review'
+// A run is matched to the workflow by its path, never its `name`: gemini-review.yml sets a `run-name`, and the API
+// reports that run name (`Gemini review PR #<n>`) as the run's `name` (issue #97).
+export const GEMINI_WORKFLOW_PATH = '.github/workflows/gemini-review.yml'
+// The API may qualify a run's path with a ref (`<path>@<ref>`, GitHub's documented form); accept that, and nothing else.
+export const isGeminiWorkflowPath = (p) => typeof p === 'string' && (p === GEMINI_WORKFLOW_PATH || (p.startsWith(`${GEMINI_WORKFLOW_PATH}@`) && p.length > GEMINI_WORKFLOW_PATH.length + 1))
 export const GATE_WORKFLOW_FILE = 'review-gate.yml'
 export const POLL_INTERVAL_MS = 15_000
 export const POLL_LIMIT_MS = 10 * 60 * 1000
@@ -75,7 +80,7 @@ async function prOf({ event, payload, api }) {
   }
   if (event === 'workflow_run') {
     const run = payload?.workflow_run
-    if (run?.name !== GEMINI_WORKFLOW) return { reason: `the run is of ${JSON.stringify(run?.name)}, not ${GEMINI_WORKFLOW}` }
+    if (!isGeminiWorkflowPath(run?.path)) return { reason: `the run is of ${JSON.stringify(run?.path)}, not ${GEMINI_WORKFLOW_PATH}` }
     const listed = (run.pull_requests ?? []).map((p) => p?.number).filter((x) => Number.isInteger(x))
     // A run on a commit two PRs share lists both: each one's gate is re-run.
     if (listed.length) return { ns: [...new Set(listed)] }
