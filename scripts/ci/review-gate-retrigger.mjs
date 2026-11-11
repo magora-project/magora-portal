@@ -14,7 +14,8 @@
 // match the run's. Then the PR's current head, and the latest review-gate run (event pull_request) on it. A run still
 // queued or in progress is polled for up to ten minutes and then re-run: a run already past its API reads would miss
 // the new comment. Outcomes: `rerun`, or `none` with a reason (no open PR; no gate run on the head, which the next push
-// creates). An API error, or a run still unfinished after the limit, exits 1.
+// creates). An API error, or a run still unfinished after the limit, exits 1. When a run lists several PRs, each is
+// attempted at once and independently; any failure exits 1 after the others are re-run.
 //
 // Run (CI): GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo GITHUB_EVENT_NAME=… GITHUB_EVENT_PATH=… node scripts/ci/review-gate-retrigger.mjs
 import { readFileSync, realpathSync } from 'node:fs'
@@ -92,11 +93,17 @@ export async function retrigger({ event, payload, api }) {
   const which = await prOf({ event, payload, api })
   if (which.reason) return none(which.reason)
   if (which.ns) {
-    const results = []
-    for (const n of which.ns) results.push(await retriggerPr({ n, api }))
-    if (results.length === 1) return results[0]
+    if (which.ns.length === 1) return retriggerPr({ n: which.ns[0], api })
+    // Each listed PR is attempted independently and at the same time (issue #91): one PR's stalled or failing gate run
+    // neither stops the others nor delays them, and the total wait stays within one polling limit, inside the job's
+    // 15-minute deadline. Every failure is reported at the end, after the other PRs' re-runs are made.
+    const settled = await Promise.allSettled(which.ns.map((n) => retriggerPr({ n, api })))
+    const results = settled.filter((s) => s.status === 'fulfilled').map((s) => s.value)
+    const failures = settled.flatMap((s, i) => (s.status === 'rejected' ? [`PR #${which.ns[i]}: ${s.reason?.message ?? s.reason}`] : []))
     const reran = results.filter((x) => x.action === 'rerun')
-    return { action: reran.length ? 'rerun' : 'none', runIds: reran.map((x) => x.runId), reason: results.map((x) => x.reason).join('; ') }
+    const reason = results.map((x) => x.reason).join('; ')
+    if (failures.length) throw new Error(`${failures.join('; ')}${reason ? ` (the other PRs: ${reason})` : ''}`)
+    return { action: reran.length ? 'rerun' : 'none', runIds: reran.map((x) => x.runId), reason }
   }
   return retriggerPr({ n: which.n, api })
 }

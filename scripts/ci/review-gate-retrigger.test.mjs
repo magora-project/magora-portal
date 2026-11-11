@@ -4,7 +4,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CODEX_LOGIN, POLL_LIMIT_MS, main, makeApi, retrigger } from './review-gate-retrigger.mjs'
+import { CODEX_LOGIN, POLL_INTERVAL_MS, POLL_LIMIT_MS, main, makeApi, retrigger } from './review-gate-retrigger.mjs'
 
 let pass = 0, fail = 0
 const ok = (n, c) => {
@@ -107,6 +107,44 @@ ok('a Gemini run listing two PRs re-runs each PR\'s own gate run', await (async 
   s.gateRuns = async () => [{ id: 501, status: 'completed', createdAt: '2026-11-05T10:00:00Z', prNumbers: [44] }, { id: 600, status: 'completed', createdAt: '2026-11-05T11:00:00Z', prNumbers: [45] }]
   const r = await retrigger({ event: 'workflow_run', payload: { ...geminiDoneOnHead, workflow_run: { ...geminiDoneOnHead.workflow_run, pull_requests: [{ number: 44 }, { number: 45 }] } }, api: s })
   return r.action === 'rerun' && s.reruns.join() === '501,600'
+})())
+
+// Issue #91: a Gemini run listing two PRs whose first PR's gate run stalls past the polling limit. The second PR's
+// completed run is still re-run, the failure is reported (throws, exit 1), and the total wait is one polling limit.
+const twoPrsFirstStalled = () => {
+  const s = makeStub()
+  s.pr = async (n) => ({ number: n, state: 'open', head: { sha: HEAD, ref: `b${n}`, repo: { full_name: 'o/r' } } })
+  s.gateRuns = async () => [{ id: 501, status: 'in_progress', prNumbers: [44] }, { id: 600, status: 'completed', prNumbers: [45] }]
+  s.run = async (id) => { s.polls++; return { id, status: id === 501 ? 'in_progress' : 'completed' } }
+  return s
+}
+const twoPrs = (s) => retrigger({ event: 'workflow_run', payload: { ...geminiDoneOnHead, workflow_run: { ...geminiDoneOnHead.workflow_run, pull_requests: [{ number: 44 }, { number: 45 }] } }, api: s })
+ok('#91: a stalled first PR does not stop the second PR\'s re-run; the stall is still reported', await (async () => {
+  const s = twoPrsFirstStalled()
+  try { await twoPrs(s); return false } catch (e) { return s.reruns.join() === '600' && /PR #44: .*in progress/.test(e.message) && /re-ran review-gate run 600/.test(e.message) }
+})())
+// Both stalled: the PRs are polled side by side (PR #45's first poll comes before PR #44's last), so the total wait is
+// one polling limit, not one per PR; each polls up to the limit, and both stalls are reported.
+ok('#91: two stalled PRs are polled side by side, within one polling limit, and both are reported', await (async () => {
+  const s = twoPrsFirstStalled(), order = []
+  s.gateRuns = async () => [{ id: 501, status: 'in_progress', prNumbers: [44] }, { id: 600, status: 'in_progress', prNumbers: [45] }]
+  s.run = async (id) => { order.push(id); return { id, status: 'in_progress' } }
+  s.sleep = async () => { s.sleeps++; await new Promise((r) => setImmediate(r)) }
+  try { await twoPrs(s); return false } catch (e) {
+    const limit = POLL_LIMIT_MS / POLL_INTERVAL_MS
+    return order.indexOf(600) < order.lastIndexOf(501) && order.filter((x) => x === 501).length === limit && order.filter((x) => x === 600).length === limit
+      && /PR #44: .*run 501/.test(e.message) && /PR #45: .*run 600/.test(e.message) && s.reruns.length === 0
+  }
+})())
+ok('#91: an API error on one listed PR does not stop the other\'s re-run', await (async () => {
+  const s = makeStub()
+  s.pr = async (n) => { if (n === 44) throw new Error('GitHub API 502 on GET /pulls/44'); return { number: n, state: 'open', head: { sha: HEAD, ref: `b${n}`, repo: { full_name: 'o/r' } } } }
+  s.gateRuns = async () => [{ id: 600, status: 'completed', prNumbers: [45] }]
+  try { await twoPrs(s); return false } catch (e) { return s.reruns.join() === '600' && /PR #44: GitHub API 502/.test(e.message) }
+})())
+ok('#91: a single listed PR whose run stalls throws its own message unchanged', await (async () => {
+  const s = makeStub({ gateStatus: ['in_progress'] })
+  try { await retrigger({ event: 'workflow_run', payload: geminiDoneOnHead, api: s }); return false } catch (e) { return /^review-gate run 501 on PR #44 is still in progress/.test(e.message) }
 })())
 
 // The workflow's trust boundary, read from the file: it is what keeps PR code away from the write token.
