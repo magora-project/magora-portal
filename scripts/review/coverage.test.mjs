@@ -70,7 +70,7 @@ try {
   const runOn = (pr, head, at, extra = {}) => ({ id: 1, name: 'CI', event: 'pull_request', status: 'completed', conclusion: 'success', headSha: head, headRepo: 'o/r', createdAt: at, prNumbers: [pr], ...extra })
   const run = (pr, at) => runOn(pr, 'A', at)
   const forkRun = (headRepo, head, at) => ({ ...runOn(44, head, at), headRepo, prNumbers: [] })
-  const gemRun = (head, at, status, conclusion = null) => runOn(44, head, T(at), { name: 'Gemini review', status, conclusion })
+  const gemRun = (head, at, status, conclusion = null) => runOn(44, head, T(at), { name: 'Gemini review PR #44', path: '.github/workflows/gemini-review.yml', status, conclusion })
 
   const baseState = (head) => ({
     pr: { number: 44, head, headRepo: 'o/r', draft: false, fork: false, dependabot: false },
@@ -373,6 +373,9 @@ try {
   ok('Gemini, nothing yet at 10 minutes -> pending', (await s({ bot: 'gemini', head: A2, current: 'I2' })).status === 'pending')
   ok('Gemini with a queued run at 31 minutes -> pending', (await s({ ...geminiInFlightAt31, runs: [gemRun(A2, '10:00', 'queued')] })).status === 'pending')
   ok('Gemini in-progress run on another head does not hold', (await s({ ...geminiInFlightAt31, runs: [gemRun(F1, '10:00', 'in_progress')] })).status === 'needs-substitute')
+  // Issue #97: the workflow is identified by its path; a run's `name` is its run-name, so it never equals 'Gemini review'.
+  ok('an in-progress run of another workflow titled like Gemini does not hold', (await s({ ...geminiInFlightAt31, runs: [{ ...gemRun(A2, '10:00', 'in_progress'), path: '.github/workflows/other.yml' }] })).status === 'needs-substitute')
+  ok('an in-progress run named exactly "Gemini review" at another path does not hold', (await s({ ...geminiInFlightAt31, runs: [{ ...gemRun(A2, '10:00', 'in_progress'), name: 'Gemini review', path: '.github/workflows/other.yml' }] })).status === 'needs-substitute')
   ok('Gemini in-progress run of another PR on the head does not hold', (await s({ ...geminiInFlightAt31, runs: [{ ...gemRun(A2, '10:00', 'in_progress'), prNumbers: [12] }] })).status === 'needs-substitute')
   // Pre-publish Codex review 2026-11-10: a re-run keeps its original created_at but reviews the current head (plan M1).
   ok('an active dispatched run created before the head arrived (a re-run) holds', (await s({ ...geminiDispatchInFlightAt31, geminiDispatchRuns: [{ id: 5, status: 'in_progress', conclusion: null, createdAt: T('09:55') }] })).status === 'pending')

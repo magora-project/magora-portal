@@ -29,7 +29,8 @@ const makeStub = ({ gateStatus = ['completed'], prState = 'open', runs = true } 
 const oneGateRun = makeStub()
 const gateInProgressThenDone = makeStub({ gateStatus: ['in_progress', 'in_progress', 'completed'] })
 
-const wfRun = (over = {}) => ({ workflow_run: { name: 'Gemini review', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: HEAD, head_branch: 'feat', head_repository: { full_name: 'o/r' }, display_title: 'Gemini review PR #44', pull_requests: [{ number: 44 }], ...over } })
+// The real API shape (issue #97): a workflow with a `run-name` reports that run name as `name`; `path` names the workflow.
+const wfRun = (over = {}) => ({ workflow_run: { name: 'Gemini review PR #44', path: '.github/workflows/gemini-review.yml', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: HEAD, head_branch: 'feat', head_repository: { full_name: 'o/r' }, display_title: 'Gemini review PR #44', pull_requests: [{ number: 44 }], ...over } })
 const geminiDoneOnHead = wfRun()
 const geminiDoneOnOldHead = wfRun({ head_sha: OLD })
 const geminiDispatchDone = wfRun({ event: 'workflow_dispatch', pull_requests: [], head_branch: 'main', head_sha: 'c'.repeat(40) })
@@ -37,6 +38,19 @@ const codexMarkerComment = { issue: { number: 44, pull_request: { url: 'x' } }, 
 
 ok('retrigger: Gemini completed on the current head -> reruns the latest review-gate run on it', (await retrigger({ event: 'workflow_run', payload: geminiDoneOnHead, api: oneGateRun })).action === 'rerun')
 ok('... the run re-run is the latest one, and it is re-run once', oneGateRun.reruns.join() === '501')
+ok('retrigger: a run at another workflow path -> none, even named or titled like Gemini (issue #97)', await (async () => {
+  const api = makeStub()
+  const a = await retrigger({ event: 'workflow_run', payload: wfRun({ path: '.github/workflows/other.yml' }), api })
+  const b = await retrigger({ event: 'workflow_run', payload: wfRun({ name: 'Gemini review', path: '.github/workflows/other.yml' }), api })
+  return a.action === 'none' && b.action === 'none' && /other\.yml/.test(a.reason) && api.reruns.length === 0
+})())
+ok('GEMINI_WORKFLOW_PATH is gemini-review.yml, whose name is the GEMINI_WORKFLOW the trigger lists, and matches coverage.mjs', await (async () => {
+  const { GEMINI_WORKFLOW, GEMINI_WORKFLOW_PATH } = await import('./review-gate-retrigger.mjs')
+  const cov = await import('../review/coverage.mjs')
+  const y = readFileSync(GEMINI_WORKFLOW_PATH, 'utf8')
+  return GEMINI_WORKFLOW_PATH === '.github/workflows/gemini-review.yml' && cov.GEMINI_WORKFLOW_PATH === GEMINI_WORKFLOW_PATH &&
+    new RegExp(`^name: ${GEMINI_WORKFLOW}$`, 'm').test(y) && /^run-name: /m.test(y)
+})())
 ok('retrigger: Codex marker comment -> rerun; another login\'s comment with the marker -> none', (await retrigger({ event: 'issue_comment', payload: codexMarkerComment, api: oneGateRun })).action === 'rerun' && (await retrigger({ event: 'issue_comment', payload: { ...codexMarkerComment, comment: { ...codexMarkerComment.comment, user: { login: 'mallory' } } }, api: oneGateRun })).action === 'none')
 ok('retrigger: a verdict on a superseded head still reruns the current head\'s gate run', await (async () => { const r = await retrigger({ event: 'workflow_run', payload: geminiDoneOnOldHead, api: oneGateRun }); return r.action === 'rerun' && r.runId === oneGateRun.currentHeadRunId })())
 ok('retrigger: a dispatched Gemini run (no pull_requests) resolves its PR from display_title', await (async () => { const r = await retrigger({ event: 'workflow_run', payload: geminiDispatchDone, api: oneGateRun }); return r.action === 'rerun' && oneGateRun.prRead === 44 })())
@@ -49,7 +63,7 @@ ok('a closed PR -> none, naming it', await (async () => { const r = await retrig
 ok('no gate run on the current head -> none, naming the next push', await (async () => { const api = makeStub({ runs: false }); const r = await retrigger({ event: 'workflow_run', payload: geminiDoneOnHead, api }); return r.action === 'none' && /push/.test(r.reason) && api.reruns.length === 0 })())
 ok('a workflow_run with no PR list and no title resolves its PR by head branch and head repository', await (async () => { const api = makeStub(); const r = await retrigger({ event: 'workflow_run', payload: wfRun({ pull_requests: [], display_title: 'something' }), api }); return r.action === 'rerun' && api.prRead === 44 })())
 ok('... but not from another head repository', (await retrigger({ event: 'workflow_run', payload: wfRun({ pull_requests: [], display_title: 'x', head_repository: { full_name: 'evil/r' } }), api: makeStub() })).action === 'none')
-ok('a run of another workflow -> none', (await retrigger({ event: 'workflow_run', payload: wfRun({ name: 'ci' }), api: makeStub() })).action === 'none')
+ok('a run of another workflow -> none', (await retrigger({ event: 'workflow_run', payload: wfRun({ name: 'ci', path: '.github/workflows/ci.yml' }), api: makeStub() })).action === 'none')
 ok('a gate run still in progress after the polling limit -> throws (exit 1), no rerun', await (async () => {
   const api = makeStub({ gateStatus: ['in_progress'] })
   try { await retrigger({ event: 'workflow_run', payload: geminiDoneOnHead, api }); return false } catch (e) { return /in progress/.test(e.message) && api.reruns.length === 0 && api.sleeps >= 1 }

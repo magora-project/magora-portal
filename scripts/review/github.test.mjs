@@ -213,18 +213,18 @@ ok('the newest run wins when there are several', (await coderabbitCheck({ ...bas
 ok('a null title and a pending run map to nulls', JSON.stringify(await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run({ conclusion: null, output: {} })]) })) === '{"conclusion":null,"title":null}')
 
 // ---------------------------------------------------------------- workflow runs
-const wf = (i, over = {}) => ({ id: i, name: 'ci', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: 'a'.repeat(40), head_repository: { full_name: 'o/r' }, created_at: '2026-11-05T00:00:00Z', pull_requests: [{ number: 44 }], ...over })
+const wf = (i, over = {}) => ({ id: i, name: 'ci', path: '.github/workflows/ci.yml', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: 'a'.repeat(40), head_repository: { full_name: 'o/r' }, created_at: '2026-11-05T00:00:00Z', pull_requests: [{ number: 44 }], ...over })
 ok('prRuns paginates and keeps each run\'s PR numbers, head SHA, head repository and status', await (async () => {
   const seen = []
   const f = pager([hundred((i) => wf(i)), [wf(100)]], 'workflow_runs')
   const r = await prRuns({ ...base, headRef: 'docs/x', fetchImpl: async (u, i) => { seen.push(new URL(u)); return f(u, i) } })
   return r.length === 101 && r[0].prNumbers.join() === '44' && typeof r[0].headSha === 'string' && r[0].headRepo === 'o/r' && r[0].status === 'completed' &&
-    JSON.stringify(Object.keys(r[0])) === '["id","name","event","status","conclusion","headSha","headRepo","createdAt","prNumbers"]' &&
+    JSON.stringify(Object.keys(r[0])) === '["id","name","path","event","status","conclusion","headSha","headRepo","createdAt","prNumbers"]' &&
     seen[0].searchParams.get('branch') === 'docs/x' && seen[0].searchParams.get('event') === 'pull_request' && seen[0].pathname === '/repos/o/r/actions/runs'
 })())
 ok('a run with no head repository or PRs maps to null / []', await (async () => {
   const r = await prRuns({ ...base, headRef: 'x', fetchImpl: pager([[wf(1, { head_repository: null, pull_requests: [] })]], 'workflow_runs') })
-  return r[0].headRepo === null && r[0].prNumbers.length === 0
+  return r[0].headRepo === null && r[0].prNumbers.length === 0 && r[0].path === '.github/workflows/ci.yml'
 })())
 ok('a prRuns page error throws (fails closed)', /500/.test(await errOf(() => prRuns({ ...base, headRef: 'x', fetchImpl: async () => res({}, 500) })) ?? ''))
 ok('a prRuns response without workflow_runs throws', /workflow_runs/.test(await errOf(() => prRuns({ ...base, headRef: 'x', fetchImpl: async () => res({}) })) ?? ''))
