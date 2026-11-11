@@ -25,8 +25,10 @@
 //                                         the head's check, read as a substitution ground (crTerminal) and for the
 //                                         manual-review skip's pending line
 // @property {object}  coderabbitChecks    { [sha]: coderabbitCheck({sha}) }: {id, conclusion, title, startedAt, completedAt, successes, runs} |
-//                                         null for EVERY commit that carries a CodeRabbit review, the head, and every head SHA
-//                                         of the PR's runs (null: fetched, and that commit has no CodeRabbit check run). A
+//                                         null for EVERY commit that carries a CodeRabbit review, the head, and each head SHA
+//                                         of the PR's runs whose earliest run some CodeRabbit full-review request follows
+//                                         (no other one's check can qualify, so review-gate does not read it and it has no
+//                                         entry; null: fetched, and that commit has no CodeRabbit check run). A
 //                                         CodeRabbit review is usable only when its commit has an entry here that is not a
 //                                         terminal failure; a commit with no entry is unknown and its review is not usable
 //                                         (fail closed). See coderabbitFailedOn. `successes` ([{id, startedAt, completedAt}],
