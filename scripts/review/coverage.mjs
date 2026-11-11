@@ -21,16 +21,18 @@
 // @property {?object} codexHistory        codexHistory({commentId: codexState.commentId}) {reviews: [{sha, at, status}], complete, currentTrusted, current};
 //                                         null when codexState is null (and then it is not read)
 // @property {Array}   geminiVerdicts      geminiVerdicts(comments)       [{head, identity, verdict, findings, commentId, at}]
-// @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {id, conclusion, title, startedAt, completedAt} | null:
+// @property {?object} coderabbitCheck     coderabbitCheck({sha: pr.head}) {id, conclusion, title, startedAt, completedAt, successes} | null:
 //                                         the head's check, read as a substitution ground (crTerminal) and for the
 //                                         manual-review skip's pending line
-// @property {object}  coderabbitChecks    { [sha]: coderabbitCheck({sha}) }: {id, conclusion, title, startedAt, completedAt} |
+// @property {object}  coderabbitChecks    { [sha]: coderabbitCheck({sha}) }: {id, conclusion, title, startedAt, completedAt, successes} |
 //                                         null for EVERY commit that carries a CodeRabbit review, the head, and every head SHA
 //                                         of the PR's runs (null: fetched, and that commit has no CodeRabbit check run). A
 //                                         CodeRabbit review is usable only when its commit has an entry here that is not a
 //                                         terminal failure; a commit with no entry is unknown and its review is not usable
-//                                         (fail closed). See coderabbitFailedOn. A requested `success` entry is itself
-//                                         CodeRabbit evidence on its commit (coderabbitCheckEvidence).
+//                                         (fail closed). See coderabbitFailedOn. `successes` ([{id, startedAt, completedAt}],
+//                                         newest first) is every run on the commit that concluded success, the newest
+//                                         included; a requested one is CodeRabbit evidence on its commit, unless the newest
+//                                         check revokes it (coderabbitCheckEvidence).
 // @property {Array}   runs                prRuns({headRef})              [{id, name, path, status, conclusion, headSha, headRepo, createdAt, prNumbers}]
 // @property {Array}   geminiDispatchRuns  geminiDispatchRuns({pr})       [{id, status, conclusion, createdAt}]
 //
