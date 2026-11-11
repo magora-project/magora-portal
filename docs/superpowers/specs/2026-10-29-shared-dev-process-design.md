@@ -384,8 +384,10 @@ whose input identity equals the current one.
   on its own commit, timed at its `completed_at`. It counts only when all of these hold:
   - its conclusion is `success`;
   - a CodeRabbit full-review request, timed at its last edit, falls strictly after the check's
-    commit last arrived on the PR (read from the PR's workflow runs) and strictly before the check's
-    `started_at`. A request made before the commit arrived cannot have asked for its review;
+    commit last arrived on the PR before that `started_at` (read from the PR's workflow runs) and
+    strictly before the check's `started_at`. A request made before the commit arrived cannot have
+    asked for its review, and an arrival after the check started cannot undo a review it already
+    answered (clarified 2026-11-11 after PR #104's CodeRabbit review: A → F1 → A must not drop it);
   - every one of those times is readable.
 
   An unrequested `success` is neither coverage nor a reviewed commit. Otherwise it is treated as a
