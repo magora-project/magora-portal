@@ -492,11 +492,12 @@ override outside the gate. (PR #52 Gemini.)
 
 **Accepted limitation (David, 2026-11-10): a finding on a rewritten commit.** A fix must come
 strictly after the commit the finding was reported on, so once a rebase or a forced update rewrites
-that commit out of the head's history, no fix can satisfy the first rule above, and a substitute
-verifies a fix only for a slot that needs one. While the bot covers the slot, the path is a
-reclassification whose one-line reason names the fix commit and the later clean review. This fails
-closed: nothing unsafe merges, and the maintainer sees the reclassification. (Issue #94, raised by
-Gemini on PR #92.)
+that commit out of the head's history, no fix can satisfy the first rule above. Two paths remain:
+an accepted substitute that verifies the fix (the second rule, which the gate applies whether or
+not the bot covers the slot, and which needs a vendor not already counted on the PR); or a
+reclassification whose one-line reason names the fix commit and the later clean review. The gate
+accepts any non-empty reason and cannot check what it names, so the merging maintainer reads it.
+(Issue #94, raised by Gemini on PR #92.)
 
 **Pre-existing** applies only when:
 
