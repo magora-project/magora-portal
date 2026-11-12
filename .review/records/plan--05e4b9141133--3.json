@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "05e4b9141133704f61bae321e82d13f4e747cc70",
+    "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "T16 reuses PR C's plan record scoped to T17–T25, which excludes T16 and therefore fails the plan-scope predicate; require a plan re-review covering T16 before the activation PR.",
+      "file": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "line": 635,
+      "disposition": {
+        "kind": "pre-existing",
+        "reason": "Task 16 Step 2's record-reuse wording is stale on main since #104 changed the plan blob; this PR carries this record (scope T16,T24) instead of reusing the T26-scoped one",
+        "issue": "https://github.com/magora-project/magora-portal/issues/109"
+      }
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "Closing and reopening a PR whose head predates the workflow does not supply the checker script that the workflow executes from its head checkout, so grandfathering cannot succeed without an additional branch-update or trusted-checker step; T24 inherits this problem.",
+      "file": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "line": 636
+    }
+  ],
+  "supersedes": "plan--05e4b9141133--2",
+  "rev": "8b809eb5e9a8e76a5d05adf17a341e6478da8d96",
+  "tasks": [
+    "T16",
+    "T24"
+  ],
+  "createdAt": "2026-11-12T20:26:39.797Z"
+}
