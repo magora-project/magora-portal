@@ -2,7 +2,7 @@
 // settles, so a slow query (say, nodes) delays only its own section instead of the whole page.
 
 export const MAP_SECTIONS = ['nodes', 'detections', 'aci', 'today', 'mobile', 'sessions']
-// The three sources behind the live feed. Their combined outcome decides the feed's error banner.
+// The three sources behind the live feed. Their combined outcome decides the feed's error banner (Task 16 case 3 probe; do not merge).
 export const FEED_SECTIONS = ['detections', 'mobile', 'sessions']
 
 // Whether a feed card offers the insight button. Generating an insight needs the card's node, so
