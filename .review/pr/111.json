@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "pr": 111,
+  "slots": [
+    {
+      "bot": "coderabbit",
+      "status": "substituted",
+      "by": "substitute-coderabbit--695896a56531--1"
+    },
+    {
+      "bot": "codex",
+      "status": "covered",
+      "by": "codex-comment:6835820582@15eec7064c38"
+    },
+    {
+      "bot": "gemini",
+      "status": "covered",
+      "by": "gemini-comment:6835830289"
+    }
+  ],
+  "findings": [],
+  "reclassified": [
+    {
+      "id": "gemini:6835830289:1",
+      "reason": "Gemini reviews only the diff and AGENTS.md, never the PR description, so it cannot see the declaration; the description names .github/review-activation.json under Control files (as on #110)."
+    }
+  ],
+  "writtenAt": "2026-11-12T21:02:57.111Z"
+}
