@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "695896a56531f9d279c2c135e3fe406cf6d362ec",
+    "mergeBase": "819d67836af64a64559fe2e354505d91599e64b8",
+    "head": "2031957bf1a4f6815f1b50b8f7392225a78242c7"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "The PR review record `.review/pr/<n>.json` is missing from the diff, which is explicitly required by Task 24 Step 3."
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-12T21:00:17.539Z"
+}

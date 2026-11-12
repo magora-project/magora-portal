@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "695896a56531f9d279c2c135e3fe406cf6d362ec",
+    "mergeBase": "819d67836af64a64559fe2e354505d91599e64b8",
+    "head": "2031957bf1a4f6815f1b50b8f7392225a78242c7"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "D1",
+      "severity": "P1",
+      "summary": "D1: T24 Step 1 requires recording whether a pull_request_review check attaches to the PR head before activation; the diff adds the activation timestamp without that verification record.",
+      "file": ".github/review-activation.json",
+      "line": 3,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "Step 1 ran on 2026-11-11 and is recorded in #96 (https://github.com/magora-project/magora-portal/pull/96#issuecomment-6794452266): the pull_request_review run's check landed on the PR head"
+      }
+    },
+    {
+      "id": "D2",
+      "severity": "P1",
+      "summary": "D2: T24 Step 2 requires recording acceptance-case run URLs and conclusions, including run_attempt > 1 for both retrigger cases; the diff activates review-gate without any of those records, leaving its required pre-activation safeguards unsubstantiated.",
+      "file": ".github/review-activation.json",
+      "line": 3,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "Step 2 ran on 2026-11-11 and is recorded in #96 (https://github.com/magora-project/magora-portal/pull/96#issuecomment-6794452266), with run URLs, conclusions and run_attempt > 1 for both retrigger cases"
+      }
+    },
+    {
+      "id": "D3",
+      "severity": "P1",
+      "summary": "D3: T24 Step 3 explicitly requires this activation PR to include .review/pr/<n>.json covering all three bot slots in every case; the full diff contains only the activation timestamp and omits that required record.",
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "The PR review record .review/pr/<n>.json is committed after the bot reviews are triaged; .review/ is excluded from the reviewer's input by design"
+      }
+    }
+  ],
+  "supersedes": "conformance--695896a56531--3",
+  "conformance": {
+    "tasks": [
+      "T24"
+    ],
+    "deviations": [
+      "D1",
+      "D2",
+      "D3"
+    ],
+    "commands": [],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "05e4b9141133704f61bae321e82d13f4e747cc70"
+    }
+  },
+  "createdAt": "2026-11-12T21:00:02.243Z"
+}
