@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "type": "substitute",
+  "slot": "substitute:coderabbit",
+  "input": {
+    "kind": "pr",
+    "identity": "695896a56531f9d279c2c135e3fe406cf6d362ec",
+    "mergeBase": "819d67836af64a64559fe2e354505d91599e64b8",
+    "head": "15eec7064c387b196735e42e3f9097a8cc23440a"
+  },
+  "reviewer": {
+    "vendor": "anthropic",
+    "model": "opus"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [],
+  "supersedes": null,
+  "createdAt": "2026-11-12T21:02:51.341Z"
+}
