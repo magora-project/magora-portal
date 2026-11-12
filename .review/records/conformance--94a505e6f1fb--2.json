@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "94a505e6f1fb1a6dde5a39bca11c8f7b5a84567e",
+    "mergeBase": "b1a11c818eda425ff12d92ee8cc14e4eb9fab919",
+    "head": "b9344493dd8e3e662d57043d53327a8c50041e34"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--4a5a96fb2c03--1#D18",
+      "severity": "P2",
+      "summary": "D18: T22 says empty reviews are ignored, but incrementalInputs retains them for rewrite detection, so an empty review on a rewritten-away commit can require a full-review request and prevent otherwise valid coverage.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 207,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--94a505e6f1fb--1"
+      }
+    },
+    {
+      "id": "conformance--4a5a96fb2c03--1#D19",
+      "severity": "P3",
+      "summary": "D19: T20 promises skipping an earlier usable verdict, but the skip parser validates only identity and verdict while T21 also requires head and findings, so a malformed marker can suppress the model call without providing usable gate evidence.",
+      "file": ".github/workflows/gemini-review.yml",
+      "line": 300,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--94a505e6f1fb--1"
+      }
+    },
+    {
+      "id": "conformance--4a5a96fb2c03--1#D20",
+      "severity": "P3",
+      "summary": "D20: The stated skip safeguards require tests, but the supplied diff includes no behavioral tests for identity failure, comment-list failure, parser crashes, skip-comment posting failure, or marker generation across posting outcomes, leaving those safeguards unverified.",
+      "file": ".github/workflows/gemini-review.yml",
+      "line": 246,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "The skip and post steps are inline workflow steps with no unit harness; Task 24's live acceptance cases exercise them end to end (evidence-only commit -> skipped-same-identity; a run with the key unset -> could-not-run), and the marker shape the skip step accepts is pinned against geminiVerdicts by scripts/ci/gemini-verdict.test.mjs."
+      }
+    }
+  ],
+  "supersedes": "conformance--94a505e6f1fb--1",
+  "conformance": {
+    "tasks": [
+      "T20",
+      "T21",
+      "T22"
+    ],
+    "deviations": [
+      "conformance--4a5a96fb2c03--1#D20"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "5280ea3b62356eb4803b30728235b18e401e3367"
+    }
+  },
+  "createdAt": "2026-11-10T12:56:03.833Z"
+}

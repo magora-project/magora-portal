@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "99fc4d95db9e7356d4d326f23e67736d9aafa2a5",
+    "mergeBase": "1315191ec42fa0a020dcb4fc04e9b772aa003c0c",
+    "head": "f337eec942bee91a32584bc1a844e341304a15fb"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "Removing the verifier ancestry check lets an older substitute assessment clear a finding that the bot re-reports on a later commit, so a reverted fix can pass the gate merely because the substitute chain carries forward its old fixed disposition.",
+      "file": "scripts/ci/review-gate.mjs",
+      "line": 311
+    }
+  ],
+  "supersedes": "correctness--e8b35d6ab7d7--1",
+  "createdAt": "2026-11-10T22:08:55.434Z"
+}

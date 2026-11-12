@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "pr": 99,
+  "slots": [
+    {
+      "bot": "coderabbit",
+      "status": "substituted",
+      "by": "substitute-coderabbit--daf8f7bb7d07--1"
+    },
+    {
+      "bot": "codex",
+      "status": "covered",
+      "by": "codex-comment:6789516668@6107a32aa75b"
+    },
+    {
+      "bot": "gemini",
+      "status": "covered",
+      "by": "gemini-comment:6792076745"
+    }
+  ],
+  "findings": [
+    {
+      "id": "gemini:6789560844:1",
+      "source": "gemini",
+      "severity": "P1",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "32cdcaf0dd25dcd5118d0fd43e51bbfa03addf59"
+      }
+    },
+    {
+      "id": "gemini:6792076745:1",
+      "source": "gemini",
+      "severity": "P1",
+      "disposition": null
+    }
+  ],
+  "reclassified": [
+    {
+      "id": "gemini:6792076745:1",
+      "reason": "False positive: the PR description names .claude/rules/process.md under Control files and says it weakens no check; Gemini reviews the diff without the PR body."
+    }
+  ],
+  "writtenAt": "2026-11-11T10:45:07.293Z"
+}

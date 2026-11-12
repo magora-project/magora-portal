@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "substitute",
+  "slot": "substitute:coderabbit",
+  "input": {
+    "kind": "pr",
+    "identity": "daf8f7bb7d07d00f4d7d30625beb3c34d9ce4658",
+    "mergeBase": "70a1a640f50c239c51873c0b1c11242ad4b11605",
+    "head": "6107a32aa75b92a3c28d4d0b69cd5448e677da6d"
+  },
+  "reviewer": {
+    "vendor": "anthropic",
+    "model": "opus"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P3",
+      "summary": "The new text says the merging maintainer reads the reclassification reason, but maintainers merge their own PRs (AGENTS.md Flow). On a same-repo PR the author is the only one who reads it, so the stated check is weaker than the wording implies. The limitation is accepted and recorded, so this is wording only.",
+      "file": ".claude/rules/process.md",
+      "line": 105
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-11T10:21:36.038Z"
+}

@@ -26,6 +26,11 @@ Deviations:
 
 <!-- Commands you ran and what they printed (npm test, npm run lint:ratchet, npm run build, …) -->
 
+## PR review record
+
+<!-- After triaging the bot reviews: npm run review -- pr-record --pr <n>, fill each disposition in .review/pr/<n>.json, commit. The commit fires synchronize and review-gate re-runs. Rules: .claude/rules/process.md (Evidence). -->
+- [ ] `.review/pr/<n>.json` committed, every blocking finding disposed (or none needed: `mechanical` with no blocking finding)
+
 ## Migrations
 
 - [ ] No migration in this PR
@@ -34,6 +39,6 @@ Deviations:
 
 ## Control files
 
-This PR changes control files (`.github/**`, `.claude/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`, `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`, `scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`): **yes / no**
+This PR changes control files (`.github/**`, `.claude/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`, `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`, `scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`, `.coderabbit.yaml`): **yes / no**
 
 <!-- If yes, say which and why. The merging maintainer reads every control-file change on fork and Dependabot PRs. -->

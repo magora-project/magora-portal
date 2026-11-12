@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "94a505e6f1fb1a6dde5a39bca11c8f7b5a84567e",
+    "mergeBase": "b1a11c818eda425ff12d92ee8cc14e4eb9fab919",
+    "head": "b9344493dd8e3e662d57043d53327a8c50041e34"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "correctness--4a5a96fb2c03--1#F1",
+      "severity": "P1",
+      "summary": "The workflow executes gemini_review.py from the trusted base, whose pre-change version emits unnumbered findings, so initial rollout reviews record findings:[] despite reporting defects and subsequent same-identity runs skip reviewing them again.",
+      "file": ".github/workflows/gemini-review.yml",
+      "line": 445,
+      "disposition": {
+        "kind": "fixed",
+        "by": "correctness--94a505e6f1fb--1"
+      }
+    },
+    {
+      "id": "correctness--4a5a96fb2c03--1#F2",
+      "severity": "P2",
+      "summary": "Failure checks apply only to the current head, so an evidence-only push resurrects a previously failed CodeRabbit review as usable coverage on the unchanged identity, bypassing the required substitute.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 56,
+      "disposition": {
+        "kind": "fixed",
+        "by": "correctness--94a505e6f1fb--1"
+      }
+    }
+  ],
+  "supersedes": "correctness--4a5a96fb2c03--1",
+  "createdAt": "2026-11-10T12:51:01.204Z"
+}

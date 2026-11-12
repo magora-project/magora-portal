@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "pr": 104,
+  "slots": [
+    {
+      "bot": "coderabbit",
+      "status": "covered",
+      "by": "check:130841207903"
+    },
+    {
+      "bot": "codex",
+      "status": "covered",
+      "by": "codex-comment:6801178169@a9118551adee"
+    },
+    {
+      "bot": "gemini",
+      "status": "covered",
+      "by": "gemini-comment:6809079108"
+    }
+  ],
+  "findings": [
+    {
+      "id": "thread:PRRT_kwDOSsky0862QnaB",
+      "source": "codex",
+      "severity": "P2",
+      "disposition": { "kind": "fixed", "commit": "5c1f8ebdce06994381e91866ccc6810cce3360b3" }
+    },
+    {
+      "id": "thread:PRRT_kwDOSsky0862Wrwl",
+      "source": "coderabbit",
+      "severity": "Major",
+      "disposition": { "kind": "fixed", "commit": "54e91f2ae03f916c6f1c249c84a71253faf56f0f" }
+    },
+    {
+      "id": "thread:PRRT_kwDOSsky0862Wrwo",
+      "source": "coderabbit",
+      "severity": "Major",
+      "disposition": { "kind": "fixed", "commit": "54e91f2ae03f916c6f1c249c84a71253faf56f0f" }
+    },
+    {
+      "id": "gemini:6801245943:1",
+      "source": "gemini",
+      "severity": "P1",
+      "disposition": { "kind": "fixed", "commit": "5c1f8ebdce06994381e91866ccc6810cce3360b3" }
+    }
+  ],
+  "reclassified": [],
+  "writtenAt": "2026-11-11T23:45:09.810Z"
+}

@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "5ae32ffa725b14dcd7ea167f14ecbceeb63bf518",
+    "mergeBase": "b1a11c818eda425ff12d92ee8cc14e4eb9fab919",
+    "head": "2400e0c0eb3686f185e45d255cdfc017dfadce12"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "The commit message promises \"Each new test fails with its fix reverted\", but the new test for a completed dispatched run passes when reverted because it asserts the unmodified behavior for completed runs.",
+      "file": "scripts/review/coverage.test.mjs",
+      "line": 347,
+      "disposition": {
+        "kind": "reclassified-nit",
+        "reason": "a commit-message wording point, not a code defect: 'a completed dispatched run created before the head arrived does not count' is a control pinning unchanged behaviour beside the two new hold tests, which do fail with the fix reverted (verified); commit messages in this stack are not rewritten"
+      }
+    }
+  ],
+  "supersedes": "completeness--5ae32ffa725b--1",
+  "createdAt": "2026-11-10T17:29:25.219Z"
+}

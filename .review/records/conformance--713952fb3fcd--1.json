@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "713952fb3fcd7bc2f1e5a88f4e826c0dacdd3a64",
+    "mergeBase": "7100b2ad577b59ec2eaf30021f2f911422bce6b4",
+    "head": "54e91f2ae03f916c6f1c249c84a71253faf56f0f"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "D10",
+      "severity": "P3",
+      "summary": "D10: T26 limits run-only check reads to SHAs whose earliest PR run precedes a CodeRabbit request, but the updated SlotStateInput typedef promises entries for every PR-run head SHA, overstating what readGateState supplies.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 30
+    }
+  ],
+  "supersedes": "conformance--8579915d8d3b--1",
+  "conformance": {
+    "tasks": [
+      "T26"
+    ],
+    "deviations": [
+      "D10"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      },
+      {
+        "cmd": "npm run lint:ratchet",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "05e4b9141133704f61bae321e82d13f4e747cc70"
+    }
+  },
+  "createdAt": "2026-11-11T22:44:25.533Z"
+}

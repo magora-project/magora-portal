@@ -97,12 +97,11 @@ await skipCase('Dependabot PR', (b) => { b.user.login = 'dependabot[bot]' })
 await skipCase('no subtle-correctness label', (b) => { b.labels = [{ name: 'standard' }] })
 reply = { status: 200, body: goodPr() }
 
-for (const bad of ['57; echo x', '', '0', '-1', '57\nrun=true', '1'.repeat(11)]) {
+for (const bad of ['57; echo x', '', '0', '-1', '57\nrun=true', '1'.repeat(11), ' 57', '57 ', ' 57 ']) {
   lastPath = null
   const s = await resolve({ INPUT_PR: bad })
   ok(`dispatch: input ${JSON.stringify(bad)} refused before any API call`, s.code !== 0 && lastPath === null && !('run' in s.out))
 }
-ok('dispatch: surrounding spaces are stripped', (await resolve({ INPUT_PR: ' 57 ' })).out.number === '57')
 
 reply = { status: 404, body: { message: 'Not Found' } }
 r = await resolve({})

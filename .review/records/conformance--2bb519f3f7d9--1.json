@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "2bb519f3f7d9bcac78ac0e49eb6b03636303a030",
+    "mergeBase": "7100b2ad577b59ec2eaf30021f2f911422bce6b4",
+    "head": "e38fc9a19d76d9f882b7d96adfe9a5f217be93ef"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--9f4feaa1e62d--1#D10",
+      "severity": "P3",
+      "summary": "D10: T26 requires the SlotStateInput typedef to reflect the expanded coderabbitCheck/coderabbitChecks interface, but both documented shapes omit successes, leaving the retained-success evidence input undocumented.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 24,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--2bb519f3f7d9--1"
+      }
+    }
+  ],
+  "supersedes": "conformance--9f4feaa1e62d--1",
+  "conformance": {
+    "tasks": [
+      "T26"
+    ],
+    "deviations": [],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      },
+      {
+        "cmd": "npm run lint:ratchet",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "31c78cbab6b325856008319749834e342283b2d8"
+    }
+  },
+  "createdAt": "2026-11-11T16:10:57.756Z"
+}

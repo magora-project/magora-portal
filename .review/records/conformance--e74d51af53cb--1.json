@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "e74d51af53cb0e73b0832a8dd9bad05f95de2922",
+    "mergeBase": "e774964c447075d016f98fe48058618b99582ae0",
+    "head": "ff293d6171156fa12b4927588dd59d3ace1c5978"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--90149f487139--1#D10",
+      "severity": "P2",
+      "summary": "D10: Commit ec5aa333 promises to report any task-scoped Markdown Files heading, but the generic heading branch consumes `### Files` and clears the current task before that guard runs, silently dropping its targets and allowing reference checks and conformance to pass unchecked.",
+      "file": "scripts/review/plan-targets.mjs",
+      "line": 42,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--e74d51af53cb--1"
+      }
+    },
+    {
+      "id": "conformance--90149f487139--1#conformance--06b30e6e9560--6#D10",
+      "severity": "P3",
+      "summary": "D10: T18 specifies recording a command's exit status and continuing to the reviewer, while the diff additionally stops the run without a record when descendants hold its output pipes open; this useful safeguard adds an execution restriction absent from the plan.",
+      "file": "scripts/review/conformance.mjs",
+      "line": 188
+    },
+    {
+      "id": "conformance--90149f487139--1#conformance--06b30e6e9560--6#conformance--e5e270daf463--5#conformance--4edf3a16b08c--5#D10",
+      "severity": "P3",
+      "summary": "D10: T17 requires storing the plan review's task scope, while the diff additionally rejects plan evidence whose scope does not cover the PR's declared tasks; this useful safeguard extends the planned evidence-validation contract.",
+      "file": "scripts/ci/review-evidence.mjs",
+      "line": 145
+    },
+    {
+      "id": "conformance--90149f487139--1#conformance--06b30e6e9560--6#conformance--e5e270daf463--5#conformance--4edf3a16b08c--5#conformance--8475fef8c8e4--4#conformance--bcedfab5e9e0--4#conformance--48f2a35c9b5e--4#conformance--03aa01b796ef--4#conformance--e2ed5464a0ec--4#D10",
+      "severity": "P3",
+      "summary": "D10: T18 specifies running command targets and recording their exit status without a deadline, while the diff additionally imposes a per-command timeout with termination and exit -1; this useful safeguard extends the planned execution contract.",
+      "file": "scripts/review/conformance.mjs",
+      "line": 236
+    },
+    {
+      "id": "conformance--90149f487139--1#conformance--06b30e6e9560--6#conformance--e5e270daf463--5#conformance--4edf3a16b08c--5#conformance--8475fef8c8e4--4#conformance--bcedfab5e9e0--4#conformance--48f2a35c9b5e--4#conformance--03aa01b796ef--4#conformance--e2ed5464a0ec--4#conformance--d81ff5e9afb4--3#conformance--cf8fbd4ee12b--3#conformance--8fe2656b7972--1#conformance--484c9be533a3--3#conformance--d88a517c33e0--1#conformance--5788e24c3c23--3#conformance--4636acd9083f--1#D2",
+      "severity": "P3",
+      "summary": "D2: T18 specifies conformance tasks, deviations and commands, while the diff additionally requires a plan path/blob binding in records and evidence validation; this useful safeguard extends the planned record contract.",
+      "file": "scripts/ci/review-evidence.mjs",
+      "line": 151
+    },
+    {
+      "id": "conformance--90149f487139--1#conformance--06b30e6e9560--6#conformance--e5e270daf463--5#conformance--4edf3a16b08c--5#conformance--8475fef8c8e4--4#conformance--bcedfab5e9e0--4#conformance--48f2a35c9b5e--4#conformance--03aa01b796ef--4#conformance--e2ed5464a0ec--4#conformance--d81ff5e9afb4--3#conformance--cf8fbd4ee12b--3#conformance--8fe2656b7972--1#conformance--484c9be533a3--3#conformance--d88a517c33e0--1#conformance--5788e24c3c23--3#conformance--4636acd9083f--1#D3",
+      "severity": "P3",
+      "summary": "D3: T18 requires committed-head postcondition checks, while the diff additionally refuses dirty plans and dirty tracked files when command targets exist; these useful refusals add execution restrictions absent from the plan.",
+      "file": "scripts/review/conformance.mjs",
+      "line": 180
+    }
+  ],
+  "supersedes": "conformance--90149f487139--1",
+  "conformance": {
+    "tasks": [
+      "T17",
+      "T18"
+    ],
+    "deviations": [
+      "conformance--90149f487139--1#conformance--06b30e6e9560--6#D10",
+      "conformance--90149f487139--1#conformance--06b30e6e9560--6#conformance--e5e270daf463--5#conformance--4edf3a16b08c--5#D10",
+      "conformance--90149f487139--1#conformance--06b30e6e9560--6#conformance--e5e270daf463--5#conformance--4edf3a16b08c--5#conformance--8475fef8c8e4--4#conformance--bcedfab5e9e0--4#conformance--48f2a35c9b5e--4#conformance--03aa01b796ef--4#conformance--e2ed5464a0ec--4#D10",
+      "conformance--90149f487139--1#conformance--06b30e6e9560--6#conformance--e5e270daf463--5#conformance--4edf3a16b08c--5#conformance--8475fef8c8e4--4#conformance--bcedfab5e9e0--4#conformance--48f2a35c9b5e--4#conformance--03aa01b796ef--4#conformance--e2ed5464a0ec--4#conformance--d81ff5e9afb4--3#conformance--cf8fbd4ee12b--3#conformance--8fe2656b7972--1#conformance--484c9be533a3--3#conformance--d88a517c33e0--1#conformance--5788e24c3c23--3#conformance--4636acd9083f--1#D2",
+      "conformance--90149f487139--1#conformance--06b30e6e9560--6#conformance--e5e270daf463--5#conformance--4edf3a16b08c--5#conformance--8475fef8c8e4--4#conformance--bcedfab5e9e0--4#conformance--48f2a35c9b5e--4#conformance--03aa01b796ef--4#conformance--e2ed5464a0ec--4#conformance--d81ff5e9afb4--3#conformance--cf8fbd4ee12b--3#conformance--8fe2656b7972--1#conformance--484c9be533a3--3#conformance--d88a517c33e0--1#conformance--5788e24c3c23--3#conformance--4636acd9083f--1#D3"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "572610a2fa81402fb917e1683f4185bde5999acf"
+    }
+  },
+  "createdAt": "2026-11-08T07:16:55.266Z"
+}

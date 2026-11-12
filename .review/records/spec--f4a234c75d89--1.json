@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "f4a234c75d8922131175490c4856bf2ef2d4c489",
+    "path": "docs/superpowers/specs/2026-10-29-shared-dev-process-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "Conformance evidence is bound to the PR diff and task IDs but not the linked plan's path and blob, so changing the Plan field to another reviewed plan with the same task IDs—or updating that plan through main—can retain passing conformance evidence without checking the newly required postconditions.",
+      "file": "docs/superpowers/specs/2026-10-29-shared-dev-process-design.md",
+      "line": 302
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-11T12:44:06.522Z"
+}

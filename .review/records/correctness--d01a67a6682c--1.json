@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "d01a67a6682c16b3cab6c91ad09095ad06cf27ee",
+    "mergeBase": "66cad853ad7f82b4be2ee8032bf47382c70244f2",
+    "head": "0e19caa4f8aed1c0c0735883e750f1f43146133c"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "correctness--9b2caf2b1710--1#correctness--7abdac72c3eb--1#F1",
+      "severity": "P2",
+      "summary": "Gate runs are filtered only by head SHA and discard their PR association, so two PRs sharing a commit can cause a late verdict to rerun the other PR’s gate, leaving the intended PR’s result stale.",
+      "file": "scripts/ci/review-gate-retrigger.mjs",
+      "line": 53,
+      "disposition": {
+        "kind": "fixed",
+        "by": "correctness--d01a67a6682c--1"
+      }
+    }
+  ],
+  "supersedes": "correctness--9b2caf2b1710--1",
+  "createdAt": "2026-11-10T17:41:42.338Z"
+}

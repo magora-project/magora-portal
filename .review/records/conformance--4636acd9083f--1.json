@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "4636acd9083f38042713444f8d763e6891154ab1",
+    "mergeBase": "c2b1b1c0c766adb0f36835319706d96157c306c2",
+    "head": "994c3f9787f65a0a23eaa76a2d8a13b634d0df1a"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "D1",
+      "severity": "P1",
+      "summary": "D1: T17 requires the reviewer to see the author's selected remaining tasks, but planRef.tasks and rev are only logged and stored, never included in the prompt, so amendment reviews cannot assess the declared scope.",
+      "file": "scripts/review/runner.mjs",
+      "line": 520
+    },
+    {
+      "id": "D2",
+      "severity": "P3",
+      "summary": "D2: T18 specifies conformance tasks, deviations and commands, while the diff additionally requires a plan path/blob binding in records and evidence validation; this useful safeguard extends the planned record contract.",
+      "file": "scripts/ci/review-evidence.mjs",
+      "line": 151
+    },
+    {
+      "id": "D3",
+      "severity": "P3",
+      "summary": "D3: T18 requires committed-head postcondition checks, while the diff additionally refuses dirty plans and dirty tracked files when command targets exist; these useful refusals add execution restrictions absent from the plan.",
+      "file": "scripts/review/conformance.mjs",
+      "line": 180
+    }
+  ],
+  "supersedes": null,
+  "conformance": {
+    "tasks": [
+      "T17",
+      "T18"
+    ],
+    "deviations": [
+      "D1",
+      "D2",
+      "D3"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "572610a2fa81402fb917e1683f4185bde5999acf"
+    }
+  },
+  "createdAt": "2026-11-07T16:16:29.232Z"
+}

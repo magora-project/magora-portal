@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "99fc4d95db9e7356d4d326f23e67736d9aafa2a5",
+    "mergeBase": "1315191ec42fa0a020dcb4fc04e9b772aa003c0c",
+    "head": "719b55af5c6ed72d738020530806579b772817d5"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "The test puts the expected run (501) at index 0, so because retriggerPr takes the first run, the test would still pass if the filtering code were deleted.",
+      "file": "scripts/ci/review-gate-retrigger.test.mjs",
+      "line": 93,
+      "disposition": {
+        "kind": "reclassified-nit",
+        "reason": "Incorrect premise: retriggerPr picks the highest run id (review-gate-retrigger.mjs:119, runs.reduce by b.id > a.id), not the first, so with the filter deleted it re-runs 600 and the test fails; run with the 719b55a fix reverted, this test failed (31 passed, 3 failed)."
+      }
+    }
+  ],
+  "supersedes": "completeness--99fc4d95db9e--1",
+  "createdAt": "2026-11-10T21:27:10.499Z"
+}
