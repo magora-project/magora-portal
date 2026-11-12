@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "5ae32ffa725b14dcd7ea167f14ecbceeb63bf518",
+    "mergeBase": "b1a11c818eda425ff12d92ee8cc14e4eb9fab919",
+    "head": "2400e0c0eb3686f185e45d255cdfc017dfadce12"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--0f11761f51ac--2#conformance--3801d1b4d9f6--2#conformance--94a505e6f1fb--2#conformance--4a5a96fb2c03--1#D20",
+      "severity": "P3",
+      "summary": "D20: The stated skip safeguards require tests, but the supplied diff includes no behavioral tests for identity failure, comment-list failure, parser crashes, skip-comment posting failure, or marker generation across posting outcomes, leaving those safeguards unverified.",
+      "file": ".github/workflows/gemini-review.yml",
+      "line": 246,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "the Gemini workflow's skip and post steps are inline workflow steps with no unit harness; Task 24's live acceptance cases exercise them end to end (an evidence-only commit gives skipped-same-identity; a run with the key unset gives could-not-run), and the marker shape the skip step accepts is pinned against geminiVerdicts by scripts/ci/gemini-verdict.test.mjs"
+      }
+    }
+  ],
+  "supersedes": "conformance--5ae32ffa725b--1",
+  "conformance": {
+    "tasks": [
+      "T20",
+      "T21",
+      "T22"
+    ],
+    "deviations": [
+      "conformance--0f11761f51ac--2#conformance--3801d1b4d9f6--2#conformance--94a505e6f1fb--2#conformance--4a5a96fb2c03--1#D20"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "5280ea3b62356eb4803b30728235b18e401e3367"
+    }
+  },
+  "createdAt": "2026-11-10T17:29:31.271Z"
+}

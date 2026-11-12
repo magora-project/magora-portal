@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "pr": 92,
+  "slots": [
+    {
+      "bot": "coderabbit",
+      "status": "covered",
+      "by": "review:5849889783"
+    },
+    {
+      "bot": "codex",
+      "status": "covered",
+      "by": "codex-comment:6775000589@cd88f7b0dde3"
+    },
+    {
+      "bot": "gemini",
+      "status": "covered",
+      "by": "gemini-comment:6779848273"
+    }
+  ],
+  "findings": [],
+  "reclassified": [
+    {
+      "id": "thread:PRRT_kwDOSsky08615O1J",
+      "reason": "Fixed in b769f77 (test fails with the fix reverted); the commit it was reported on, d3106bb, was rewritten away by the rebase onto main, so rule (a) cannot order the fix after it and rule (b) is unavailable while Codex covers the slot (the gap in gemini:6779848273:2); Codex's own completed review at cd88f7b, a descendant of b769f77, reported no findings."
+    },
+    {
+      "id": "thread:PRRT_kwDOSsky08615O1Q",
+      "reason": "Fixed in b769f77 (test fails with the fix reverted); the commit it was reported on, d3106bb, was rewritten away by the rebase onto main, so rule (a) cannot order the fix after it and rule (b) is unavailable while Codex covers the slot (the gap in gemini:6779848273:2); Codex's own completed review at cd88f7b, a descendant of b769f77, reported no findings."
+    },
+    {
+      "id": "gemini:6779848273:2",
+      "reason": "Real gap, but it fails closed: a fix of a finding reported on a since-rewritten commit cannot pass rule (a), and rule (b) needs the bot slot to need a substitute, so while the bot covers the PR only a reclassification clears it. Nothing unsafe merges; tracked as a follow-up issue (https://github.com/magora-project/magora-portal/issues/94)."
+    },
+    {
+      "id": "gemini:6779848273:1",
+      "reason": "Accepted limitation, spec \u00a75.6 (David, 2026-11-03): a fix that a later commit reverts can still pass. Here the revert passes through a substitute chain carrying an earlier fixed disposition. It needs a revert plus a re-report under the same outside-diff marker plus a later CodeRabbit failure. A fix (5df29d8, reverted) broke the rebase escape for fresh substitutes (Codex P2), so it is deferred with #94."
+    }
+  ],
+  "writtenAt": "2026-11-10T21:42:19.111Z"
+}

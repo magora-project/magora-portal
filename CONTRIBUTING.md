@@ -27,6 +27,38 @@ macOS and Windows (PowerShell or cmd) use the same commands; every check is a No
     npm run check:migrations
     npm run check:deno        # needs Deno 2.9.5
 
+## Prerequisites
+
+Process rules: [.claude/rules/process.md](.claude/rules/process.md).
+
+- Claude Code, with the Superpowers plugin installed (`/plugin install superpowers@claude-plugins-official`): plans
+  execute through its `subagent-driven-development` skill. Its `brainstorming` and `writing-plans` are replaced by the
+  repo's own copies.
+- Codex CLI, signed in
+- Semgrep
+- Node 24 (see `.nvmrc`)
+- Deno 2.9.5
+- `gh`, the GitHub CLI
+- A Gemini key from the Gemini account David set up (D-15)
+
+## First run
+
+    npm ci
+    npm run setup:hooks
+
+Then start Claude Code in the repo and check that `/skills` lists `brainstorming` and `writing-plans` as project skills,
+and `superpowers:subagent-driven-development` from the plugin.
+
+## Fork PRs (maintainers)
+
+A fork's content is untrusted code, and supplying its evidence runs it on your machine: conformance runs the plan's
+`command` targets, `npm test` runs its tests, and the evidence push runs `.githooks/pre-push`. Almost any changed file
+can execute: modules the tests import, lint and build configs, dependencies `package-lock.json` pulls in on `npm ci`,
+the `.claude/` settings, hooks and skills an agent session loads, and, with `core.hooksPath=.githooks`, a fork's
+`.githooks/post-checkout` on checkout itself. So read the PR's **whole** diff before checking the branch out (on the PR
+page, or `git fetch` then `git diff`, which run none of it), and before any install, test, lint, build, agent session or
+push from that checkout (spec §5.3, D-11).
+
 ## If label-gate shows "cancelled"
 
 The latest label-gate run on your head must finish. If it was cancelled, ask a maintainer to re-run the job from the

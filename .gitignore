@@ -30,6 +30,10 @@ dist-ssr
 # Supabase CLI scratch state
 supabase/.temp
 
-# Claude Code local state + Python bytecode
-.claude/
+# Claude Code local state (the rest of .claude/ is committed) + Python bytecode
+.claude/worktrees/
+.claude/settings.local.json
 scripts/__pycache__/
+
+# Machine-local review-evidence settings (npm run review -- init-local); the records beside it are committed
+.review/local.json

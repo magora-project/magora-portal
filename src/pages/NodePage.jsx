@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { isHiddenSpecies } from '../lib/hiddenSpecies'
-import { parseNodeLocation } from '../lib/geo'
+import { parseNodeLocation, formatLatLon } from '../lib/geo'
 import { fetchNearbyLife, summarizeGroups, inatTaxonUrl, commonNamesVerified } from '../lib/inat'
 import { getListenerAvatarUrl } from '../lib/listener'
 import { followJournal, unfollowJournal, getFollowerCount, getPublicFollowers, useJournalFollowStatus } from '../lib/journalFollows'
@@ -308,9 +308,7 @@ export default function NodePage() {
   const habitatEmoji = HABITAT_EMOJI[node.habitat_type] || '📍'
 
   const region = node.region
-    || (coords
-      ? `${Math.abs(coords.lat).toFixed(1)}°${coords.lat >= 0 ? 'N' : 'S'}, ${Math.abs(coords.lon).toFixed(1)}°${coords.lon >= 0 ? 'W' : 'E'}`
-      : habitat || 'Unmapped')
+    || (coords ? formatLatLon(coords.lat, coords.lon) : habitat || 'Unmapped')
   const stewardHandle = node.steward_handle || node.steward || null
   // banner_path is the only real image column on `nodes` — the page previously read
   // profile_image_url / image_url / banner_url, none of which have ever existed.

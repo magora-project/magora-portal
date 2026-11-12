@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "484c9be533a31f419ffa83db4b810da58357de54",
+    "mergeBase": "c2b1b1c0c766adb0f36835319706d96157c306c2",
+    "head": "11954492a94563c349b22950d89d4751506a2e89"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "correctness--d88a517c33e0--1#F1",
+      "severity": "P1",
+      "summary": "A plan re-review that expands --tasks still sends only the document delta (empty when unchanged), so newly included tasks can receive passing review evidence without the reviewer seeing their text; force full input when the plan-review scope changes.",
+      "file": "scripts/review/runner.mjs",
+      "line": 496,
+      "disposition": {
+        "kind": "fixed",
+        "by": "correctness--484c9be533a3--1"
+      }
+    }
+  ],
+  "supersedes": "correctness--d88a517c33e0--1",
+  "createdAt": "2026-11-07T16:27:19.025Z"
+}

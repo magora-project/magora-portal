@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "7edca78dcfd1b88483d7155abd4a6bd9da8a59b5",
+    "mergeBase": "df03fb7a568f881c083b7e81a3ed246560c65db6",
+    "head": "c4159d29d85a3c948e7efea71a6c9568c4a9e38d"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "completeness--c05ef46c9ed8--1#F1",
+      "severity": "P2",
+      "summary": "If the PR was rebased or merged from main since the superseded review, `git diff old.input.head head` will include all upstream changes, polluting the delta sent to the reviewer.",
+      "file": "scripts/review/runner.mjs",
+      "line": 204,
+      "disposition": {
+        "kind": "fixed",
+        "by": "completeness--7edca78dcfd1--1"
+      }
+    }
+  ],
+  "supersedes": "completeness--c05ef46c9ed8--1",
+  "createdAt": "2026-11-06T17:56:36.386Z"
+}

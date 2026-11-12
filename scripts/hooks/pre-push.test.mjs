@@ -1,0 +1,221 @@
+// Self-test for scripts/hooks/pre-push.mjs and scripts/hooks/setup.mjs. Real spawns use a scratch dir.
+// Run: node scripts/hooks/pre-push.test.mjs
+import { spawn, spawnSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { delimiter, dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { main, refsNotHead } from './pre-push.mjs'
+import { setup } from './setup.mjs'
+
+let pass = 0, fail = 0
+const ok = (n, c) => {
+  if (c !== null && typeof c === 'object' && typeof c.then === 'function') { fail++; console.log('  FAIL', n, '(unawaited Promise)'); return }
+  if (c) { pass++ } else { fail++; console.log('  FAIL', n) }
+}
+
+const here = dirname(fileURLToPath(import.meta.url))
+const hookPath = join(here, 'pre-push.mjs')
+
+// In-process: localCheck is injected through loadCheck; null models "module missing".
+const runHook = async ({ localCheck, env = {} }) => {
+  let err = ''
+  const code = await main({ cwd: '.', env, stderr: { write: (s) => { err += s } }, loadCheck: async () => localCheck })
+  return { code, err }
+}
+
+ok('always exits 0, even when the check fails', (await runHook({ localCheck: () => ({ ok: false, lines: ['x'] }) })).code === 0)
+ok('prints the failing lines as a warning', /WARNING.*x/s.test((await runHook({ localCheck: () => ({ ok: false, lines: ['x'] }) })).err))
+ok('a throwing check still exits 0', (await runHook({ localCheck: () => { throw new Error('boom') } })).code === 0)
+ok('a throwing check prints a failure warning', /^WARNING: review-evidence check failed: boom\n$/.test((await runHook({ localCheck: () => { throw new Error('boom') } })).err))
+ok('missing check module: one line, exit 0', (await runHook({ localCheck: null })).code === 0)
+ok('missing check module: says not available yet', (await runHook({ localCheck: null })).err === 'review-evidence not available yet\n')
+ok('passing check prints nothing', (await runHook({ localCheck: () => ({ ok: true, lines: [] }) })).err === '')
+ok('async check is awaited', /WARNING.*y/s.test((await runHook({ localCheck: async () => ({ ok: false, lines: ['y'] }) })).err))
+ok('a malformed result still exits 0', (await runHook({ localCheck: () => ({ ok: false }) })).code === 0)
+ok('kill-switch prints nothing', (await runHook({ localCheck: () => ({ ok: false, lines: ['x'] }), env: { PREPUSH_REVIEW_WARN_DISABLE: '1' } })).err === '')
+
+// Refs sent that are not HEAD: the check covers the checkout, so the hook names what it did not check.
+const H = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', O = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', Z = '0000000000000000000000000000000000000000'
+const line = (ref, sha) => `${ref} ${sha} ${ref} ${Z}\n`
+ok('refsNotHead: the HEAD ref is not reported', refsNotHead(line('refs/heads/a', H), H).length === 0)
+ok('refsNotHead: another ref is reported', JSON.stringify(refsNotHead(line('refs/heads/a', H) + line('refs/heads/b', O), H)) === JSON.stringify([{ ref: 'refs/heads/b', sha: O }]))
+ok('refsNotHead: a deletion is skipped', refsNotHead(`(delete) ${Z} refs/heads/b ${O}\n`, H).length === 0)
+ok('refsNotHead: unknown HEAD or garbage reports nothing', refsNotHead(line('refs/heads/b', O), null).length === 0 && refsNotHead('garbage', H).length === 0)
+const runRefs = async (stdin, head = () => H) => {
+  let err = ''
+  const code = await main({ cwd: '.', env: {}, stderr: { write: (s) => { err += s } }, loadCheck: async () => () => ({ ok: true, lines: [] }), stdin, head })
+  return { code, err }
+}
+ok('a ref that is not HEAD warns, naming it, even when HEAD passes', /covers HEAD only.*refs\/heads\/b \(bbbbbbbbbbbb\)/.test((await runRefs(line('refs/heads/b', O))).err))
+ok('only HEAD sent: no note', (await runRefs(line('refs/heads/a', H))).err === '')
+ok('a throwing head lookup still exits 0 with a failure warning', await (async () => { const r = await runRefs(line('refs/heads/b', O), () => { throw new Error('nogit') }); return r.code === 0 && /check failed: nogit/.test(r.err) })())
+
+// Real process: scratch dir with and without a review-evidence module; run through a symlinked
+// directory where the OS permits one (a junction on Windows needs no privilege), else the real path.
+const spawnHook = (script, cwd) =>
+  spawnSync(process.execPath, [script], { cwd, input: 'refs/heads/a 1 refs/heads/a 0\n', encoding: 'utf8', shell: false })
+const scratch = mkdtempSync(join(tmpdir(), 'prepush-'))
+try {
+  let link = hookPath, how = 'real path'
+  try { symlinkSync(here, join(scratch, 'hooks-link'), 'junction'); link = join(scratch, 'hooks-link', 'pre-push.mjs'); how = 'symlinked path' } catch { /* symlinks not permitted here: run the real path */ }
+  const missing = spawnHook(link, scratch)
+  ok(`spawn (${how}), no module: exit 0`, missing.status === 0)
+  ok(`spawn (${how}), no module: the one line`, missing.stderr === 'review-evidence not available yet\n')
+
+  mkdirSync(join(scratch, 'scripts', 'ci'), { recursive: true })
+  const mod = join(scratch, 'scripts', 'ci', 'review-evidence.mjs')
+  writeFileSync(mod, "export const localCheck = () => ({ ok: false, lines: ['no correctness record'] })\n")
+  const warned = spawnHook(link, scratch)
+  ok('spawn with a failing check: exit 0', warned.status === 0)
+  ok('spawn with a failing check: warns with the line', /WARNING.*no correctness record/s.test(warned.stderr))
+
+  writeFileSync(mod, "export const localCheck = () => { throw new Error('boom') }\n")
+  const thrown = spawnHook(link, scratch)
+  ok('spawn with a throwing check: exit 0 with a failure warning', thrown.status === 0 && /check failed: boom/.test(thrown.stderr))
+
+  writeFileSync(mod, 'this is not javascript (\n')
+  const broken = spawnHook(link, scratch)
+  ok('spawn with an unparseable module: exit 0', broken.status === 0)
+  ok('spawn with an unparseable module: reported as a failed check, not as missing', /check failed/.test(broken.stderr) && !/not available yet/.test(broken.stderr))
+
+  const fast = { ...process.env, PREPUSH_REVIEW_TIMEOUT_MS: '300' }
+  writeFileSync(mod, 'export const localCheck = () => new Promise(() => {})\n')
+  const hung = spawnSync(process.execPath, [link], { cwd: scratch, env: fast, input: '', encoding: 'utf8', shell: false, timeout: 8000 })
+  ok('spawn with a never-settling check: exit 0 (not 13) and a timeout line', hung.status === 0 && /timed out/.test(hung.stderr))
+
+  writeFileSync(mod, 'setInterval(() => {}, 1000)\nexport const localCheck = () => new Promise(() => {})\n')
+  const alive = spawnSync(process.execPath, [link], { cwd: scratch, env: fast, input: '', encoding: 'utf8', shell: false, timeout: 8000 })
+  ok('spawn with a loop-holding check: exits 0 at the watchdog, not hung', alive.status === 0 && /timed out/.test(alive.stderr))
+
+  // A warning larger than the pipe buffer, read by a slow reader: on POSIX (macOS) pipe writes are
+  // asynchronous, so exiting before they drain truncates the warning. Every line must arrive.
+  writeFileSync(mod, 'export const localCheck = () => ({ ok: false, lines: Array.from({ length: 5000 }, (_, i) => `line ${i} ${"x".repeat(40)}`) })\n')
+  const slow = await new Promise((resolve) => {
+    const child = spawn(process.execPath, [link], { cwd: scratch, stdio: ['ignore', 'ignore', 'pipe'] })
+    let err = ''
+    child.stderr.setEncoding('utf8')
+    child.stderr.pause()
+    setTimeout(() => { child.stderr.on('data', (s) => { err += s }); child.stderr.resume() }, 700)
+    child.on('close', (code) => resolve({ code, err }))
+  })
+  ok('spawn with a large warning and a slow reader: exit 0 and every line arrives', slow.code === 0 && /line 4999 x+\n$/.test(slow.err))
+} finally {
+  rmSync(scratch, { recursive: true, force: true })
+}
+
+// Real process in a git fixture: the hook reads git's ref lines from stdin and compares with HEAD.
+// Reverting main({ stdin }) to main() would silence the warning; this catches it.
+// The git fixtures below must see only their own scratch repo. Every inherited GIT_* variable is
+// removed for the fixture's duration: repository location (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE,
+// set when tests run inside a git hook) would point the fixture's add, commit and config at the
+// developer's checkout, and config variables would change behaviour. Then git is pointed at an empty
+// global config file, skipping the system one (a global core.hooksPath, commit.gpgsign, templates).
+// Everything is put back afterwards. Spawned processes, the hook included, inherit this.
+const isolateGit = (dir) => {
+  const saved = Object.fromEntries(Object.entries(process.env).filter(([k]) => /^GIT_/i.test(k)))
+  for (const k of Object.keys(saved)) delete process.env[k]
+  process.env.GIT_CONFIG_GLOBAL = join(dir, 'empty-global-gitconfig')
+  process.env.GIT_CONFIG_NOSYSTEM = '1'
+  return () => {
+    for (const k of Object.keys(process.env)) { if (/^GIT_/i.test(k)) delete process.env[k] }
+    Object.assign(process.env, saved)
+  }
+}
+// The fixture's git resolves to the fixture itself, not to a repository named by the environment.
+// realpathSync.native expands Windows 8.3 short names (RUNNER~1); Windows paths compare case-blind.
+const canon = (p) => { const r = realpathSync.native(p); return process.platform === 'win32' ? r.toLowerCase() : r }
+const gitDirIsInside = (dir, r) => r.status === 0 && canon(r.stdout.trim()).startsWith(canon(dir))
+
+const gitScratch = mkdtempSync(join(tmpdir(), 'prepush-git-'))
+const restoreGitScratch = isolateGit(gitScratch)
+try {
+  const git = (...a) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { cwd: gitScratch, encoding: 'utf8', shell: false })
+  if (git('init', '-q').status === 0) {
+    ok('git fixture: git resolves the fixture repo', gitDirIsInside(gitScratch, git('rev-parse', '--absolute-git-dir')))
+    mkdirSync(join(gitScratch, 'scripts', 'ci'), { recursive: true })
+    writeFileSync(join(gitScratch, 'scripts', 'ci', 'review-evidence.mjs'), 'export const localCheck = () => ({ ok: true, lines: [] })\n')
+    git('add', '-A')
+    ok('git fixture: commit succeeded', git('commit', '-q', '-m', 'one').status === 0)
+    const head = git('rev-parse', 'HEAD').stdout.trim()
+    const other = 'b'.repeat(40), zero = '0'.repeat(40)
+    const send = (input) => spawnSync(process.execPath, [hookPath], { cwd: gitScratch, input, encoding: 'utf8', shell: false })
+    ok('git fixture: HEAD resolved', /^[0-9a-f]{40}$/.test(head))
+    const elsewhere = send(`refs/heads/other ${other} refs/heads/other ${zero}\n`)
+    ok('spawn in git: a ref that is not HEAD warns, exit 0', elsewhere.status === 0 && /covers HEAD only.*refs\/heads\/other \(bbbbbbbbbbbb\)/.test(elsewhere.stderr))
+    const same = send(`refs/heads/main ${head} refs/heads/main ${zero}\n`)
+    ok('spawn in git: only HEAD sent prints nothing', same.status === 0 && same.stderr === '')
+  } else {
+    console.log('  skip: git not available for the stdin fixture')
+    ok('git is available for the stdin fixture in CI', !process.env.CI)
+  }
+} finally {
+  restoreGitScratch()
+  rmSync(gitScratch, { recursive: true, force: true })
+}
+
+// The shim itself: run with sh from a scratch tree root (skipped where sh is absent). The no-node
+// cases replace PATH, so sh is resolved to an absolute native path first (Git for Windows' sh.exe
+// has no /bin/sh that native Node can spawn).
+const shimSrc = join(here, '..', '..', '.githooks', 'pre-push')
+const findSh = () => {
+  for (const d of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) {
+    for (const n of ['sh', 'sh.exe']) { if (existsSync(join(d, n))) return join(d, n) }
+  }
+  return null
+}
+const sh = findSh()
+const hasSh = sh !== null && spawnSync(sh, ['-c', 'exit 0'], { shell: false }).status === 0
+if (hasSh) {
+  const tree = mkdtempSync(join(tmpdir(), 'prepush-shim-'))
+  try {
+    mkdirSync(join(tree, 'scripts', 'hooks'), { recursive: true })
+    copyFileSync(hookPath, join(tree, 'scripts', 'hooks', 'pre-push.mjs'))
+    copyFileSync(shimSrc, join(tree, 'shim'))
+    const withNode = spawnSync(sh, [join(tree, 'shim')], { cwd: tree, input: '', encoding: 'utf8', shell: false })
+    ok('shim with node: exit 0 and runs the hook', withNode.status === 0 && withNode.stderr === 'review-evidence not available yet\n')
+    const bin = join(tree, 'bin')
+    mkdirSync(bin)
+    const noNode = spawnSync(sh, [join(tree, 'shim')], { cwd: tree, env: { PATH: bin }, input: '', encoding: 'utf8', shell: false })
+    ok('shim without node on PATH: exit 0 and one line', noNode.status === 0 && noNode.stderr === 'node not found; review-evidence warning skipped\n')
+    writeFileSync(join(bin, 'node'), '#!/bin/sh\nexit 7\n', { mode: 0o755 })
+    const nodeFails = spawnSync(sh, [join(tree, 'shim')], { cwd: tree, env: { PATH: bin }, input: '', encoding: 'utf8', shell: false })
+    ok('shim whose node exits non-zero: still exit 0', nodeFails.status === 0)
+    ok('shim whose node exits non-zero: says so, with the exit code', /hook failed \(node exit 7\)/.test(nodeFails.stderr))
+  } finally {
+    rmSync(tree, { recursive: true, force: true })
+  }
+}
+
+// setup.mjs only ever runs in a scratch repo here, never in this checkout.
+const repo = mkdtempSync(join(tmpdir(), 'prepush-setup-'))
+const restoreRepo = isolateGit(repo)
+try {
+  const init = spawnSync('git', ['init', '-q'], { cwd: repo, shell: false })
+  ok('scratch repo initialised', init.status === 0)
+  ok('setup fixture: git resolves the fixture repo', gitDirIsInside(repo, spawnSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: repo, encoding: 'utf8', shell: false })))
+  let out = '', err = ''
+  const code = setup({ cwd: repo, out: (s) => { out += s }, err: (s) => { err += s } })
+  ok('setup: exit 0', code === 0 && err === '')
+  ok('setup: prints the value read back', out === 'core.hooksPath = .githooks')
+  const back = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd: repo, encoding: 'utf8', shell: false })
+  ok('setup: git really holds the value', back.stdout.trim() === '.githooks')
+  let e3 = ''
+  ok('setup: re-running over its own value warns about nothing', setup({ cwd: repo, out: () => {}, err: (s) => { e3 += s } }) === 0 && e3 === '')
+  spawnSync('git', ['config', 'core.hooksPath', '.husky'], { cwd: repo, shell: false })
+  let e4 = ''
+  ok('setup: replacing another hooksPath names it', setup({ cwd: repo, out: () => {}, err: (s) => { e4 += s } }) === 0 && /replacing core\.hooksPath \.husky/.test(e4))
+  // A worktree-level value outranks the repository value setup writes: setup must not report success.
+  spawnSync('git', ['config', 'extensions.worktreeConfig', 'true'], { cwd: repo, shell: false })
+  spawnSync('git', ['config', '--worktree', 'core.hooksPath', '.wt-hooks'], { cwd: repo, shell: false })
+  let o5 = '', e5 = ''
+  ok('setup: an overriding worktree value exits 1 and names it', setup({ cwd: repo, out: (s) => { o5 += s }, err: (s) => { e5 += s } }) === 1 && /still \.wt-hooks/.test(e5) && o5 === 'core.hooksPath = .wt-hooks')
+  let e2 = ''
+  ok('setup: failure exits 1 and says so', setup({ cwd: join(repo, 'does-not-exist'), out: () => {}, err: (s) => { e2 += s } }) === 1 && /could not set/.test(e2))
+} finally {
+  restoreRepo()
+  rmSync(repo, { recursive: true, force: true })
+}
+
+console.log(`${pass} passed, ${fail} failed`)
+process.exit(fail ? 1 : 0)

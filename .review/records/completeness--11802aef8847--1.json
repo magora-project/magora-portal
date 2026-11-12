@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "11802aef8847321d9a4bf023abd1a47e0d27cacc",
+    "mergeBase": "e554838e47127191cc7e7682345a7fbf6aa5fd98",
+    "head": "2a740319d5199a5e5a035b07e23da1dfdf2e820a"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [],
+  "supersedes": "completeness--cdfffc80e10f--1",
+  "createdAt": "2026-11-06T21:14:33.954Z"
+}

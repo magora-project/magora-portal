@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "04e8c3fe62f3077b7e4329aebf8edafadccd296b",
+    "mergeBase": "7100b2ad577b59ec2eaf30021f2f911422bce6b4",
+    "head": "7ea2e96396c1b14e6d71b7a508e2493ebe067c63"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "D10",
+      "severity": "P3",
+      "summary": "D10: T26 requires an uncovered manual-review skip's pending reason to include post \"@coderabbitai full review\", but the missing-arrival early return omits that instruction.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 464
+    },
+    {
+      "id": "D11",
+      "severity": "P3",
+      "summary": "D11: T26 requires a present check ID before success becomes evidence; the implementation guards it, but no test exercises a missing ID, leaving this safeguard unverified.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 285
+    },
+    {
+      "id": "D12",
+      "severity": "P3",
+      "summary": "D12: T26 requires a readable request timestamp before success becomes evidence; the implementation filters unreadable timestamps, but no test exercises that refusal.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 280
+    }
+  ],
+  "supersedes": null,
+  "conformance": {
+    "tasks": [
+      "T26"
+    ],
+    "deviations": [
+      "D10",
+      "D11",
+      "D12"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      },
+      {
+        "cmd": "npm run lint:ratchet",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "42bdc5b8382ad5362e64327e443037fede80b524"
+    }
+  },
+  "createdAt": "2026-11-11T15:08:11.424Z"
+}

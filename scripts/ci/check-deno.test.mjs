@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findEntrypoints } from './check-deno.mjs'
+import { fileSymlinkOrSkip } from './file-symlink.mjs'
 
 let pass = 0, fail = 0
 const ok = (n, c) => { if (c) { pass++ } else { fail++; console.log('  FAIL', n) } }
@@ -49,10 +50,11 @@ try {
     spawnSync(process.execPath, ['--preserve-symlinks-main', join(tmp, 'ci-link', 'check-deno.mjs'), '--root', join(tmp, 'none')], { stdio: 'ignore' }).status === 1)
   write('dangling/supabase/functions/a-fn/index.ts')
   mkdirSync(join(tmp, 'dangling/supabase/functions/b-fn'))
-  symlinkSync(join(tmp, 'no-such-file.ts'), join(tmp, 'dangling/supabase/functions/b-fn/index.ts'))
-  let threwDangling = false
-  try { findEntrypoints(join(tmp, 'dangling')) } catch { threwDangling = true }
-  ok('a dangling symlinked index.ts is refused, not dropped', threwDangling)
+  if (fileSymlinkOrSkip(join(tmp, 'no-such-file.ts'), join(tmp, 'dangling/supabase/functions/b-fn/index.ts'))) {
+    let threwDangling = false
+    try { findEntrypoints(join(tmp, 'dangling')) } catch { threwDangling = true }
+    ok('a dangling symlinked index.ts is refused, not dropped', threwDangling)
+  }
 } finally {
   rmSync(tmp, { recursive: true, force: true })
 }

@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "4e361ff6933fec264fa5a5aa358234fe30380901",
+    "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "The retrigger workflow explicitly omits contents:read while requiring checkout, so it cannot fetch a private repository with its GITHUB_TOKEN and cannot deliver the promised reruns ([checkout permissions](https://github.com/actions/checkout#recommended-permissions)).",
+      "file": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "line": 943
+    },
+    {
+      "id": "F2",
+      "severity": "P1",
+      "summary": "The pull_request-only, head-branch-filtered prRuns reader excludes the existing Gemini workflow_dispatch runs on main, and Task 23 cannot associate those runs through their main branch/SHA, so dispatched reviews bypass both the in-flight hold and completion retrigger.",
+      "file": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "line": 815
+    },
+    {
+      "id": "F3",
+      "severity": "P2",
+      "summary": "Ignoring completion events for superseded heads can leave the current gate green after an older Gemini verdict adds blocking findings, because Task 23 explicitly collects findings across every identity.",
+      "file": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "line": 944
+    },
+    {
+      "id": "F4",
+      "severity": "P2",
+      "summary": "The prRuns result omits conclusion, so Task 22 cannot distinguish the cancelled, failure and timed_out completions required for Task 20 Step 3b's immediate terminal-failure substitution.",
+      "file": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "line": 815
+    }
+  ],
+  "supersedes": "plan--572610a2fa81--3",
+  "rev": "b1a11c818eda425ff12d92ee8cc14e4eb9fab919",
+  "tasks": [
+    "T20",
+    "T21",
+    "T22",
+    "T23",
+    "T24",
+    "T25"
+  ],
+  "createdAt": "2026-11-09T19:30:16.994Z"
+}

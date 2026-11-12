@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "9166a53397e5680e3f3886dd45d0f952c9684fae",
+    "mergeBase": "1315191ec42fa0a020dcb4fc04e9b772aa003c0c",
+    "head": "60c3e77f7eecbc06794d34058e2802cf0d3246bc"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [],
+  "supersedes": "correctness--a20f6e17bd7e--1",
+  "createdAt": "2026-11-10T21:09:57.530Z"
+}

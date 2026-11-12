@@ -12,7 +12,9 @@
     "lint:ratchet": "node scripts/ci/lint-ratchet.mjs",
     "check:migrations": "node scripts/ci/check-migrations.mjs",
     "check:deno": "node scripts/ci/check-deno.mjs",
+    "setup:hooks": "node scripts/hooks/setup.mjs",
     "test": "node scripts/run-tests.mjs",
+    "review": "node scripts/review/review.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

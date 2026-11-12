@@ -378,7 +378,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 ### Task 11: Privilege check (criterion 7)
 
 **Files:**
-- Create: `scripts/db/privilege-check.mjs`, `scripts/db/privilege-check.test.mjs`, `scripts/db/privilege-check.itest.mjs`
+- Create: `scripts/db/privilege-check.mjs`, `scripts/db/privilege-check.test.mjs`, `scripts/db/privilege-check.itest.mjs`, `supabase/migrations/checks/refresh-execute-allowlist.txt` (Step 3)
 
 **Interfaces:**
 - Produces:
@@ -473,7 +473,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - `apply-setup.mjs --target staging|production|scratch [--ref <ref>] --file <name>`, the operator-setup class (Global Constraints).
     - **Allowed pairs**, from a fixed table. `--file` is a name in that table, never a path.
       - staging: `roles.sql`, `staging-ops.sql`
-      - production: `roles.sql`, `20261029_refresh_login_grants.sql`
+      - production: `roles.sql`, `20261029_refresh_login_grants.sql`, and, on Task 15b's route A only, `<date>_revoke_public_writer_functions.sql` (its name, once Task 15b fixes the date)
       - scratch: `roles.sql`, `rehearsal-fixture.sql`, and each file `listMigrationFiles` returns in the current checkout, the baseline included (Task 26's rehearsal source)
     - **URL variable per target:** `STAGING_DB_URL`, `PROD_SETUP_DB_URL` or `SCRATCH_SETUP_DB_URL`.
     - **Ref checks:** the ref read from the URL must equal the target's ref. For scratch, it must equal `--ref`, which must be neither production's nor staging's.
@@ -482,6 +482,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 
 - [ ] **Step 1: Write the files.** Then write `apply-setup.test.mjs`:
   - (`staging-ops.sql`, production) is refused.
+  - On Task 15b's route A: the revoke migration on production is allowed, and on staging is refused (the rebuild applies it there).
   - A `--file ../x.sql` is refused.
   - A production URL with `--target staging` is refused before connecting.
   - A wrong typed-back ref aborts.
@@ -493,8 +494,9 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - (a) a `FOR SELECT TO magora_refresh USING (true)` policy on each copied table, created by a migration
   - (b) Supabase support enabling the attribute
   - (c) a SECURITY DEFINER export function owned by `postgres`, which the privilege check's `executeAllowlist` would then have to name
-- [ ] **Step 3 (operator, David approves each of the two production writes):**
-  - Run `apply-setup.mjs --target production --file roles.sql`, then `--file 20261029_refresh_login_grants.sql`, from the production vault, after PR D merges. Before the second, David has approved Task 15b's exception and confirmed that day's daily backup.
+- [ ] **Step 3 (operator, David approves each of the three production writes):**
+  - Run `apply-setup.mjs --target production --file roles.sql`, then `--file 20261029_refresh_login_grants.sql`, then `--file <date>_revoke_public_writer_functions.sql`, from the production vault, after PR D merges. Before the second, David has approved Task 15b's exception and confirmed that day's daily backup; before the third, David has approved the revoke (Task 15b Step 4).
+  - The third write exists only on Task 15b's route A. On route B there is no revoke migration, and the privilege check below stays red until Supabase support has revoked on production.
   - Set the login's password with `op run` from a new "Magora Project" item `supabase-refresh-login`.
   - Run `privilege-check.mjs` as that login against production. Expected: 0 violations. Run the positive part with counts David took as `postgres` the same hour. This is criterion 7. It must pass before Task 20 hands the login to the workflow.
 - [ ] **Step 4 (operator):** `apply-setup.mjs --target staging --file staging-ops.sql`. The refresh's rebuild applies the grants migration to staging along with every other migration.
@@ -504,7 +506,8 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 ### Task 14: Edge Function deploy to staging
 
 **Files:**
-- Create: `scripts/staging/deploy-functions.mjs`, `scripts/staging/deploy-functions.test.mjs`
+- Create: `scripts/staging/deploy-functions.mjs`, `scripts/staging/deploy-functions.test.mjs`, `env/maintainer.env`
+- Modify: `scripts/secrets/env-refs.test.mjs` (the `maintainer.env` case)
 
 **Interfaces:**
 - Produces:
@@ -566,7 +569,9 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 This is a spec exception, for David to approve. The migration changes production ACLs before staging can test it: the first refresh needs the grants, so §5.5's staging step cannot run first. That is §5.11 step 2's bootstrap argument, but this migration, unlike the baseline, does write production. The plan's mitigations are a local forward, rollback and forward cycle, the privilege check, and backup confirmation before applying. **David approves this exception before Step 5.**
 
 **Files:**
-- Create: `supabase/migrations/20261029_refresh_login_grants.sql`, `supabase/migrations/rollbacks/20261029_refresh_login_grants.rollback.sql`
+- Create:
+  - `supabase/migrations/20261029_refresh_login_grants.sql`, `supabase/migrations/rollbacks/20261029_refresh_login_grants.rollback.sql`
+  - On Step 4's route A only: `supabase/migrations/<date>_revoke_public_writer_functions.sql`, `supabase/migrations/rollbacks/<date>_revoke_public_writer_functions.rollback.sql` and `scripts/db/revoke-writers.test.mjs`
 - Modify:
   - `supabase/migrations/checks/refresh-execute-allowlist.txt`
   - `AGENTS.md` (Migrations: "A migration that creates a table classified *copied* or *transformed* in `supabase/staging/table-manifest.json` grants `SELECT` on it to `magora_refresh`.")
@@ -582,9 +587,22 @@ This is a spec exception, for David to approve. The migration changes production
   - For each `EXECUTE` violation, read the function. Allowlist it, with its reason, only if it cannot write.
   - A writing `SECURITY DEFINER` function callable through `PUBLIC` is **not** allowlisted. It goes to the private advisory (Task 7), and production's privilege check (Task 13 Step 3) stays red until that fix is applied.
   - A `WRITES_WITHOUT_TABLE_PRIVILEGE` violation (Task 11) cannot be allowlisted either. It goes to the advisory, and production's check stays red until it is fixed.
-  - 🔴 **OPEN before this step is executed: how that fix ships.** Found by Codex on the spec branch, 2026-10-29. The likely fix is revoking `EXECUTE` on those functions from `PUBLIC`, which changes production and needs David's approval. Not yet decided: which migration carries it (the grants migration's rollback is defined as revoking exactly its `GRANT SELECT`s, so adding the revoke there breaks that contract); whether its rollback restores the `PUBLIC` grants or deliberately keeps them revoked; and re-running Step 2's local cycle once the final migration contents are known, checking the state after rollback, not only after re-apply. Until it is decided, this step's local PASS cannot be expected on a stack that exposes these functions.
+  - **How that fix ships** (#47 item 1; route chosen by David, 2026-11-06; the production change itself still needs his approval before it is applied). A local test decides between two routes, and only one ships:
+    - **The deciding test**, run once on the local Supabase stack before anything is written: as `postgres`, `revoke execute on function pg_catalog.lo_create(oid) from public`, then check `PUBLIC`'s `EXECUTE` on it, before and after the revoke, through `aclexplode(coalesce(proacl, acldefault('f', proowner)))` (a NULL `proacl` means the defaults, which include `PUBLIC`'s `EXECUTE`, and `aclexplode(NULL)` returns no rows, so a no-op revoke would otherwise read as a success). Route A needs `PUBLIC` to hold it before and not after. Then put the privilege back with `grant … to public` (as `supabase_admin` if `postgres` cannot), so the stack is as it was. Record the result in the PR. **Expected**, from reading Supabase's image source (`supabase/postgres` at `c6226c6`, not yet run): `postgres` is demoted to `NOSUPERUSER` (`10000000000000_demote-postgres.sql`) and does not own the `pg_catalog` functions, so the revoke only warns and changes nothing.
+    - **Route A, if `postgres` can revoke:** the migration below.
+    - **Route B, if it cannot:** no migration. A migration that could only pass where Supabase had already revoked would fail on every fresh Supabase database: the local stack, the rehearsal's scratch project, and staging on each refresh. Instead:
+      - As soon as the deciding test picks route B, David creates the rehearsal's scratch project, `magora-rehearsal-scratch` (Task 26 Step 4), and, in **one** request, asks Supabase support to revoke `EXECUTE` from `PUBLIC` on the listed signatures for **production, staging and that scratch project**, so the wait overlaps the tasks between here and Task 26. Production's privilege check (Task 13 Step 3) stays red until production is done; if support declines, David decides again.
+      - The scratch project needs that revoke before Task 26 checks it, because every refresh's privilege gate (Task 18) must pass against its source. The gate is not relaxed for scratch (David, 2026-11-07). Support's response time is a schedule risk to the rehearsal, not a correctness gap: the scratch project must be the one named in the request, so it is not deleted or replaced before Task 26.
+      - Only the local stack keeps the privilege. The itest's recorded baseline (Task 11 Step 5) already carries these violations, and no refresh runs against the local stack.
+      - Meanwhile, the refresh (Task 18) fails if `pg_largeobject_metadata` has any row in production. Nothing comparable watches `pg_logical_emit_message`, whose writes go only to the WAL; that gap is recorded with the advisory (Task 7).
+      - Task 13's `apply-setup.mjs` table and Step 3 drop the revoke migration, and this task's Files list drops it and its test.
+  - **Route A, the migration:**
+    - Its own migration, `<date>_revoke_public_writer_functions.sql`, with its rollback, so the grants migration keeps its contract (its rollback revokes exactly its `GRANT SELECT`s).
+    - It names a fixed list: the `WRITES_WITHOUT_TABLE_PRIVILEGE` signatures that Task 11 Step 5 observed callable through `PUBLIC` on the local Supabase stack. It is idempotent, because `pg_catalog` privileges survive a refresh's rebuild and every refresh replays the migrations: for each signature it revokes `EXECUTE` from `PUBLIC` only if `PUBLIC` holds it, then raises an exception if `PUBLIC` still holds `EXECUTE` on any listed signature. Both tests read `aclexplode(coalesce(proacl, acldefault('f', proowner)))`, so a NULL (default) ACL counts as `PUBLIC` holding it. `REVOKE` without the right to change a function's privileges only warns, so that final check is what turns a silent no-op into a failure. On a database where the privilege is already gone (a replay, or after Supabase support revoked it) the migration changes nothing and passes.
+    - Its rollback grants `EXECUTE` to `PUBLIC` on exactly the same list, so applying migration, rollback and migration on staging (§5.5) returns to the reviewed state; the session's closing refresh replays the migration, which revokes again. A unit test, `scripts/db/revoke-writers.test.mjs`, parses both files and requires the same signatures.
+    - Re-run Step 2's local cycle with this migration in place, and compare the state after the rollback with the state before the migration, not only after the re-apply.
   - Non-`EXECUTE` privileges reached through `PUBLIC` (`USAGE`/`CREATE` on schemas, `TEMP` on the database) are handled the same way: `USAGE` is not in §5.10's forbidden list. `CREATE` on `public` is revoked from `PUBLIC` by Supabase's defaults; if it is present, it goes to the advisory. `TEMP` is not a write to production data, and is recorded in the allowlist file's header as accepted, for David to confirm.
-  - Expected after this step: the check passes locally.
+  - Expected after this step: on route A, the check passes locally. On route B, it reports exactly the `WRITES_WITHOUT_TABLE_PRIVILEGE` violations listed above, and nothing else.
 - [ ] **Step 5: Commit** with PR D. The production application is Task 13 Step 3.
 
 ### Task 16: Refresh: reset and rebuild with drift check
@@ -743,7 +761,7 @@ This is a spec exception, for David to approve. The migration changes production
 ### Task 20: Refresh workflow and first run
 
 **Files:**
-- Create: `.github/workflows/staging-refresh.yml`
+- Create: `.github/workflows/staging-refresh.yml`, `scripts/staging/lease.mjs`, `scripts/staging/lease.test.mjs` (Step 1b)
 
 **Interfaces:**
 - Consumes: environment `staging-sync` (`main` only), holding:
@@ -765,13 +783,10 @@ This is a spec exception, for David to approve. The migration changes production
   - The `refresh` job's first step fails unless `github.ref == 'refs/heads/main'`.
   - Checkout with `ref: main`, `fetch-depth: 0` (the smoke's SHA check needs history) and `persist-credentials: false`.
   - `npm ci`, then `node scripts/staging/refresh/index.mjs --audio-nights "$AUDIO_NIGHTS"`, with every secret passed through `env:`. Until Task 22 lands it runs with `--no-smoke`.
-- [ ] **Step 1b: Write `scripts/staging/lease.mjs` and `lease.test.mjs`** (interfaces in Task 26's lease paragraph):
-  - the four `admit` cases
-  - `claim` refusing an already-held lease
-  - `release` refusing the wrong login, with `gh` injected as a fake
-  - 🔴 These cases are superseded by the lease design that Task 26's OPEN block requires; write the tests that design names.
+- [ ] **Step 1a (operator): run the probe** in `docs/superpowers/specs/2026-11-06-staging-lease-design.md` §4 and record its results for the PR D description. If a duplicate create does not return 409, stop: the lease design goes back for revision.
+- [ ] **Step 1b: Write `scripts/staging/lease.mjs` and `lease.test.mjs`** to that spec (§3.2), with the tests its §5 names, `gh` injected as a fake.
 
-  Run it: FAIL, implement, PASS.
+  Run it: FAIL, implement, PASS. Then sabotage each rule §5 names and confirm a test fails.
 - [ ] **Step 2: Lint.** `actionlint` is clean. Read the YAML for any `pull_request` trigger (there must be none) and for `${{ secrets.* }}` inside a `run:` line (there must be none).
 - [ ] **Step 3 (operator, David):**
   - Create the `staging-sync` environment, set to `main` only.
@@ -1023,38 +1038,36 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
 ### Task 26: Interim migration runbook and rehearsal
 
 **Files:**
-- Create: `docs/runbooks/interim-migrations.md`
-- Modify: `AGENTS.md` (Migrations: "Never apply a migration **to production** until its PR is green at its final head")
+- Create: `docs/runbooks/interim-migrations.md`, `supabase/setup/rehearsal-fixture.sql` (Step 4)
+- Modify:
+  - `AGENTS.md` (Migrations: "Never apply a migration **to production** until its PR is green at its final head")
+  - `scripts/db/apply-migrations.mjs` and `scripts/db/apply-migrations.test.mjs` (the `--file` entry point, Step 2)
 
 **The staging lease** (built in Task 20, in PR D, so it is on `main` before this runbook is rehearsed). Disabling the workflow would also block the refreshes the session itself needs, and it does not stop a run already in progress. Instead, the session holds a lease in the repository Actions variable `STAGING_HELD_BY`, which is not a secret.
 - `staging-refresh.yml`'s `admit` job gates its `refresh` job, so no step that writes runs unless admitted.
-- `admit({event, held, holder}) -> boolean`:
-  - a schedule while held → false
-  - a schedule while unheld → true
-  - a dispatch while held → true only if `holder === held`
-  - a dispatch while unheld → true
-- `scripts/staging/lease.mjs` also exports `claim(login)` and `release(login)`, which call `gh variable`:
-  - `claim` refuses if the variable is already set, sets it, and reads it back to confirm that it holds `login`.
-  - `release` refuses unless the variable holds `login`.
-- 🔴 **OPEN before Task 20 is implemented: the lease is not yet exclusive.** Found by Codex on the spec branch, 2026-10-29; design it in its own artifact before Task 20, as the first work of PR D (Task 20 ships in PR D), and do not implement `claim`/`release` as written above. Known so far:
-  - `claim` as written is read, set, read back, so two maintainers can both win. Acquiring by **creating** the variable (`POST repos/{owner}/{repo}/actions/variables`) gives one winner: the endpoint refuses an existing name with 409 (GitHub's own CLI handles that response; the REST reference documents only 201). Confirm with a one-time probe in this repository. Never fall back to `gh variable set` or a PATCH, which overwrite.
-  - `release` has no atomic delete-if-equal: GitHub's delete is by name only. A release must be bound to its own session, including two sessions under one OS account and one GitHub login, so a late or repeated release cannot delete a newer lease. A shared local token path does not achieve that.
-  - Recovery is undefined for a stranded lease (a crashed session, a lost proof) and for an empty-valued variable, which blocks every claim while `admit` reads it as unheld (`vars.*` is `''` for both). An uncoordinated manual delete can erase a successful claim.
-  - Same-machine concurrent claims need exclusive local proof creation as well as the remote winner.
-  - Tests must cover interleaved claims, a repeated or late release after another claim, and recovery.
+- The lease is designed in `docs/superpowers/specs/2026-11-06-staging-lease-design.md` (#47 item 2, which replaced this task's earlier OPEN block). In short:
+  - `claim(login)` **creates** the variable with the value `<login>:<id>`, a fresh random `<id>` per claim, and prints that value. GitHub refuses an existing name, so one claim wins. It never overwrites (no `PATCH`, `PUT` or `gh variable set`).
+  - `release(value)` deletes the variable only if it still holds exactly `value`, so a late or repeated release refuses.
+  - `break({expect, holderConfirmed})` deletes a stranded or malformed lease whose value equals `expect`, once it is 12 hours old or the holder has agreed in the maintainers' channel.
+  - `verify(value)` exits 0 only while the variable holds exactly `value`.
+  - `admit({event, held, holder})` follows the spec's §3.2 table; `holder` is the whole value.
+  - The runbook below follows the spec's §3.3: drain after claiming, `verify <lease>` before each write to staging, and one release at a time.
+  - Before Task 20 is implemented, the spec's §4 probe confirms that GitHub refuses a duplicate name with 409.
 
 - [ ] **Step 1: Write the runbook** following §5.5, with exact commands.
-  - Claim staging in the maintainers' channel. Then run `node scripts/staging/lease.mjs claim <github-login>`.
+  - Claim staging in the maintainers' channel. Then run `node scripts/staging/lease.mjs claim <github-login>`, and keep the value it prints (`<lease>` below); release and dispatches need it.
   - Drain: wait until `gh run list --workflow staging-refresh.yml --json status --jq '[.[] | select(.status != "completed")] | length'` prints `0`. That covers queued, waiting, pending and in-progress runs.
-  - `gh workflow run staging-refresh.yml -f holder=<login>`, and wait for green.
+  - `gh workflow run staging-refresh.yml -f holder=<lease>`, and wait for green.
   - Apply the PR's migration, its rollback, then the migration again, through `op run --env-file=env/staging.env -- node scripts/db/apply-migrations.mjs --db-url-env STAGING_DB_URL --file <path>`. That entry point refuses non-staging refs through `writeTarget: 'staging'`.
   - Run the simulated node.
-  - End with `gh workflow run staging-refresh.yml -f holder=<login>`. Once it is green, run `node scripts/staging/lease.mjs release <login>`.
+  - End with `gh workflow run staging-refresh.yml -f holder=<lease>`. Once it is green, run `node scripts/staging/lease.mjs release <lease>` once, and wait for it to exit.
+  - Before each dispatch, each apply and the simulated node, and again after the simulated node finishes and before recording its result, run `node scripts/staging/lease.mjs verify <lease>`. If it fails, stop: the lease was lost, the session's results are discarded, and it starts again from the claim.
+  - A stranded lease (a crashed session, a lost value): post in the channel, then `node scripts/staging/lease.mjs status` and `node scripts/staging/lease.mjs break --expect <value status printed>`, adding `--holder-confirmed` only after the holder agreed in the channel.
   - After merge, confirm that day's daily backup exists, apply to production by the current method, and run a refresh.
   - One session at a time: a set variable means staging is taken.
 - [ ] **Step 2: Add the code.**
   - Add the `--file` entry point to `apply-migrations.mjs`, plus a test that `--db-url-env` pointing at the production ref is refused before connecting.
-  - Before rehearsing (Step 4), confirm on `main` that a dispatch with `-f holder=<login>` while held runs the `refresh` job, and that one with another login skips it.
+  - Before rehearsing (Step 4), confirm on `main` that a dispatch with `-f holder=<lease>` while held runs the `refresh` job, and that one with any other value skips it.
 - [ ] **Step 3: Edit AGENTS.md.**
 - [ ] **Step 4 (operator): rehearse the runbook end to end,** with a scratch project standing in for production. Record the result in the runbook. This is criterion 3.
   The scratch source is built from the repo, not from a production copy. That way its schema and ACLs match production's by construction (the drift check proves it), and no production data is held.
@@ -1066,10 +1079,11 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
 The source check confirms that all three name the scratch ref. Only the cleanup in step 4 omits the three `--source-*` flags.
 
   1. **Make the scratch source.**
-     - Create `magora-rehearsal-scratch` and claim the lease.
+     - Create `magora-rehearsal-scratch` (on Task 15b's route B it already exists, created early for the support request; reuse it) and claim the lease.
      - With `apply-setup.mjs --target scratch --ref <scratch-ref>`, apply `roles.sql`, then each file `listMigrationFiles` returns on `main`, once each, in order. That list starts with the baseline and includes the grants migration. Every scratch command in this step passes `--ref <scratch-ref>`.
      - Set the scratch login's password.
      - Apply `supabase/setup/rehearsal-fixture.sql` the same way. It is a fixed file (written in this task) that inserts one auth user, the steward, and two nodes, so the refresh has something to copy and remap. The simulated node is not used against scratch, because it refuses every ref but staging's.
+     - On Task 15b's route B, this is the scratch project David created when the deciding test picked route B and named in that one support request. Before this check, confirm support's revoke landed on it; the refresh's own privilege gate (Task 18) accepts no violation. If it has not landed, the rehearsal waits.
      - Run the privilege check against `SCRATCH_DB_URL`. Expected: pass.
   2. **Pre-merge state.**
      - On a local branch `rehearsal/probe` (never pushed), add `create table public.rehearsal_probe(id int)`, its rollback, and a manifest entry `"rehearsal_probe": {"class": "excluded", "reason": "rehearsal"}`. An excluded table needs no grant.

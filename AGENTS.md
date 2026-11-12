@@ -1,41 +1,44 @@
 # AGENTS.md: magora-portal
 
-For agents and contributors (Claude Code via `CLAUDE.md`, Codex CLI directly). Design: `docs/superpowers/specs/2026-10-15-repo-harness-design.md`.
+For agents and contributors (Claude Code via `CLAUDE.md`, Codex directly). Design: `docs/superpowers/specs/2026-10-15-repo-harness-design.md`.
 
 ## Commands
 
 - `npm ci`: install
-- `npm test`: every `*.test.mjs` (fails if none found)
-- `npm run lint:ratchet`: ESLint; fails if a rule's finding count exceeds `.github/lint-baseline.json`. If a count falls, lower the baseline in the same PR.
-- `npm run build`: production build (no env vars)
-- `npm run check:migrations`: each new migration has a rollback
-- `npm run check:deno`: type-check and lint the Edge Functions (needs Deno 2.9.5)
+- `npm test`: all `*.test.mjs`, fails if none
+- `npm run lint:ratchet`: ESLint; fails if a rule's count exceeds `.github/lint-baseline.json`. If one falls, lower it in the same PR
+- `npm run build`: prod build, no env vars
+- `npm run check:migrations`: new migrations have rollbacks
+- `npm run check:deno`: type-check, lint Edge Functions (Deno 2.9.5)
+- `npm run review -- check --local`: `.review/` records
 
 ## Flow
 
 - Trunk: branch from and PR to `main`. No long-lived branches.
-- Squash merge only. Maintainers merge own PRs once required checks are green; no approval needed. A maintainer reviews then merges fork/Dependabot PRs.
+- Squash merge only. Maintainers merge own PRs once required checks pass, no approval. A maintainer reviews then merges fork/Dependabot PRs.
 - Resolve each review thread before merge, after reading bot findings.
 - **Agents never push, merge, or change repo settings without their operator's explicit approval.**
+- Every agent follows `.claude/rules/process.md`; Claude Code loads skills from `.claude/skills/`.
 
 ## Depth labels (exactly one per PR)
 
-| Label | Use for | Review before push |
-|---|---|---|
-| `mechanical` | docs, renames, formatting | nothing beyond CI |
-| `standard` | ordinary changes | Codex CLI, correctness question |
-| `subtle-correctness` | **any PR that touches `supabase/migrations/`, an `api/` auth path, or a control file**; concurrency; anything subtle | Codex CLI on correctness, plus a Fable or Opus subagent on completeness, executability, whether tests can fail, and what the fixes broke |
+| Label | Use for |
+|---|---|
+| `mechanical` | docs, renames, formatting |
+| `standard` | ordinary changes |
+| `subtle-correctness` | **any PR that touches `supabase/migrations/`, an `api/` auth path, or a control file**; concurrency; anything subtle |
 
-If Codex wrote the change, route its review to an Anthropic model instead. An empty reviewer reply is an unrun review, not a pass. This review layer is discipline; required CI checks are the control.
+Review before push: `.claude/rules/process.md` § Review slots and dispatch. This review layer is discipline; the required CI checks are the control.
+Reviewers: skip `.review/`; findings located only there are outside the gate.
 
-Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`; for those, the merging maintainer's control-file read replaces the depth rule.
+Dependabot PRs are labelled `standard` (spec §5.2), even Actions bumps editing `.github/**`; for those, the maintainer's control-file read replaces the depth rule.
 
 ## Control files
 
 `.github/**`, `scripts/run-tests.mjs`, `scripts/ci/**`, `.github/lint-baseline.json`,
 `scripts/ci/migrations-grandfathered.txt`, `eslint.config.js`, `AGENTS.md`, `package.json`,
-`scripts/review/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`.
-A PR can weaken a check by editing these. Say so in the PR description when you change one. On fork and Dependabot PRs the merging maintainer reads each control-file change first.
+`scripts/review/**`, `.claude/**`, `scripts/doc-size-ratchet.py`, `doc-size.conf`, `.coderabbit.yaml`.
+A PR can weaken a check by editing these; name any you change in the PR description. The merging maintainer reads each such change first on fork/Dependabot PRs.
 
 ## Migrations
 
@@ -51,4 +54,4 @@ A PR can weaken a check by editing these. Say so in the PR description when you 
 
 ## Secrets
 
-Agents use `op run` and `op inject` only, never `op read`, `op item get` or anything else that prints a secret value. Local env files hold `op://` references only (`env/*.env`); run commands via `op run --env-file=env/staging.env -- <cmd>`.
+Agents use `op run` and `op inject` only, never `op read`, `op item get` or anything that prints a secret. Env files hold `op://` references only (`env/*.env`); run `op run --env-file=env/staging.env -- <cmd>`.
