@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "b3dd19dbd94e65c8d4f1586fa7b6cef3ef114bd9",
+    "mergeBase": "8b809eb5e9a8e76a5d05adf17a341e6478da8d96",
+    "head": "41ff9c8923dd419157049a01c0c807784967fb05"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "Task 16 Step 2 requires the PR to include evidence records (spec, plan, conformance for T16, correctness, and completeness), but they are missing from the diff."
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-12T20:23:22.246Z"
+}
