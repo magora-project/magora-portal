@@ -16,7 +16,11 @@
 //   1. outcome === 'completed' and verdict is 'pass' or 'fail' (a null verdict is not a recognized result).
 //   2. input.identity equals the current PR identity (or, for spec/plan, the doc's blob at head, same path).
 //      Conformance: conformance.tasks equals the Plan field's expanded tasks as a set; conformance.deviations
-//      equals the Deviations field's IDs as a set.
+//      equals the Deviations field's IDs as a set; conformance.plan names the Plan field's path and that path's
+//      blob at the head (so a changed plan, or a Plan field pointed at another plan, voids the record).
+//      Plan: a plan record of the Plan field's plan that states its task scope (`tasks`, plan Task 17) must cover
+//      every task in the Plan field; `--tasks none` or a narrower scope did not review the tasks this PR builds.
+//      A record with no `tasks` predates the scope and reviewed the whole plan.
 //   3. Only records whose slot is the required one are candidates. reviewer.vendor differs from the
 //      author's vendor (every record on one input must agree on authorVendor); for `completeness` it also
 //      differs from the vendor of a passing `correctness` head (spec: "whichever of the three vendors is
@@ -42,7 +46,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { EVIDENCE_DIR, blobIdentity, git, inputIdentity, mergeBase } from '../review/identity.mjs'
 import { addedRecordStems, chainHeads, dispositionOk, isBlockingByDefault, readRecords, repoPath, undisposedBlocking } from '../review/records.mjs'
-import { LANES, parseBody } from '../review/pr-body.mjs'
+import { DEVIATION_ENTRY, LANES, parseBody } from '../review/pr-body.mjs'
 import { DEPTH_LABELS, inferLabel, parseControlFiles } from './label-gate.mjs'
 
 export const ACTIVATION_PATH = '.github/review-activation.json'
@@ -102,8 +106,64 @@ export function authorVendorFromRecords(recs) {
   return { problem: `records on this input disagree on authorVendor: ${recs.map((r) => `${r.stem}=${r.authorVendor}`).join(', ')}` }
 }
 
+// The record check of the §5.3 predicate, shared by evaluate below and by the PR-stage gate's substitute check
+// (scripts/review/coverage.mjs substituteOk), so the two cannot drift. Part 3 (slot and vendor) is the caller's.
+//
+// Parts 1 and 2 for one record against `want` ({ identity } for a PR input, or the blob input for a spec or plan).
+// ctx: { deviations: [{id, justification}], planTasks: string[], planPath: string|null, planAtHead } (the Plan
+// field's expanded tasks, its normalised path, and its blob at the head); only plan and conformance records read
+// the plan fields. Returns the reasons it fails, empty when it passes.
+export function recordResultReasons(rec, want, { deviations = [], planTasks = [], planPath = null, planAtHead } = {}) {
+  const reasons = []
+  const devIds = deviations.map((d) => d.id)
+  // 1
+  if (rec.outcome !== 'completed') reasons.push(`outcome ${rec.outcome}`)
+  else if (rec.verdict !== 'pass' && rec.verdict !== 'fail') reasons.push('completed without a recognized result (no verdict)')
+  // 2
+  if (rec.input.identity !== want.identity) reasons.push(`identity ${short(rec.input.identity)} is not the current ${short(want.identity)}`)
+  if (rec.slot === 'plan' && Array.isArray(rec.tasks) && planPath !== null && rec.input.path === planPath) {
+    const uncovered = setDiff(planTasks, rec.tasks)
+    if (uncovered.length) reasons.push(`plan review scope (${rec.tasks.length ? rec.tasks.join(',') : 'none'}) does not cover the Plan field's ${uncovered.join(',')}: re-review the plan with --tasks covering them`)
+  }
+  if (rec.slot === 'conformance') {
+    const c = rec.conformance
+    if (!isObj(c)) reasons.push('conformance record has no conformance block')
+    else {
+      const missing = setDiff(planTasks, c.tasks), extra = setDiff(c.tasks, planTasks)
+      if (missing.length || extra.length) reasons.push(`tasks differ from the Plan field (${[missing.length ? `not covered: ${missing.join(',')}` : '', extra.length ? `not in the Plan field: ${extra.join(',')}` : ''].filter(Boolean).join('; ')})`)
+      const unlisted = setDiff(c.deviations, devIds), unknown = setDiff(devIds, c.deviations)
+      if (unlisted.length || unknown.length) reasons.push(`unfixed deviations differ from the Deviations field (${[unlisted.length ? `not in the Deviations field: ${unlisted.join(',')}` : '', unknown.length ? `not in the record: ${unknown.join(',')}` : ''].filter(Boolean).join('; ')})`)
+      // The plan it checked must be the Plan field's, at its blob at the head: a changed path or plan voids it.
+      if (!isObj(c.plan)) reasons.push('conformance record names no plan it checked')
+      else if (planPath === null) reasons.push('the PR has no Plan field to bind the conformance record to')
+      else if (c.plan.path !== planPath) reasons.push(`checked plan ${c.plan.path}, but the Plan field names ${planPath}`)
+      else if (!planAtHead || planAtHead.path !== planPath || typeof planAtHead.identity !== 'string') reasons.push(`${planPath}: ${planAtHead?.error ?? 'its blob at the head is unknown'}`)
+      else if (c.plan.blob !== planAtHead.identity) reasons.push(`checked ${c.plan.path} at blob ${short(c.plan.blob)}, but the plan at the head is blob ${short(planAtHead.identity)}`)
+    }
+  }
+  return reasons
+}
+
+// Part 4 for one record: every finding has an acceptable disposition, and a blocking `fixed` one names a record
+// in this record's supersedes chain. byStem: every record (invalid ones included) by stem.
+export function recordFindingReasons(rec, { byStem, deviations = [] }) {
+  const reasons = []
+  const chain = new Set()
+  for (let r = rec; r && !chain.has(r.stem); r = byStem.get(r.supersedes)) chain.add(r.stem)
+  for (const f of rec.findings) {
+    if (!dispositionOk(f, { deviations, recordType: rec.type })) {
+      reasons.push(`finding ${f.id} (${f.severity}) has no acceptable disposition${f.disposition ? ` (${f.disposition.kind})` : ''}`)
+    } else if (isBlockingByDefault(f) && f.disposition?.kind === 'fixed' && !chain.has(f.disposition.by)) {
+      reasons.push(`finding ${f.id} is fixed by ${f.disposition.by}, which is not a record in this chain`)
+    }
+  }
+  return reasons
+}
+
 // addedStems: the stems of the records this PR adds (see the header). Omitted, every record counts as added.
-export function evaluate({ records, required, identity, body, addedStems, authorVendorOf = authorVendorFromRecords }) {
+// planDoc ({ path, identity, error? }): the Plan field's plan blob at the head. Omitted, it is the specced lane's
+// required plan entry for that path (docsFor reads it at the head, as for the plan slot).
+export function evaluate({ records, required, identity, body, addedStems, planDoc, authorVendorOf = authorVendorFromRecords }) {
   const lines = []
   const added = addedStems === undefined ? null : new Set(addedStems)
   let ok = true
@@ -118,32 +178,17 @@ export function evaluate({ records, required, identity, body, addedStems, author
   // predecessor (and fails the check by name above) rather than resurrecting it.
   const heads = chainHeads(records).filter((r) => !r.invalid)
   const valid = records.filter((r) => !r.invalid)
-  const chainOf = (head) => {
-    const stems = new Set()
-    for (let r = head; r && !stems.has(r.stem); r = byStem.get(r.supersedes)) stems.add(r.stem)
-    return stems
+  const planPath = body?.plan?.path ? repoPath(body.plan.path) : null
+  const ctx = {
+    deviations: body?.deviations ?? [], planTasks: body?.plan?.tasks ?? [], planPath,
+    planAtHead: planDoc ?? required.find((r) => r.slot === 'plan' && r.input.kind === 'blob' && r.input.path === planPath)?.input,
   }
-  const devIds = (body?.deviations ?? []).map((d) => d.id)
-  const planTasks = body?.plan?.tasks ?? []
   const passingCorrectness = new Map() // input key -> vendors of passing correctness heads
 
   const judge = (rec, want) => {
     const reasons = []
-    // 1
-    if (rec.outcome !== 'completed') reasons.push(`outcome ${rec.outcome}`)
-    else if (rec.verdict !== 'pass' && rec.verdict !== 'fail') reasons.push('completed without a recognized result (no verdict)')
-    // 2
-    if (rec.input.identity !== want.identity) reasons.push(`identity ${short(rec.input.identity)} is not the current ${short(want.identity)}`)
-    if (rec.slot === 'conformance') {
-      const c = rec.conformance
-      if (!isObj(c)) reasons.push('conformance record has no conformance block')
-      else {
-        const missing = setDiff(planTasks, c.tasks), extra = setDiff(c.tasks, planTasks)
-        if (missing.length || extra.length) reasons.push(`tasks differ from the Plan field (${[missing.length ? `not covered: ${missing.join(',')}` : '', extra.length ? `not in the Plan field: ${extra.join(',')}` : ''].filter(Boolean).join('; ')})`)
-        const unlisted = setDiff(c.deviations, devIds), unknown = setDiff(devIds, c.deviations)
-        if (unlisted.length || unknown.length) reasons.push(`unfixed deviations differ from the Deviations field (${[unlisted.length ? `not in the Deviations field: ${unlisted.join(',')}` : '', unknown.length ? `not in the record: ${unknown.join(',')}` : ''].filter(Boolean).join('; ')})`)
-      }
-    }
+    // 1, 2
+    reasons.push(...recordResultReasons(rec, want, ctx))
     // 3
     const author = authorVendorOf(valid.filter((r) => r.slot !== undefined && inputKey(r.input) === inputKey(rec.input)))
     if (author.problem) reasons.push(author.problem)
@@ -154,14 +199,7 @@ export function evaluate({ records, required, identity, body, addedStems, author
       else if (cv.every((v) => v === rec.reviewer.vendor)) reasons.push(`reviewer vendor ${rec.reviewer.vendor} already reviewed correctness`)
     }
     // 4
-    const chain = chainOf(rec)
-    for (const f of rec.findings) {
-      if (!dispositionOk(f, { deviations: body?.deviations ?? [], recordType: rec.type })) {
-        reasons.push(`finding ${f.id} (${f.severity}) has no acceptable disposition${f.disposition ? ` (${f.disposition.kind})` : ''}`)
-      } else if (isBlockingByDefault(f) && f.disposition?.kind === 'fixed' && !chain.has(f.disposition.by)) {
-        reasons.push(`finding ${f.id} is fixed by ${f.disposition.by}, which is not a record in this chain`)
-      }
-    }
+    reasons.push(...recordFindingReasons(rec, { byStem, deviations: ctx.deviations }))
     return reasons
   }
 
@@ -172,9 +210,9 @@ export function evaluate({ records, required, identity, body, addedStems, author
     if (input.error) { fail(`FAIL ${label}: ${input.error}`); continue }
     const candidates = heads.filter((r) => r.slot === slot && r.input.kind === input.kind && (input.kind !== 'blob' || r.input.path === input.path))
     if (candidates.length === 0) {
-      // Conformance records come from `review.mjs conformance` (plan Task 18, PR C); `run --slot conformance` refuses.
+      // Conformance records come from `review.mjs conformance` (plan Task 18); `run --slot conformance` refuses.
       const how = slot === 'conformance'
-        ? 'conformance records come from npm run review -- conformance, which arrives with plan Task 18'
+        ? 'write one with npm run review -- conformance --plan <path> --tasks <ids> --author <vendor>'
         : `write one with npm run review -- run --slot ${slot}${input.kind === 'blob' ? ` --path ${input.path}` : ''}`
       fail(`FAIL ${label}: no record (${how})`)
       continue
@@ -304,8 +342,8 @@ async function getJson(fetchImpl, token, url) {
 }
 
 // requiredSince from the base branch's activation file: { since } (undefined when the file or key is
-// missing), or { error }.
-export async function readActivation({ fetchImpl, token, repo, ref }) {
+// missing), or { error }. `key` names the check (review-gate reads its own key, plan Task 23).
+export async function readActivation({ fetchImpl, token, repo, ref, key = ACTIVATION_KEY }) {
   const r = await getJson(fetchImpl, token, `https://api.github.com/repos/${repo}/contents/${ACTIVATION_PATH}?ref=${encodeURIComponent(ref)}`)
   if (r.status === 404) return { since: undefined }
   if (!r.ok) return { error: `GitHub API ${r.status} reading ${ACTIVATION_PATH} at ${ref}` }
@@ -313,9 +351,9 @@ export async function readActivation({ fetchImpl, token, repo, ref }) {
   let obj
   try { obj = JSON.parse(Buffer.from(r.body.content, 'base64').toString('utf8')) } catch (e) { return { error: `${ACTIVATION_PATH} at ${ref} is not JSON (${e.message})` } }
   if (!isObj(obj)) return { error: `${ACTIVATION_PATH} at ${ref} is not a JSON object` }
-  const v = obj[ACTIVATION_KEY]
+  const v = Object.hasOwn(obj, key) ? obj[key] : undefined
   if (v === undefined) return { since: undefined }
-  if (!isIso(v)) return { error: `${ACTIVATION_PATH} at ${ref}: "${ACTIVATION_KEY}" is ${JSON.stringify(v)}, not an ISO 8601 time` }
+  if (!isIso(v)) return { error: `${ACTIVATION_PATH} at ${ref}: "${key}" is ${JSON.stringify(v)}, not an ISO 8601 time` }
   return { since: v }
 }
 
@@ -435,7 +473,7 @@ export async function initLocal({ cwd = process.cwd(), lane, depth, spec, plan, 
   }
   if (deviations.length) {
     local.deviations = deviations.map((d) => {
-      const m = /^(D\d+):\s*(.*)$/.exec(d.trim())
+      const m = DEVIATION_ENTRY.exec(d.trim())
       return m ? { id: m[1], justification: m[2].trim() } : { id: d.trim(), justification: '' }
     })
   }

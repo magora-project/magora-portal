@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "9159d5c9f2c3a848159b22b7e3f247e513fcc06a",
+    "mergeBase": "5b2086cc12208e581a1309b67a276b62c81b9b4c",
+    "head": "144fc973d3d3f56a1929897b0f21b1e88c127df0"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "botEvidence uses state.codexHistory?.current without checking state.codexHistory?.currentTrusted, breaking the commit message's promise to require a trusted Codex marker.",
+      "file": "scripts/ci/review-gate.mjs",
+      "line": 202
+    }
+  ],
+  "supersedes": "completeness--c835c4c9d59c--1",
+  "createdAt": "2026-11-10T15:35:43.505Z"
+}

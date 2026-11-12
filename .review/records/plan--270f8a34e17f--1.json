@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "270f8a34e17f82b9b74d4c4b820d06b6c61a2a05",
+    "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "Requiring Supabase support to manually revoke privileges on an ephemeral scratch project will block the rehearsal for an unpredictable duration.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 1086
+    }
+  ],
+  "supersedes": "plan--3142521a5c0f--1",
+  "createdAt": "2026-11-07T03:21:32.344Z"
+}

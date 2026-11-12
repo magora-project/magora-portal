@@ -15,7 +15,8 @@ import ListenButton from '../components/ListenButton'
 import MobileDetectionCard from '../components/MobileDetectionCard'
 import { AMBER } from '../lib/listen'
 import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
-import { createMapSectionLoader, insightsAvailableFor, nodeCountForTabs, showFeedTabs, speciesKey } from '../lib/mapSections'
+import { createMapSectionLoader, nextNodes, nodeCountForTabs, nodeInsightRequest, showFeedTabs } from '../lib/mapSections'
+import { countSpecies, speciesKey } from '../lib/speciesKey'
 
 function MapController({ points }) {
   const map = useMap()
@@ -43,7 +44,6 @@ export default function MapPage() {
   const [mobileDetections, setMobileDetections] = useState([])
   const [sessions, setSessions] = useState([])
   const [nodes, setNodes] = useState([])
-  const [nodesAvailable, setNodesAvailable] = useState(null)
   const [tabsNodeCount, setTabsNodeCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -55,8 +55,8 @@ export default function MapPage() {
   // `insights` map above, which the node DetectionCards use.
   const mobileInsight = useEcosystemInsight()
   const sessionInsight = useSessionInsight()
-  const [todaySpeciesCount, setTodaySpeciesCount] = useState(null)
-  const [todayDetections, setTodayDetections] = useState([])
+  // { counts, unique } for today's detections, keyed by speciesKey; null if the query failed.
+  const [todaySpecies, setTodaySpecies] = useState(null)
   const [queuedListens, setQueuedListens] = useState([])
   const fetchedWiki = useRef(new Set())
   const { user, openSignIn } = useAuth()
@@ -101,26 +101,10 @@ export default function MapPage() {
     apply(name, res) {
       if (name === 'nodes') {
         setTabsNodeCount(prev => nodeCountForTabs(prev, res))
-        if (res.error) {
-          console.warn('MapPage nodes query failed:', res.error)
-          setNodes([])
-          setNodesAvailable(false)
-        } else {
-          // Drop the embedded `detections` existence-probe so a node object keeps exactly the shape
-          // the rest of the page (and NodePage) expects — the join is a filter, not data.
-          setNodes((res.data || []).map(row => {
-            const node = { ...row }
-            delete node.detections
-            return node
-          }))
-          setNodesAvailable(true)
-        }
+        if (res.error) console.warn('MapPage nodes query failed; keeping the last node list:', res.error)
+        setNodes(prev => nextNodes(prev, res))
       } else if (name === 'today') {
-        const todayData = res.error ? null : (res.data || [])
-        setTodayDetections(todayData || [])
-        setTodaySpeciesCount(todayData == null
-          ? null
-          : new Set(todayData.map(speciesKey).filter(n => n && !isHiddenSpecies(n))).size)
+        setTodaySpecies(countSpecies(res.error ? null : (res.data || [])))
       } else {
         const rows = res.error ? [] : (res.data || [])
         if (name === 'detections') setDetections(rows)
@@ -223,24 +207,12 @@ export default function MapPage() {
   }, [detections])
 
   async function requestInsight(d) {
-    const node = nodesAvailable ? nodeById[d.node_id] : null
-    if (!node) {
-      setInsights(prev => ({ ...prev, [d.id]: { unavailable: true } }))
-      return
-    }
     setInsights(prev => ({ ...prev, [d.id]: { loading: true } }))
     try {
       const res = await fetch('/api/insight', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          detection_id:    d.id,
-          species_name:    d.species_name || d.raw_label,
-          scientific_name: d.raw_label?.split('_')[1] || '',
-          confidence:      d.confidence,
-          location:        node.habitat_type || node.name,
-          is_dawn_chorus:  d.is_dawn_chorus,
-        }),
+        body: JSON.stringify(nodeInsightRequest(d, nodeById[d.node_id])),
       })
       if (!res.ok) throw new Error()
       const data = await res.json()
@@ -254,11 +226,6 @@ export default function MapPage() {
     }
   }
 
-  const speciesCountToday = todaySpeciesCount == null ? null : (todayDetections || []).reduce((acc, d) => {
-    const name = speciesKey(d)
-    if (name && !isHiddenSpecies(name)) acc[name] = (acc[name] || 0) + 1
-    return acc
-  }, {})
   // Following tab gates on the "empty room" problem: hidden until the network is
   // big enough to follow, or the signed-in user already follows something. Judged by
   // the last successful node count, so a failed nodes refresh can't switch the feed (#59).
@@ -273,10 +240,12 @@ export default function MapPage() {
   const baseDetections = activeTab === 'following'
     ? detections.filter(d => followedSet.has(d.node_id))
     : detections
+  // One card per species, on the same key as today's counts (speciesKey), so a species is not shown
+  // twice when some of its rows only have raw_label.
   const dedupedDetections = baseDetections.filter((d, idx) => {
-    const name = speciesKey(d)
-    if (isHiddenSpecies(name)) return false
-    return baseDetections.findIndex(x => speciesKey(x) === name) === idx
+    const key = speciesKey(d) || ''
+    if (isHiddenSpecies(key)) return false
+    return baseDetections.findIndex(x => (speciesKey(x) || '') === key) === idx
   })
 
   // Mobile Listens with at least one confident, non-hidden ID (avoids empty cards).
@@ -394,7 +363,7 @@ export default function MapPage() {
               Species recorded today
             </div>
             <div style={{ fontSize: '24px', fontWeight: 900, color: '#1a1a1a', lineHeight: 1, fontFamily: "'Big Shoulders Display', sans-serif" }}>
-              {todaySpeciesCount ?? '—'}
+              {todaySpecies?.unique ?? '—'}
             </div>
           </div>
 
@@ -543,9 +512,8 @@ export default function MapPage() {
                 ) : (
                   <DetectionCard
                     key={item.key} d={item.d} node={nodeById[item.d.node_id]} showNode wikiData={wikiData}
-                    count={speciesCountToday == null ? null : (speciesCountToday[speciesKey(item.d)] ?? 0)}
+                    count={todaySpecies == null ? null : (todaySpecies.counts[speciesKey(item.d)] ?? 0)}
                     insight={item.d.insight ? { text: item.d.insight } : insights[item.d.id]} onRequestInsight={() => requestInsight(item.d)}
-                    insightsAvailable={insightsAvailableFor(item.d, nodeById[item.d.node_id])}
                   />
                 )
               ))}

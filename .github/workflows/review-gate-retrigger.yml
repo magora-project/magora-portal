@@ -1,0 +1,61 @@
+# review-gate-retrigger (plan Task 23, gate point 2). Gemini's verdict and Codex's clean-review marker are issue
+# comments: neither starts a review-gate run (Gemini's is posted with the job token, which starts no workflow), so a
+# late verdict or a fresh marker would wait for the next PR event. This re-runs the latest review-gate run on the PR's
+# current head when a `Gemini review` run completes, or when Codex creates or edits its `codex-review-state:v1` comment.
+#
+# TRUST: these events run in the BASE repository's context with a write-capable token, so this job runs NO PR code.
+# It checks out only scripts/ci/review-gate-retrigger.mjs (and .nvmrc) from the default branch, with
+# persist-credentials: false, and the script imports nothing outside Node. It never interpolates event text into a
+# shell: the script reads the event JSON from GITHUB_EVENT_PATH. Its token can re-run workflow runs (actions: write)
+# and read contents and pull requests; nothing else. A re-run of a pull_request run keeps that run's own (read-only)
+# permissions and its PR-head checkout.
+# The `if:` admits a comment only from chatgpt-codex-connector[bot] on a PR, carrying the marker; the script checks
+# the login and marker again. Concurrency is set on the JOB, not the workflow, so an event the `if:` skips (every other
+# PR comment) never joins a group and cannot replace a pending run. Its key is the Gemini run-name form for every
+# event, so one PR maps to one group: a Gemini run's display_title is `Gemini review PR #<n>` (gemini-review.yml's
+# run-name, the same for pull_request and dispatched runs), and a Codex comment's key is built in that form from its
+# issue number. Runs in a group queue (cancel-in-progress: false); GitHub keeps one pending run per group, so a newer
+# event replaces an older pending one, which is harmless: the job reads the PR's state live when it runs.
+name: review-gate-retrigger
+
+on:
+  workflow_run:
+    workflows: ['Gemini review']
+    types: [completed]
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  retrigger:
+    name: review-gate-retrigger
+    if: >-
+      github.event_name == 'workflow_run' ||
+      (github.event.issue.pull_request &&
+       github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+       contains(github.event.comment.body, 'codex-review-state:v1'))
+    concurrency:
+      # Quoted whole: unquoted, YAML reads ` #` as a comment.
+      group: "review-gate-retrigger-${{ github.event_name == 'issue_comment' && format('Gemini review PR #{0}', github.event.issue.number) || github.event.workflow_run.display_title || github.run_id }}"
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            scripts/ci/review-gate-retrigger.mjs
+            .nvmrc
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: node scripts/ci/review-gate-retrigger.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

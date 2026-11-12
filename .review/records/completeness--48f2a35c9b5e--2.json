@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "48f2a35c9b5e529b3f2c41ef37dec2e1382b08dc",
+    "mergeBase": "c2b1b1c0c766adb0f36835319706d96157c306c2",
+    "head": "5495d17e720b32cef28d024cf6d33dfdebbb71ba"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "completeness--48f2a35c9b5e--1#F1",
+      "severity": "P1",
+      "summary": "parsePlan pushes an object { task, text } to the problems array, but the spec requires problems to be string[], which causes tests using regex on the problems to fail.",
+      "file": "scripts/review/plan-targets.mjs",
+      "line": 29,
+      "disposition": {
+        "kind": "fixed",
+        "by": "completeness--48f2a35c9b5e--2"
+      }
+    }
+  ],
+  "supersedes": "completeness--48f2a35c9b5e--1",
+  "createdAt": "2026-11-07T20:22:16.433Z"
+}

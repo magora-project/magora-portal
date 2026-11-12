@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "03aa01b796efb6b0f75301047b3d74fe9788e162",
+    "mergeBase": "c2b1b1c0c766adb0f36835319706d96157c306c2",
+    "head": "0ecb3326e25c0fa98c97102fab44d3a887099e92"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--e2ed5464a0ec--4#D10",
+      "severity": "P3",
+      "summary": "D10: T18 specifies running command targets and recording their exit status without a deadline, while the diff additionally imposes a per-command timeout with termination and exit -1; this useful safeguard extends the planned execution contract.",
+      "file": "scripts/review/conformance.mjs",
+      "line": 236,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "see Deviations"
+      }
+    },
+    {
+      "id": "conformance--e2ed5464a0ec--4#conformance--d81ff5e9afb4--3#conformance--cf8fbd4ee12b--3#conformance--8fe2656b7972--1#conformance--484c9be533a3--3#conformance--d88a517c33e0--1#conformance--5788e24c3c23--3#conformance--4636acd9083f--1#D2",
+      "severity": "P3",
+      "summary": "D2: T18 specifies conformance tasks, deviations and commands, while the diff additionally requires a plan path/blob binding in records and evidence validation; this useful safeguard extends the planned record contract.",
+      "file": "scripts/ci/review-evidence.mjs",
+      "line": 151
+    },
+    {
+      "id": "conformance--e2ed5464a0ec--4#conformance--d81ff5e9afb4--3#conformance--cf8fbd4ee12b--3#conformance--8fe2656b7972--1#conformance--484c9be533a3--3#conformance--d88a517c33e0--1#conformance--5788e24c3c23--3#conformance--4636acd9083f--1#D3",
+      "severity": "P3",
+      "summary": "D3: T18 requires committed-head postcondition checks, while the diff additionally refuses dirty plans and dirty tracked files when command targets exist; these useful refusals add execution restrictions absent from the plan.",
+      "file": "scripts/review/conformance.mjs",
+      "line": 180
+    }
+  ],
+  "supersedes": "conformance--03aa01b796ef--1",
+  "conformance": {
+    "tasks": [
+      "T17",
+      "T18"
+    ],
+    "deviations": [
+      "conformance--e2ed5464a0ec--4#D10",
+      "conformance--e2ed5464a0ec--4#conformance--d81ff5e9afb4--3#conformance--cf8fbd4ee12b--3#conformance--8fe2656b7972--1#conformance--484c9be533a3--3#conformance--d88a517c33e0--1#conformance--5788e24c3c23--3#conformance--4636acd9083f--1#D2",
+      "conformance--e2ed5464a0ec--4#conformance--d81ff5e9afb4--3#conformance--cf8fbd4ee12b--3#conformance--8fe2656b7972--1#conformance--484c9be533a3--3#conformance--d88a517c33e0--1#conformance--5788e24c3c23--3#conformance--4636acd9083f--1#D3"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "572610a2fa81402fb917e1683f4185bde5999acf"
+    }
+  },
+  "createdAt": "2026-11-07T20:05:16.770Z"
+}

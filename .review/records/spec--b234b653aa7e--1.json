@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "b234b653aa7ee891a8a7df3d15073697815da2e7",
+    "path": "docs/superpowers/specs/2026-11-06-staging-lease-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "spec--e12eefdf195b--1#F1",
+      "severity": "P1",
+      "summary": "A late delete can remove the new holder's lease after verify succeeds but before its staging write, allowing a refresh or another session to overlap that write, so verification does not provide the claimed protection against the accepted deletion race.",
+      "file": "docs/superpowers/specs/2026-11-06-staging-lease-design.md",
+      "line": 128,
+      "disposition": {
+        "kind": "fixed",
+        "by": "spec--b234b653aa7e--1"
+      }
+    }
+  ],
+  "supersedes": "spec--e12eefdf195b--1",
+  "createdAt": "2026-11-07T03:14:23.733Z"
+}

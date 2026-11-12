@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "9f27026ed4143c6466b7b81708cc4a521aef9466",
+    "mergeBase": "6ecffba570f3cdc698cf5b9eda994f1e64aa13ca",
+    "head": "b10ac80d8ab97c984f58268b4e9d0b3215323180"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "listThreads returns GraphQL resolvedBy as `coderabbitai`, but BOT_RESOLVERS contains `coderabbitai[bot]`, so valid CodeRabbit-addressed threads remain blocking and require dispositions instead of receiving the promised exemption.",
+      "file": "scripts/ci/review-gate.mjs",
+      "line": 130
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-10T13:15:45.965Z"
+}

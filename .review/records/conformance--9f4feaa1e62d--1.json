@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "9f4feaa1e62dee26bf04f273c91b9ac383279758",
+    "mergeBase": "7100b2ad577b59ec2eaf30021f2f911422bce6b4",
+    "head": "0f7d1e56714dcb34e28eb260af368f45cc52c45d"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "D10",
+      "severity": "P3",
+      "summary": "D10: T26 requires the SlotStateInput typedef to reflect the expanded coderabbitCheck/coderabbitChecks interface, but both documented shapes omit successes, leaving the retained-success evidence input undocumented.",
+      "file": "scripts/review/coverage.mjs",
+      "line": 24
+    }
+  ],
+  "supersedes": "conformance--132ffbf07fb8--1",
+  "conformance": {
+    "tasks": [
+      "T26"
+    ],
+    "deviations": [
+      "D10"
+    ],
+    "commands": [
+      {
+        "cmd": "npm test",
+        "exit": 0
+      },
+      {
+        "cmd": "npm run lint:ratchet",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-30-shared-dev-process.md",
+      "blob": "31c78cbab6b325856008319749834e342283b2d8"
+    }
+  },
+  "createdAt": "2026-11-11T16:09:21.347Z"
+}

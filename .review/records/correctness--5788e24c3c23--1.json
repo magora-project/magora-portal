@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "5788e24c3c238e24d85b2ec8c49012043ab1354d",
+    "mergeBase": "c2b1b1c0c766adb0f36835319706d96157c306c2",
+    "head": "0a34f365caf5323d4d4bdd7860d8dc1891592989"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "A conformance re-review can change --plan or --tasks yet receive only an empty or incremental delta, allowing evidence for newly declared promises without reviewing their implementation; force full review when the checked plan or task scope changes.",
+      "file": "scripts/review/runner.mjs",
+      "line": 517
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-07T16:20:18.549Z"
+}

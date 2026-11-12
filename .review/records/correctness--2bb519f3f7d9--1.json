@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "2bb519f3f7d9bcac78ac0e49eb6b03636303a030",
+    "mergeBase": "7100b2ad577b59ec2eaf30021f2f911422bce6b4",
+    "head": "cb6adbc2cd1536b3416ae0ffd7fd15ea038d28c0"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "correctness--132ffbf07fb8--1#F1",
+      "severity": "P2",
+      "summary": "Returning only the newest check discards an earlier requested clean success when a later check is rate-limited or manually skipped, removing coverage and fix evidence despite the stated rule that those checks revoke no earlier review.",
+      "file": "scripts/review/github.mjs",
+      "line": 173
+    }
+  ],
+  "supersedes": "correctness--132ffbf07fb8--1",
+  "createdAt": "2026-11-11T16:11:24.863Z"
+}

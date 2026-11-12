@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "e30356a7e1f405fe32b4170b0dd3f3c37586ee52",
+    "mergeBase": "b1a11c818eda425ff12d92ee8cc14e4eb9fab919",
+    "head": "51d5df5a6ebe3a9eb30eab25c653d9dc55e3097a"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "Filtering `edits.nodes` by `byCodex(e.editor)` trusts human-written text and discards bot-written text, because `e.diff` is the body before the edit, meaning it was written by the previous editor, not by `e.editor`.",
+      "file": "scripts/review/github.mjs",
+      "line": 268
+    }
+  ],
+  "supersedes": "completeness--94a505e6f1fb--1",
+  "createdAt": "2026-11-10T15:22:01.726Z"
+}

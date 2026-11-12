@@ -3,7 +3,7 @@
 // Run: node src/lib/mapSections.test.mjs
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createMapSectionLoader, insightsAvailableFor, MAP_SECTIONS, FEED_SECTIONS } from './mapSections.js'
+import { createMapSectionLoader, nextNodes, nodeInsightRequest, MAP_SECTIONS, FEED_SECTIONS } from './mapSections.js'
 
 const never = () => new Promise(() => {})
 const ok = data => () => Promise.resolve({ data, error: null })
@@ -122,11 +122,24 @@ test('the returned promise resolves once every query has settled', async () => {
   assert.equal(applied.length, MAP_SECTIONS.length)
 })
 
-test("the insight button needs the card's node; a stored insight always shows", () => {
-  const node = { id: 'n1', name: 'Pond' }
-  assert.equal(insightsAvailableFor({ node_id: 'n1' }, undefined), false, 'node not loaded (pending, failed, or not yet in a refreshed list)')
-  assert.equal(insightsAvailableFor({ node_id: 'n1' }, node), true, 'node loaded')
-  assert.equal(insightsAvailableFor({ node_id: 'n1', insight: 'stored' }, undefined), true)
+test('a feed card whose node is not in the nodes list still gets an insight request (#60)', () => {
+  const d = { id: 'd1', node_id: 'n-unlisted', species_name: null, raw_label: 'American Robin_Turdus migratorius', confidence: 0.8, is_dawn_chorus: false }
+  const body = nodeInsightRequest(d, undefined)
+  assert.equal(body.detection_id, 'd1', 'the server resolves the node from the detection')
+  assert.equal(body.species_name, 'American Robin', 'common name, so the server species lookup matches')
+  assert.equal(body.scientific_name, 'Turdus migratorius')
+  assert.equal('location' in body, false, 'no location is invented for an unlisted node')
+  assert.equal(nodeInsightRequest(d, { name: 'Pond' }).location, 'Pond')
+  assert.equal(nodeInsightRequest(d, { name: 'Pond', habitat_type: 'Riparian' }).location, 'Riparian')
+})
+
+test('a failed nodes refresh keeps the last list; a successful one replaces it (#59)', () => {
+  const prev = [{ id: 'n1' }, { id: 'n2' }, { id: 'n3' }, { id: 'n4' }]
+  assert.equal(nextNodes(prev, { data: null, error: new Error('timeout') }), prev)
+  assert.deepEqual(nextNodes(prev, { data: [{ id: 'n5', detections: [{ id: 'd' }] }], error: null }), [{ id: 'n5' }])
+  assert.deepEqual(nextNodes(prev, { data: null, error: null }), [])
+  assert.deepEqual(nextNodes(prev, { data: [], error: null }), [], 'an empty successful result replaces the list')
+  assert.deepEqual(nextNodes([], { data: null, error: new Error('first load failed') }), [])
 })
 
 // #59 item 2: one key per species, whether a row carries species_name or only raw_label.
