@@ -4,7 +4,9 @@
 - **Status:** approved rev 5 (David, 2026-10-29). Rev 5 applies Codex round 4. On approval David
   also settled the open items on accounts and the trial period (D-15, D-16; §8). Rev 6 (2026-11-03)
   amends §5.7 with David's Task 8 rulings on how claude-b is unlinked; a 2026-11-04 addition to
-  §5.7 requires the reverse promotion not to undo the freeze. Review history: §10.
+  §5.7 requires the reverse promotion not to undo the freeze. A 2026-11-10 addition to §5.6 covers
+  a finding on a rewritten commit (issue #94); a 2026-11-11 addition to §5.5 and §5.6 covers
+  CodeRabbit's check outcomes (issues #100, #102). Review history: §10.
 - **Builds on:** Spec 1 (`2026-10-15-repo-harness-design.md`): CI, depth labels, Layer 1 / Layer 2
   review.
 - **Reverses one Spec 1 decision:** pre-push review was "discipline, not a control". Here a skipped
@@ -298,7 +300,8 @@ nor the `correctness` reviewer.
 1. The outcome is `completed`, with a recognized, non-empty result. Any other outcome fails,
    whatever the finding count.
 2. The input identity matches the current one. For conformance records, the task IDs must also match
-   the Plan field, and the unfixed deviation IDs must exactly match the Deviations field.
+   the Plan field, the plan the record checked must be the Plan field's path at its blob at the
+   head, and the unfixed deviation IDs must exactly match the Deviations field.
 3. The slot ID is the required one, and the vendor meets the independence rule.
 4. Every recorded finding has an acceptable disposition, **whatever the verdict.**
 
@@ -376,6 +379,21 @@ whose input identity equals the current one.
 - **Codex App:** a clean Codex review submits no review object, so its coverage comes from the
   `codex-review-state:v1` marker in its summary comment (the comment's `updated_at` is its time) or
   a non-empty Codex review, whichever is later (plan V2, accepted 2026-11-01).
+- **CodeRabbit clean full review** (David, 2026-11-11; issue #102): a clean CodeRabbit full review
+  posts no review object, so a requested `CodeRabbit` check run counts as a usable CodeRabbit review
+  on its own commit, timed at its `completed_at`. It counts only when all of these hold:
+  - its conclusion is `success`;
+  - a CodeRabbit full-review request, timed at its last edit, falls strictly after the check's
+    commit last arrived on the PR before that `started_at` (read from the PR's workflow runs) and
+    strictly before the check's `started_at`. A request made before the commit arrived cannot have
+    asked for its review, and an arrival after the check started cannot undo a review it already
+    answered (clarified 2026-11-11 after PR #104's CodeRabbit review: A → F1 → A must not drop it);
+  - every one of those times is readable.
+
+  An unrequested `success` is neither coverage nor a reviewed commit. Otherwise it is treated as a
+  review on its commit: it covers when it is the latest usable CodeRabbit evidence and its commit
+  has the current identity, so a later identity-preserving commit (an evidence commit) keeps it, and
+  a rewrite that removes its commit needs a new full-review request.
 
 - **Usable** means the review is non-empty, and its run did not end in a terminal failure (below). A
   failed review never establishes coverage. It is a ground for substitution.
@@ -388,8 +406,9 @@ whose input identity equals the current one.
   the request and on a commit with a post-rewrite identity. Later incremental reviews accumulate on
   top of it. An incremental review alone, with no usable review answering the request, does not
   restore coverage.
-- **What the gate reads:** only the request's timestamp and the reviews' timestamps,
-  `commit_id`s and emptiness. It never reads the bot's prose.
+- **What the gate reads:** only the request's timestamp; the reviews' timestamps, `commit_id`s and
+  emptiness; and, for CodeRabbit, its check runs' conclusion, title, and start and completion times.
+  It never reads the bot's prose.
 
 **Substitution.**
 
@@ -397,8 +416,18 @@ whose input identity equals the current one.
   - **Immediately,** when the bot isn't configured for this PR. Gemini is not configured on fork,
     Dependabot and draft PRs.
   - **After a terminal failure.** The gate reads failure only from:
-    - CodeRabbit's check run named `CodeRabbit` (its `conclusion` and `output.title`, for example
-      `skipped` / "No files to review"); it posts no commit status (plan V3, accepted 2026-11-01);
+    - CodeRabbit's check run named `CodeRabbit` (its `conclusion` and `output.title`); it posts no
+      commit status (plan V3, accepted 2026-11-01). Titles match exactly (David, 2026-11-11):
+      - **terminal:** `skipped`, `failure`, `cancelled`, `timed_out` and `action_required`, for
+        example `skipped` / "No files to review"; and `neutral` / "Review rate limited" (issue
+        #100). Any other `neutral` is not terminal;
+      - **not terminal:** `skipped` / "Review skipped: manual review required for this OSS
+        repository", which CodeRabbit concludes on every push here. The slot stays pending with
+        "post `@coderabbitai full review`", and the timeout below still allows a substitute;
+      - **revoking a review:** a terminal check on a review's own commit makes that review unusable,
+        except the rate-limit check, which reviewed nothing and so leaves an earlier review on that
+        commit usable. The manual-review check is not terminal, so it revokes nothing either. A
+        check that has not finished leaves the review unusable until it does;
     - the Gemini job's conclusion, or the verdict marker in its comment (`could-not-run`).
 
     Review bodies are never parsed. An empty review is never usable and never a failure signal:
@@ -452,6 +481,8 @@ whose input identity equals the current one.
     comment, so a gate that is waiting for Codex coverage stays red until the next PR event. This
     fails closed; until OPEN point 2 settles it, the author re-runs `review-gate` after the marker
     appears.
+  - **And a clean CodeRabbit full review.** A check run completing triggers no gate run, so the
+    author re-runs `review-gate` after the requested `CodeRabbit` check completes `success`.
 
 ### 5.6 What blocks, and what can be declined (D-7, D-8, D-14)
 
@@ -475,7 +506,8 @@ gate then accepts it when either:
 
 So the review that raised a finding can never verify its own fix. The gate orders commits by
 ancestry, never by dates, which the author sets. A finding whose reported commit is unknown can be
-verified only by a substitute.
+verified only by a substitute. A requested clean CodeRabbit full review (§5.5) is CodeRabbit
+coverage evidence here as a review is: it re-read the whole diff, fix included (David, 2026-11-11).
 
 **Accepted limitation (David, 2026-11-03).** An incremental bot review need not re-read a fix, so a
 fix that a later commit reverts can still pass. The gate cannot tell a review that answered a

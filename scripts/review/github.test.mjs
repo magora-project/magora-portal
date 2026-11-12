@@ -203,14 +203,38 @@ const run = (over) => ({ id: 1, name: 'CodeRabbit', app: { slug: 'coderabbitai' 
 const checks = (rows) => async (url) => {
   const u = new URL(url)
   ok('coderabbitCheck reads the check runs of the sha', u.pathname === '/repos/o/r/commits/abc/check-runs')
-  return res({ total_count: rows.length, check_runs: u.searchParams.get('page') === '1' ? rows : [] })
+  ok('coderabbitCheck asks for every run (filter=all), not only the latest', u.searchParams.get('filter') === 'all')
+  // As GitHub does: without filter=all the API returns only the most recent run of each check name.
+  const latestOnly = (rs) => rs.filter((r) => !rs.some((o) => o.name === r.name && o.id > r.id))
+  const shown = u.searchParams.get('filter') === 'all' ? rows : latestOnly(rows)
+  return res({ total_count: shown.length, check_runs: u.searchParams.get('page') === '1' ? shown : [] })
 }
-ok('coderabbitCheck returns the CodeRabbit run\'s conclusion and title', JSON.stringify(await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run()]) })) === '{"conclusion":"skipped","title":"No files to review"}')
+ok('coderabbitCheck returns the CodeRabbit run\'s conclusion and title', JSON.stringify(await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run()]) })) === '{"id":1,"conclusion":"skipped","title":"No files to review","startedAt":null,"completedAt":null,"successes":[],"runs":[{"id":1,"conclusion":"skipped","title":"No files to review"}]}')
 ok('a run named CodeRabbit from another app is ignored', await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run({ app: { slug: 'mallory' } })]) }) === null)
 ok('a run from the right app with another name is ignored', await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run({ name: 'lint' })]) }) === null)
 ok('no check run -> null', await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([]) }) === null)
 ok('the newest run wins when there are several', (await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run({ id: 5, conclusion: 'success', output: { title: 'ok' } }), run({ id: 9, conclusion: 'failure', output: { title: 'bad' } })]) })).conclusion === 'failure')
-ok('a null title and a pending run map to nulls', JSON.stringify(await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run({ conclusion: null, output: {} })]) })) === '{"conclusion":null,"title":null}')
+ok('a null title and a pending run map to nulls', JSON.stringify(await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run({ conclusion: null, output: {} })]) })) === '{"id":1,"conclusion":null,"title":null,"startedAt":null,"completedAt":null,"successes":[],"runs":[{"id":1,"conclusion":null,"title":null}]}')
+ok('coderabbitCheck returns id, started_at and completed_at', await (async () => { const c = await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([run({ id: 9, conclusion: 'success', output: { title: 'Review completed' }, started_at: '2026-11-11T10:06:00Z', completed_at: '2026-11-11T10:09:00Z' })]) }); return c.id === 9 && c.startedAt === '2026-11-11T10:06:00Z' && c.completedAt === '2026-11-11T10:09:00Z' })())
+ok('coderabbitCheck lists every success run on the commit, newest first, under a newer rate-limited run', await (async () => {
+  const c = await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([
+    run({ id: 7, conclusion: 'success', output: { title: 'Review completed' }, started_at: '2026-11-11T10:06:00Z', completed_at: '2026-11-11T10:09:00Z' }),
+    run({ id: 10, conclusion: 'neutral', output: { title: 'Review rate limited' } }),
+    run({ id: 8, conclusion: 'success', output: { title: 'Review completed' }, started_at: '2026-11-11T10:16:00Z', completed_at: '2026-11-11T10:19:00Z' }),
+    run({ id: 6, conclusion: 'skipped', output: { title: 'Review skipped: manual review required for this OSS repository' } }),
+  ]) })
+  return c.id === 10 && c.conclusion === 'neutral' && JSON.stringify(c.successes) === JSON.stringify([{ id: 8, startedAt: '2026-11-11T10:16:00Z', completedAt: '2026-11-11T10:19:00Z' }, { id: 7, startedAt: '2026-11-11T10:06:00Z', completedAt: '2026-11-11T10:09:00Z' }])
+})())
+// PR #104 amendment (Gemini P1): every run, so a rate-limited run cannot hide an earlier failure.
+ok('coderabbitCheck lists every run, newest first, with conclusion and title', await (async () => {
+  const c = await coderabbitCheck({ ...base, sha: 'abc', fetchImpl: checks([
+    run({ id: 7, conclusion: 'success', output: { title: 'Review completed' } }),
+    run({ id: 9, conclusion: 'neutral', output: { title: 'Review rate limited' } }),
+    run({ id: 8, conclusion: 'failure', output: { title: 'x' } }),
+    run({ id: 11, conclusion: 'failure', output: { title: 'other app' }, app: { slug: 'mallory' } }),
+  ]) })
+  return JSON.stringify(c.runs) === JSON.stringify([{ id: 9, conclusion: 'neutral', title: 'Review rate limited' }, { id: 8, conclusion: 'failure', title: 'x' }, { id: 7, conclusion: 'success', title: 'Review completed' }])
+})())
 
 // ---------------------------------------------------------------- workflow runs
 const wf = (i, over = {}) => ({ id: i, name: 'ci', path: '.github/workflows/ci.yml', event: 'pull_request', status: 'completed', conclusion: 'success', head_sha: 'a'.repeat(40), head_repository: { full_name: 'o/r' }, created_at: '2026-11-05T00:00:00Z', pull_requests: [{ number: 44 }], ...over })

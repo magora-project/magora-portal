@@ -7,8 +7,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  BOT_VENDOR, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, coderabbitFailedOn, diffTooLarge, headPushedAt, makeIdentityOf, makeIsAncestor, requiredMet,
-  slotState, substituteOk, substitutionClockStart,
+  BOT_VENDOR, CR_MANUAL_REVIEW, CR_RATE_LIMITED, GEMINI_DIFF_LIMIT, REQUIRED_BOTS, coderabbitCheckEntries, coderabbitCheckEvidence, coderabbitFailedOn, crTerminal, diffTooLarge, headPushedAt, lastArrivalAt,
+  makeIdentityOf, makeIsAncestor, requiredMet, slotState, substituteOk, substitutionClockStart,
 } from './coverage.mjs'
 import { codexHistory, geminiDispatchRuns } from './github.mjs'
 import { geminiDiff, inputIdentity } from './identity.mjs'
@@ -416,6 +416,133 @@ try {
   ok('I-1: an unknown current identity does not walk', (await clock(evidencePush, E, { currentIdentity: '' })) === T('10:31'))
   ok('I-1: the 30-minute pending line prints when substitution becomes allowed', is(await s({ bot: 'coderabbit', head: A2, current: 'I2', now: T('10:10'), pushed: T('10:00') }), 'pending', /; substitution allowed after 2026-11-01T10:30:00\.000Z; re-run review-gate then$/))
   ok('I-1: ... measured from the last full-review request when later', is(await s({ ...forcePushIncrementalOnly, requests: [req('coderabbit', '10:20')], now: T('10:31') }), 'pending', /substitution allowed after 2026-11-01T10:50:00\.000Z; re-run review-gate then$/))
+
+  // ------------------------------------------------------------ Task 26: CodeRabbit check rulings (#100, #102; spec §5.5)
+  // A CodeRabbit check as coderabbitCheck returns it; a null time stands for one the API did not give.
+  const crRun = (id, conclusion, title, started, completed) => ({ id, conclusion, title, startedAt: started === null ? null : T(started), completedAt: completed === null ? null : T(completed) })
+  // A2 arrives at 10:00 (one run); its CodeRabbit check 501 started 10:06 and completed success at 10:09.
+  const CR_SUCCESS = crRun(501, 'success', 'Review completed', '10:06', '10:09')
+  const crOn = (sha, c) => ({ coderabbitCheck: c, coderabbitChecks: { [sha]: c } })
+  const B = 'b'.repeat(40) // another head, for lastArrivalAt (runs only; no identity or ancestry is read)
+  const crHeadRateLimited = { bot: 'coderabbit', head: A2, current: 'I2', ...crOn(A2, CR_RATE_LIMITED) }
+  const crReviewThenRateLimited = { ...crHeadRateLimited, reviews: [cr(A2, '10:05')] }
+  const crManualAt10 = { bot: 'coderabbit', head: A2, current: 'I2', runs: [runOn(44, A2, T('10:00'))], ...crOn(A2, CR_MANUAL_REVIEW), now: T('10:10') }
+  const crManualAt31 = { ...crManualAt10, now: T('10:31') }
+  // Every negative case below is crRequestedSuccess with one field changed, so the covered control pins what each one tests.
+  const crUnrequestedSuccess = { bot: 'coderabbit', head: A2, current: 'I2', runs: [runOn(44, A2, T('10:00'))], ...crOn(A2, CR_SUCCESS) }
+  const crRequestedSuccess = { ...crUnrequestedSuccess, requests: [req('coderabbit', '10:05')] }
+  const crRequestBeforeArrival = { ...crRequestedSuccess, requests: [req('coderabbit', '09:55')] }
+  const crRequestAfterStart = { ...crRequestedSuccess, requests: [req('coderabbit', '10:07')] }
+  const crRequestAtArrival = { ...crRequestedSuccess, requests: [req('coderabbit', '10:00')] }
+  const crRequestAtStart = { ...crRequestedSuccess, requests: [req('coderabbit', '10:06')] }
+  const crNoStartedAt = { ...crRequestedSuccess, ...crOn(A2, { ...CR_SUCCESS, startedAt: null }) }
+  const crNoCompletedAt = { ...crRequestedSuccess, ...crOn(A2, { ...CR_SUCCESS, completedAt: null }) }
+  const crCheckCommitNoRun = { ...crRequestedSuccess, runs: [] }
+  const crSuccessCodexRequestOnly = { ...crRequestedSuccess, requests: [req('codex', '10:05')] }
+  const crRequestedFailure = { ...crRequestedSuccess, ...crOn(A2, { ...CR_SUCCESS, conclusion: 'failure' }) }
+  // A2 (10:00) -> F1 (10:02) -> A2 (10:04): A2 last arrived at 10:04.
+  const returning = { ...crRequestedSuccess, runs: [runOn(44, A2, T('10:00')), runOn(44, F1, T('10:02')), runOn(44, A2, T('10:04'))] }
+  const crReturningRequestEarly = { ...returning, requests: [req('coderabbit', '10:01')] }
+  const crReturningRequestLate = { ...returning, requests: [req('coderabbit', '10:05')] }
+  // E keeps A2's identity; CodeRabbit skips it for manual review, as it does on every push here.
+  const crRequestedSuccessThenEvidenceHead = {
+    ...crRequestedSuccess, head: E, runs: [runOn(44, A2, T('10:00')), runOn(44, E, T('10:20'))], now: T('10:25'), pushed: T('10:00'),
+    coderabbitCheck: CR_MANUAL_REVIEW, coderabbitChecks: { [A2]: CR_SUCCESS, [E]: CR_MANUAL_REVIEW },
+  }
+  // F1 rewrites A2 away and changes the identity; the request answered on A2 is older than F1. F1 has no CodeRabbit check
+  // (null), so the manual-review line cannot be what names the request: only the rewrite rule can.
+  const crRequestedSuccessRewritten = {
+    ...crRequestedSuccess, head: F1, current: 'IF1', runs: [runOn(44, A2, T('10:00')), runOn(44, F1, T('10:20'))], now: T('10:25'), pushed: T('10:20'),
+    coderabbitCheck: null, coderabbitChecks: { [A2]: CR_SUCCESS, [F1]: null },
+  }
+  // F1 amendment: the check on A2 as coderabbitCheck returns it, a newest run plus every success run on the commit.
+  const succ = ({ id, startedAt, completedAt }) => ({ id, startedAt, completedAt })
+  const newestWith = (newest, ...successes) => ({ ...newest, successes: successes.map(succ) })
+  const later = (conclusion, title) => crRun(503, conclusion, title, '10:12', '10:12')
+  const crRequestedSuccessThenRateLimited = { ...crRequestedSuccess, ...crOn(A2, newestWith(later('neutral', CR_RATE_LIMITED.title), CR_SUCCESS)) }
+  const crRequestedSuccessThenManual = { ...crRequestedSuccess, ...crOn(A2, newestWith(later('skipped', CR_MANUAL_REVIEW.title), CR_SUCCESS)) }
+  const crRequestedSuccessThenFailure = { ...crRequestedSuccess, ...crOn(A2, newestWith(later('failure', 'x'), CR_SUCCESS)) }
+  const crRequestedSuccessThenUnfinished = { ...crRequestedSuccess, ...crOn(A2, newestWith({ ...later(null, null), completedAt: null }, CR_SUCCESS)) }
+  const CR_SUCCESS_2 = crRun(502, 'success', 'Review completed', '10:16', '10:19')
+  const crTwoRequestedSuccesses = {
+    ...baseState(A2), runs: [runOn(44, A2, T('10:00'))], requests: [req('coderabbit', '10:05'), req('coderabbit', '10:15')],
+    // Newest is a later rate limit; the successes are listed out of completion order, so the pick must be by completedAt.
+    coderabbitChecks: { [A2]: newestWith(crRun(504, 'neutral', CR_RATE_LIMITED.title, '10:25', '10:25'), CR_SUCCESS, CR_SUCCESS_2) },
+  }
+  // 501 started 10:06 with no request before it; the request at 10:10 came after it started, then 503 was rate limited.
+  const crUnrequestedSuccessThenRateLimitedAfterRequest = { ...crUnrequestedSuccess, requests: [req('coderabbit', '10:10')], ...crOn(A2, newestWith(later('neutral', CR_RATE_LIMITED.title), CR_SUCCESS)) }
+  // PR #104 amendment: `runs` is every run on the commit, newest first, as coderabbitCheck returns it.
+  const rl = (id) => ({ id, ...CR_RATE_LIMITED }), mr = (id) => ({ id, ...CR_MANUAL_REVIEW }), fail = (id) => ({ id, conclusion: 'failure', title: 'x' })
+  const okRun = (id) => ({ id, conclusion: 'success', title: 'ok' }), unfinished = (id) => ({ id, conclusion: null, title: null })
+  const failedWith = (...runs) => coderabbitFailedOn({ coderabbitChecks: { [A2]: { ...runs[0], runs } } }, A2)
+  // 501 requested success (10:09), then 503 failure, then 504 rate limited.
+  const crRequestedSuccessFailureRateLimited = { ...crRequestedSuccess, ...crOn(A2, { ...newestWith(crRun(504, 'neutral', CR_RATE_LIMITED.title, '10:25', '10:25'), CR_SUCCESS), runs: [rl(504), fail(503), { id: 501, conclusion: 'success', title: 'Review completed' }] }) }
+  // crRequestedSuccessRewritten, but a later failure on A2 revoked its requested success, and CodeRabbit reviewed F1
+  // incrementally at 10:22 with no full-review request after the rewrite.
+  const crRevokedRequestedSuccessRewritten = {
+    ...crRequestedSuccessRewritten, reviews: [cr(F1, '10:22')],
+    coderabbitChecks: { [A2]: newestWith(later('failure', 'x'), CR_SUCCESS), [F1]: null },
+  }
+  // PR #104 CodeRabbit amendment: A2 (10:00), request 10:05, check 501 on A2 10:06-10:09 (qualified), F1 10:20 reviewed
+  // incrementally at 10:22, then A2 returns at 10:30 and F1 at 10:40. A2's later return must not unqualify 501.
+  const crQualifiedThenReturning = {
+    ...crRequestedSuccessRewritten, reviews: [cr(F1, '10:22')], now: T('10:45'), pushed: T('10:40'),
+    runs: [runOn(44, A2, T('10:00')), runOn(44, F1, T('10:20')), runOn(44, A2, T('10:30')), runOn(44, F1, T('10:40'))],
+  }
+
+  ok('crTerminal: rate limited is terminal; other neutral is not', crTerminal(CR_RATE_LIMITED) && crTerminal({ conclusion: 'neutral', title: 'Review paused' }) === false)
+  ok('crTerminal: manual-review skip is not terminal; "No files to review" is; a near-miss title is', crTerminal(CR_MANUAL_REVIEW) === false && crTerminal({ conclusion: 'skipped', title: 'No files to review' }) && crTerminal({ ...CR_MANUAL_REVIEW, title: `${CR_MANUAL_REVIEW.title} ` }))
+  ok('a rate-limited check on a reviewed commit leaves its review usable; a failure check does not', coderabbitFailedOn({ coderabbitChecks: { [A2]: CR_RATE_LIMITED } }, A2) === false && coderabbitFailedOn({ coderabbitChecks: { [A2]: { conclusion: 'failure', title: 'x' } } }, A2) === true)
+  ok('a manual-review check revokes nothing; an unfinished check still does', coderabbitFailedOn({ coderabbitChecks: { [A2]: CR_MANUAL_REVIEW } }, A2) === false && coderabbitFailedOn({ coderabbitChecks: { [A2]: { conclusion: null, title: null } } }, A2) === true)
+  ok('head rate limited, no usable review -> needs-substitute at once', (await s(crHeadRateLimited)).status === 'needs-substitute')
+  ok('head rate limited after a usable review on the same commit -> covered', (await s(crReviewThenRateLimited)).status === 'covered')
+  ok('head manual-review skip, 10 minutes -> pending naming the request; 31 minutes -> needs-substitute', await (async () => { const a = await s(crManualAt10); const b = await s(crManualAt31); return a.status === 'pending' && /@coderabbitai full review/.test(a.reason) && b.status === 'needs-substitute' })())
+  ok('requested clean full review (request 10:05, started 10:06, success 10:09) -> covered by check:<id>', await (async () => { const r = await s(crRequestedSuccess); return r.status === 'covered' && r.by === 'check:501' })())
+  ok('unrequested success -> not covered', (await s(crUnrequestedSuccess)).status !== 'covered')
+  ok('request before the commit arrived (09:55) -> not covered', (await s(crRequestBeforeArrival)).status !== 'covered')
+  ok('request after started_at -> not covered; request exactly at arrival or at started_at -> not covered', (await s(crRequestAfterStart)).status !== 'covered' && (await s(crRequestAtArrival)).status !== 'covered' && (await s(crRequestAtStart)).status !== 'covered')
+  ok('unreadable started_at, completed_at, or no run for the check\'s commit -> not covered', (await s(crNoStartedAt)).status !== 'covered' && (await s(crNoCompletedAt)).status !== 'covered' && (await s(crCheckCommitNoRun)).status !== 'covered')
+  ok('a success check with no id (null or empty) -> not covered', (await s({ ...crRequestedSuccess, ...crOn(A2, { ...CR_SUCCESS, id: null }) })).status !== 'covered' && (await s({ ...crRequestedSuccess, ...crOn(A2, { ...CR_SUCCESS, id: '' }) })).status !== 'covered')
+  ok('a CodeRabbit request with an unreadable time does not make a success requested', (await s({ ...crRequestedSuccess, requests: [{ bot: 'coderabbit', at: 'not-a-time' }] })).status !== 'covered')
+  ok('head manual-review skip with no run for the head -> pending, still naming the request', await (async () => { const r = await s({ ...crManualAt10, runs: [], pushed: null }); return r.status === 'pending' && /post "@coderabbitai full review"/.test(r.reason) && /substitution clock/.test(r.reason) })())
+  ok('head manual-review skip after an identity-changing rewrite with no request -> pending, naming the request', await (async () => { const r = await s({ ...crRequestedSuccessRewritten, ...crOn(F1, CR_MANUAL_REVIEW), coderabbitChecks: { [A2]: CR_SUCCESS, [F1]: CR_MANUAL_REVIEW }, requests: [] }); return r.status === 'pending' && /post "@coderabbitai full review"/.test(r.reason) })())
+  ok('a @codex review request does not make a CodeRabbit success requested', (await s(crSuccessCodexRequestOnly)).status !== 'covered')
+  ok('a requested success with conclusion failure is not evidence', (await s(crRequestedFailure)).status !== 'covered')
+  ok('A -> B -> A: a request after A\'s first arrival but before its last does not count; one after its last does', (await s(crReturningRequestEarly)).status !== 'covered' && (await s(crReturningRequestLate)).status === 'covered')
+  ok('evidence-only head E (same identity, its own check a manual-review skip) keeps a requested success on A2', (await s(crRequestedSuccessThenEvidenceHead)).status === 'covered')
+  ok('a rewrite that removes the requested-success commit and changes the identity -> not covered, reason names the request', await (async () => { const r = await s(crRequestedSuccessRewritten); return r.status !== 'covered' && /full review/.test(r.reason) })())
+  ok('lastArrivalAt: A -> B -> A gives A\'s second arrival; no run on the sha -> null', lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(44, B, T('10:10')), runOn(44, A2, T('10:20')), runOn(44, A2, T('10:25'))], pr: 44, headRepo: 'o/r', sha: A2 }) === T('10:20') && lastArrivalAt({ runs: [runOn(44, B, T('10:10'))], pr: 44, headRepo: 'o/r', sha: A2 }) === null)
+  ok('a requested success then a rate-limited check on the same commit -> still covered by the success', await (async () => { const r = await s(crRequestedSuccessThenRateLimited); return r.status === 'covered' && r.by === 'check:501' })())
+  ok('a requested success then a manual-review check on the same commit -> still covered by the success', (await s(crRequestedSuccessThenManual)).status === 'covered')
+  ok('a requested success then a failure check, or an unfinished one, on the same commit -> not covered', (await s(crRequestedSuccessThenFailure)).status !== 'covered' && (await s(crRequestedSuccessThenUnfinished)).status !== 'covered')
+  ok('two requested successes on one commit -> one entry, the later completed', coderabbitCheckEvidence(crTwoRequestedSuccesses).length === 1 && coderabbitCheckEvidence(crTwoRequestedSuccesses)[0].by === 'check:502')
+  ok('an earlier unrequested success does not count because a later run on the commit was requested', (await s(crUnrequestedSuccessThenRateLimitedAfterRequest)).status !== 'covered')
+  // PR #104 amendment (Gemini P1, Codex App P2).
+  ok('a review, then a failure check, then a rate-limited check on its commit -> the review is unusable', failedWith(rl(3), fail(2), okRun(1)) === true)
+  ok('the same with a manual-review check last, or an unfinished check under the rate limit -> unusable; a failure, then a success, then a rate limit -> usable',
+    failedWith(mr(3), fail(2)) === true && failedWith(rl(3), unfinished(2)) === true && failedWith(rl(3), okRun(2), fail(1)) === false)
+  ok('only rate-limit and manual-review runs -> usable; a non-object run before the deciding one -> unusable', failedWith(rl(2), mr(1)) === false && coderabbitFailedOn({ coderabbitChecks: { [A2]: { ...CR_RATE_LIMITED, runs: [rl(2), null] } } }, A2) === true)
+  ok('a requested success, then a failure, then a rate-limited check -> not covered', (await s(crRequestedSuccessFailureRateLimited)).status !== 'covered')
+  ok('a requested success revoked by a later failure stays an entry: an identity-changing rewrite away from it still needs a full-review request', await (async () => { const r = await s(crRevokedRequestedSuccessRewritten); return r.status !== 'covered' && /full review/.test(r.reason) })())
+  ok('... and a request after the rewrite, answered by the review on F1, covers (control)', (await s({ ...crRevokedRequestedSuccessRewritten, requests: [req('coderabbit', '10:21')] })).status === 'covered')
+  ok('A (10:00), request 10:05, check on A 10:06-10:09, F1 10:20 reviewed incrementally 10:22, A again 10:30, F1 again 10:40 -> not covered, reason names the request', await (async () => { const r = await s(crQualifiedThenReturning); return r.status !== 'covered' && /full review/.test(r.reason) })())
+  ok('... and with a request after F1\'s last arrival, answered by a review on F1, covered (control)', (await s({ ...crQualifiedThenReturning, requests: [req('coderabbit', '10:41')], reviews: [cr(F1, '10:43')] })).status === 'covered')
+  ok('lastArrivalAt asOf: A -> B -> A gives A\'s first arrival as of a time between B and A\'s return; no run by asOf -> null', lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(44, B, T('10:10')), runOn(44, A2, T('10:20'))], pr: 44, headRepo: 'o/r', sha: A2, asOf: T('10:15') }) === T('10:00') && lastArrivalAt({ runs: [runOn(44, A2, T('10:00'))], pr: 44, headRepo: 'o/r', sha: A2, asOf: T('09:59') }) === null)
+  ok('lastArrivalAt asOf: a run exactly at asOf counts; an unreadable asOf -> null', lastArrivalAt({ runs: [runOn(44, A2, T('10:00'))], pr: 44, headRepo: 'o/r', sha: A2, asOf: T('10:00') }) === T('10:00') && lastArrivalAt({ runs: [runOn(44, A2, T('10:00'))], pr: 44, headRepo: 'o/r', sha: A2, asOf: 'garbage' }) === null)
+  // As s() builds it: the fixture over baseState.
+  const stateOf = (fx) => {
+    const st = { ...baseState(fx.head), ...fx }
+    for (const k of ['bot', 'head', 'current', 'now', 'pushed']) delete st[k]
+    return st
+  }
+  ok('coderabbitCheckEntries keeps a revoked requested success with usable false; coderabbitCheckEvidence drops it', await (async () => { const st = stateOf(crRequestedSuccessThenFailure); const e = coderabbitCheckEntries(st); return e.length === 1 && e[0].usable === false && e[0].by === 'check:501' && coderabbitCheckEvidence(st).length === 0 })())
+  ok('coderabbitCheckEntries marks an unrevoked requested success usable, and coderabbitCheckEvidence returns it without the flag', await (async () => { const st = stateOf(crRequestedSuccess); return coderabbitCheckEntries(st)[0]?.usable === true && JSON.stringify(Object.keys(coderabbitCheckEvidence(st)[0] ?? {})) === '["sha","at","by"]' })())
+  // Beyond the plan's list: the remaining lastArrivalAt contract, and the strict request window at a one-second margin.
+  ok('lastArrivalAt: the commit\'s last arrival stands after the PR moved on; an unreadable run time -> null; another PR\'s run is ignored', lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(44, B, T('10:10'))], pr: 44, headRepo: 'o/r', sha: A2 }) === T('10:00')
+    && lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(44, B, 'garbage')], pr: 44, headRepo: 'o/r', sha: A2 }) === null
+    && lastArrivalAt({ runs: [runOn(44, A2, T('10:00')), runOn(12, B, T('10:05')), runOn(44, A2, T('10:10'))], pr: 44, headRepo: 'o/r', sha: A2 }) === T('10:00'))
+  ok('lastArrivalAt equals headPushedAt for the head before its floor', await (async () => { const runs = [runOn(44, A2, T('10:00')), runOn(44, B, T('10:10')), runOn(44, A2, T('10:20'))]; return lastArrivalAt({ runs, pr: 44, headRepo: 'o/r', sha: A2 }) === headPushedAt({ runs, pr: 44, head: A2, headRepo: 'o/r', prCreatedAt: T('09:00') }) })())
+  ok('a request one second after arrival and one second before started_at counts', (await s({ ...crRequestedSuccess, requests: [{ bot: 'coderabbit', at: '2026-11-01T10:00:01Z' }] })).status === 'covered' && (await s({ ...crRequestedSuccess, requests: [{ bot: 'coderabbit', at: '2026-11-01T10:05:59Z' }] })).status === 'covered')
 
   // requiredMet and constants
   ok('REQUIRED_BOTS matches §5.5', JSON.stringify(REQUIRED_BOTS) === JSON.stringify({ mechanical: [], standard: ['coderabbit|codex'], 'subtle-correctness': ['coderabbit', 'codex', 'gemini'] }))

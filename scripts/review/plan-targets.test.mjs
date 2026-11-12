@@ -54,7 +54,7 @@ try {
   ok('parses this plan: Task 10 has an existing-free target list ending in a command', parsedThis.tasks.find((t) => t.id === 'T10').targets.at(-1).type === 'command')
   ok('this plan has no problems of its own, trailing text after the closing backtick included (T2, T20)', parsedThis.problems.length === 0)
   ok('the trailing text is not part of the value (T2)', parsedThis.tasks.find((t) => t.id === 'T2').targets[0].value === '~/code/claude-config/hooks/spec_plan_threshold.sh')
-  ok('this plan parses T1 to T25, once each', parsedThis.tasks.length === 25 && new Set(parsedThis.tasks.map((t) => t.id)).size === 25)
+  ok('this plan parses T1 to T26, once each', parsedThis.tasks.length === 26 && new Set(parsedThis.tasks.map((t) => t.id)).size === 26)
   ok('an untyped "- Create: x" line is a problem with its line number', /line \d+/.test(parsePlan('### Task 1: X\n\n**Files:**\n- Create: `x`\n').problems.join()))
   // push-gate round 4: a blank line does not end a Files block
   {
@@ -134,7 +134,7 @@ try {
 
   // --- resolveTasks ---
   ok('amendment to a merged plan without --tasks is refused, naming the flag', /--tasks/.test(resolveTasks({ tasks: undefined, planExistsAtRev: true }).error))
-  ok('an unknown task ID is refused, even mixed with valid ones or from a range', ['T99', 'T17,T99', 'T24-T26'].every((sel) => /T99|T26/.test(resolveTasks({ tasks: sel, planExistsAtRev: true, plan: thisPlan }).error ?? '')))
+  ok('an unknown task ID is refused, even mixed with valid ones or from a range', ['T99', 'T17,T99', 'T24-T27'].every((sel) => /T99|T27/.test(resolveTasks({ tasks: sel, planExistsAtRev: true, plan: thisPlan }).error ?? '')))
   {
     // push-gate P2: past 2^53 k++ cannot advance, so an unguarded range loops forever. Run it in a child with a
     // deadline so a regression fails here instead of hanging the suite.
