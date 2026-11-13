@@ -18,6 +18,8 @@ import { generateCandidates } from './generate.js'
 import { scorePulses } from './score.js'
 import { assignSurfaces } from './select.js'
 import { postOperatorAlert, summarizeRun } from './notify.js'
+import { nodeTimeZone, toNodeLocal, nodeDayWindow } from '../_lib/nodeTime.js'
+import { nodeCoords } from './sources.js'
 
 /**
  * Shared pure core: generate candidates for the window and rank them with the versioned
@@ -36,11 +38,19 @@ export async function runCore(nodeId, window) {
  * within the day share the same window key (stable key = reusable freshness TTL). Explicit
  * windows are used as-is.
  */
-export function resolveWindow(window, defaultCadence = 'on_demand') {
+export async function resolveWindow(window, defaultCadence = 'on_demand', nodeId = null) {
   if (window?.start && window?.end) {
     return { start: window.start, end: window.end, cadence: window.cadence || defaultCadence }
   }
   const now = new Date()
+  if (nodeId) {
+    const { node } = await nodeCoords(nodeId)
+    const tz = nodeTimeZone(node)
+    if (tz) {
+      const [start, end] = nodeDayWindow(toNodeLocal(now, tz).date, tz)
+      return { start, end, cadence: window?.cadence || defaultCadence }
+    }
+  }
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
   const dayEnd = new Date(dayStart.getTime() + 86400000)
   return { start: dayStart.toISOString(), end: dayEnd.toISOString(), cadence: window?.cadence || defaultCadence }
@@ -75,7 +85,7 @@ function resolveSelected(ranked, selection, surface) {
  * @returns {Promise<import('./payload.js').PulseOnDemandResult>}
  */
 export async function pulseOnDemand(nodeId, window, surface = DEFAULT_SURFACE) {
-  const resolved = resolveWindow(window, 'on_demand')
+  const resolved = await resolveWindow(window, 'on_demand', nodeId)
 
   // Read the whole window's stored set once; decide freshness on the top row (6h TTL).
   const cached = await fetchPulsesForWindow(nodeId, resolved)
@@ -112,7 +122,7 @@ export async function pulseOnDemand(nodeId, window, surface = DEFAULT_SURFACE) {
  * @returns {Promise<{ pulses: import('./payload.js').PulsePayload[], selection: import('./payload.js').PulseSelection }>}
  */
 export async function pulseBatch(nodeId, window, cadence, opts = {}) {
-  const resolved = resolveWindow({ ...window, cadence }, cadence || 'daily')
+  const resolved = await resolveWindow({ ...window, cadence }, cadence || 'daily')
 
   const scored = await runCore(nodeId, resolved)
   const stored = await Promise.all(scored.map((p) => storePulse(nodeId, resolved, p)))

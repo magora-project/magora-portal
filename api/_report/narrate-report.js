@@ -54,18 +54,19 @@ function fig(x, dp = 1) {
   return Number(x).toFixed(dp)
 }
 
-// A readable date from a daily period_key ('YYYY-MM-DD') without pulling a tz library. Framing
-// text only; introduces no ecological fact.
+// A readable date from a daily period_key ('YYYY-MM-DD'). The key is ALREADY the node's local
+// calendar date, so it renders as-is — converting it into the node's timezone would shift it back
+// a day in western zones (2026-11-04 → "November 3" in America/Chicago).
 function prettyDate(periodKey) {
   const d = new Date(`${periodKey}T00:00:00.000Z`)
   if (Number.isNaN(d.getTime())) return periodKey
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
-function prettyDayMonth(iso) {
+function prettyDayMonth(iso, tz) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', ...(tz ? { timeZone: tz } : {}) })
 }
 
 // Cadence-aware framing vocabulary. Style/framing ONLY — carries no ecological fact. Keys the
@@ -74,16 +75,46 @@ function prettyDayMonth(iso) {
 // the payload-first grounding is unchanged.
 function cadenceFraming(payload) {
   const period = payload.period_key
+  // "First day" is a property of the REPORT PERIOD, not of the node's age when the report is built
+  // (Codex App @93e22a7): a daily report is the first-day report when its local-day window contains
+  // first_heard_at, however much later it is generated (the 10:00 UTC cron, or a regeneration).
+  // Seasonal/annual keep the age rule; their 14/60-day tenure gates make it unreachable anyway.
+  const firstHeard = payload.tenure?.first_heard_at ? new Date(payload.tenure.first_heard_at) : null
+  const firstDay = payload.cadence === 'daily' && firstHeard && payload.window?.start && payload.window?.end
+    ? firstHeard >= new Date(payload.window.start) && firstHeard < new Date(payload.window.end)
+    : payload.tenure?.days_listening != null && payload.tenure.days_listening < 1
+  // The builder carries the node-observed span in payload.observed (window.start clipped to
+  // first_heard_at, window.end capped at generation time). clipped states the span since the first
+  // heartbeat; partial (a period still running) states the elapsed part of the day/season/year —
+  // never a full span the node has not witnessed. The query window itself is never narrowed, so
+  // the report keeps the day's midnight-stored pulses.
+  const observed = payload.observed || null
+  const clipped = !!(observed?.clipped && payload.tenure?.first_heard_at)
+  const partial = !clipped && !!observed?.partial
+  const spanStart = clipped ? new Date(payload.tenure.first_heard_at) : new Date(payload.window?.start)
+  const spanEnd = observed?.end ? new Date(observed.end) : new Date(payload.window?.end)
+  const spanHours = (clipped || partial) ? Math.max(0, (spanEnd - spanStart) / 3600000) : null
+  const span = clipped
+    ? payload.cadence === 'daily'
+      ? `across ${fig(spanHours, 1)} hours of listening`
+      : `across the ${Math.max(1, Math.round(spanHours / 24))} days since I began listening`
+    : partial
+      ? payload.cadence === 'daily'
+        ? `across the first ${fig(spanHours, 1)} hours of the day`
+        : payload.cadence === 'seasonal'
+          ? `across the first ${Math.max(1, Math.round(spanHours / 24))} days of the season`
+          : `across the first ${Math.max(1, Math.round(spanHours / 24))} days of the year`
+      : payload.cadence === 'daily' ? 'across the day' : payload.cadence === 'seasonal' ? 'across this season' : 'over the year'
   switch (payload.cadence) {
     case 'seasonal': {
       const season = payload.phenology?.season || ''
       const year = payload.phenology?.season_year || ''
-      return { record: `my record of ${season} ${year}`.trim(), span: 'across this season', noticed: 'THIS SEASON', spanNoun: 'a season', newPhrase: 'new to my records, never detected here before this season' }
+      return { record: `my record of ${season} ${year}`.trim(), span, noticed: 'THIS SEASON', spanNoun: 'a season', newPhrase: firstDay ? null : 'new to my records, never detected here before this season' }
     }
     case 'annual':
-      return { record: `my record of the year ${payload.phenology?.year || period}`, span: 'over the year', noticed: 'THIS YEAR', spanNoun: 'a year', newPhrase: 'new to my records, never detected here before this year' }
+      return { record: `my record of the year ${payload.phenology?.year || period}`.trim(), span, noticed: 'THIS YEAR', spanNoun: 'a year', newPhrase: firstDay ? null : 'new to my records, never detected here before this year' }
     default:
-      return { record: `my record of ${prettyDate(period)}`, span: 'across the day', noticed: 'TODAY', spanNoun: 'a single day', newPhrase: 'new to my records, never detected here before today' }
+      return { record: `my record of ${prettyDate(period)}`, span, noticed: 'TODAY', spanNoun: 'a single day', newPhrase: firstDay ? null : 'new to my records, never detected here before today' }
   }
 }
 
@@ -100,6 +131,7 @@ export function groundedReportFacts(payload) {
   const snd = payload.soundscape || {}
   const phen = payload.phenology || {}
   const f = cadenceFraming(payload)
+  const tz = payload.time_zone || null
 
   // Identity / place framing (no ecological claim beyond what the node record holds).
   const place = payload.node?.place_label || payload.node?.name
@@ -129,17 +161,17 @@ export function groundedReportFacts(payload) {
   // New-for-this-node (first-ever here). A distinctive phenology fact — carried explicitly.
   if (Array.isArray(payload.new_species) && payload.new_species.length) {
     const names = payload.new_species.map((s) => s.species_name).join(', ')
-    lines.push(`${f.newPhrase}: ${names}`)
+    if (f.newPhrase) lines.push(`${f.newPhrase}: ${names}`)
   }
 
   // ── Seasonal phenology: arrivals / departures / week-over-week ──────────────
   if (payload.cadence === 'seasonal') {
     if (Array.isArray(phen.arrivals) && phen.arrivals.length) {
-      const a = phen.arrivals.map((s) => `${s.species_name} (first on ${prettyDayMonth(s.first_seen)})`).join(', ')
+      const a = phen.arrivals.map((s) => `${s.species_name} (first on ${prettyDayMonth(s.first_seen, tz)})`).join(', ')
       lines.push(`the earliest voices of the season: ${a}`)
     }
     if (Array.isArray(phen.departures) && phen.departures.length) {
-      const dparts = phen.departures.map((s) => `${s.species_name} (last on ${prettyDayMonth(s.last_seen)})`).join(', ')
+      const dparts = phen.departures.map((s) => `${s.species_name} (last on ${prettyDayMonth(s.last_seen, tz)})`).join(', ')
       lines.push(`the ones I last heard earliest in the season: ${dparts}`)
     }
     if (Array.isArray(phen.weekly) && phen.weekly.length >= 2) {
