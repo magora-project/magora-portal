@@ -127,7 +127,8 @@ Noah approved this PR's scope on 2026-11-21 (D-5). On 2026-11-21 there are 299 s
   - `token reads the computed custom property`: stub `globalThis.document` and `globalThis.getComputedStyle` to return `' #0d2818 '` for `--c-forest-bg`, and assert `token('c-forest-bg') === '#0d2818'`.
   - `token throws on an unknown name`: the stub returns `''`, and `assert.throws(() => token('nope'), /unknown token --nope/)`.
   - `every referenced token is defined in :root`: scan `src/**/*.{js,jsx,css}` for `var\(--([a-z0-9-]+)` and `token\('([a-z0-9-]+)'\)`. Each name must be in `definedTokens(tokens.css, ':root')`. This test stays and guards Tasks 3–5.
-  - `token() is never called at module scope`: no line matching `^(export )?const .*token\(` in `src/`.
+  - `token() is never called at module scope`: no line matching `^(export )?const .*token\(` in `src/**/*.{js,jsx}`.
+  - Both source scans read only `.js`, `.jsx` and `.css`. Test files (`*.test.mjs`) are outside them, so the stubbed `'nope'` name and the stub values above never count. The same holds for Task 6's guard, whose scope the spec fixes at `.js`, `.jsx` and `.css` (§6). That is why tests may hold literal hex values.
 - [ ] **Step 2: Run it.** Expected: FAIL, module not found.
 - [ ] **Step 3: Implement** `tokens.js`, and `tokens.css` with a header comment that states the naming rule. Leave the property set empty except the three font tokens. Tasks 3–5 add properties as they replace literals.
 - [ ] **Step 4: Run it.** Expected: PASS.
@@ -158,6 +159,7 @@ Noah approved this PR's scope on 2026-11-21 (D-5). On 2026-11-21 there are 299 s
 - modify: `src/components/EcologicalCommons.jsx`
 - modify: `src/components/EcologicalPipeline.jsx`
 - modify: `src/components/HandlePrompt.jsx`
+- modify: `src/components/ListenButton.jsx` (font only: `heroStyle` names Big Shoulders Display)
 - modify: `src/components/ListenModal.jsx`
 - modify: `src/components/MobileDetectionCard.jsx`
 - modify: `src/components/Navbar.jsx`
@@ -170,7 +172,8 @@ Noah approved this PR's scope on 2026-11-21 (D-5). On 2026-11-21 there are 299 s
 **Interfaces:**
 - Consumes: `token()` from Task 2, and Task 3's properties (reuse a property only when the role is the same).
 
-- [ ] **Step 1: Replace** each literal. In a style object or a CSS string (inline `style`, template strings that build `border` or `linear-gradient` values), use `'var(--c-…)'`. Palette objects such as `C` hold `var()` strings. A value that reaches a non-CSS sink (Leaflet `pathOptions`, canvas, an SVG attribute set by a library) uses `token('c-…')` inside the render function. Inline `fontFamily` values naming the three families become `'var(--font-…)'`. ShareSheet is captured by `html2canvas`, which reads computed styles, so `var()` is correct there. The `share-sheet` state proves it.
+- [ ] **Step 1: Replace** each literal. In a style object or a CSS string (inline `style`, template strings that build `border` or `linear-gradient` values), use `'var(--c-…)'`. Palette objects such as `C` hold `var()` strings. A value that reaches a non-CSS sink (Leaflet `pathOptions`, canvas, a library option such as `html2canvas`'s `backgroundColor`, or any SVG presentation attribute such as `stroke` or `fill`) uses `token('c-…')` inside the render function. Inline `fontFamily` values naming the three families become `'var(--font-…)'`. ShareSheet's card styles may use `var()`, because `html2canvas` reads computed styles; the `share-sheet` state proves it. Its export call is different: the `backgroundColor: PAPER` option passed to `html2canvas` reads `token('c-paper-bg')` inside the click handler, and `Waveform`'s `color` default (an SVG attribute) reads `token()` in its body. No screenshot covers the export, so verify it by hand: on `vite preview` with the fixture build, export a share image under each brand and check its background matches the card.
+- [ ] **Step 1b: Fonts in every file that names a family.** The files that name Big Shoulders Display, Jost or DM Sans are `git grep -lE "Big Shoulders|'Jost'|DM Sans" -- src`. On 2026-11-21 that was 15 files, `ListenButton.jsx` among them. After Tasks 3–5, the same command must list none.
 - [ ] **Step 2: Run** `node src/lib/tokens.test.mjs` and `npm run lint:ratchet`. Expected: both PASS. Run `git grep -nE '#[0-9a-fA-F]{6}' -- src/components`. Expected: no output.
 - [ ] **Step 3: Compare.** Run `current-brand check t4`. Expected: 32 `ok`.
 - [ ] **Step 4: Commit** (`refactor(tokens): components read colour and font tokens`).
@@ -245,7 +248,7 @@ Noah approved this PR's scope on 2026-11-21 (D-5). On 2026-11-21 there are 299 s
 
 - [ ] **Step 1: Write the failing tests:**
   - `v4 sets every :root colour token`: `definedTokens(css, ':root')` minus `definedTokens(css, ':root[data-brand="v4"]')` is empty.
-  - `v4 values come from the v4 palette`: every value in the v4 block is in `V4_PALETTE`. That is the DESIGN.md light values (`#494E3A #2E3226 #F3EFE4 #FFFDF7 #111111 #E0502A #D1D1A7 #3F7350 #24503A #000000 #D9CFB6 #C0392B #838F63 #4E1623`), plus the Rationale's named inks (`#55594A #C9CBA6`), the mandala inks above, and `#FFFFFF`. Compare case-insensitively.
+  - `v4 colour values come from the v4 palette`: every `--c-*` and `--mk*` value in the v4 block is in `V4_PALETTE`. The `--font-*` declarations are excluded; a separate assertion checks them against the three values in Interfaces. That is the DESIGN.md light values (`#494E3A #2E3226 #F3EFE4 #FFFDF7 #111111 #E0502A #D1D1A7 #3F7350 #24503A #000000 #D9CFB6 #C0392B #838F63 #4E1623`), plus the Rationale's named inks (`#55594A #C9CBA6`), the mandala inks above, and `#FFFFFF`. Compare case-insensitively.
   - `no dark mode`: `tokens.css` has no `prefers-color-scheme`.
 - [ ] **Step 2: Run it.** Expected: FAIL, because the v4 block is missing.
 - [ ] **Step 3: Implement** the block. The header comment gains a table with one row per current token: the token, its current value, the DESIGN.md role it maps to, and its v4 value. Map by what the element is on the mockups (https://claude.ai/artifact/3DETVQXnHNokvDXitVDrqj). The forest chrome maps to `secondary`, the reading grounds to `background` or `surface`, the accent greens to `brand` or `live`, links to `link`, alerts to `error`, and the "now" dot only to `accent`.
@@ -381,7 +384,7 @@ Noah approved this PR's scope on 2026-11-21 (D-5). On 2026-11-21 there are 299 s
 
 ## Later
 
-### Task 15 (operator, when found): Swap in Noah's vector master
+### Task 15 (operator): Swap in Noah's vector master, when found
 
 The vector master was not found on 2026-11-21. The org's three repos (`magora-portal`, `magora-android-node` and `magora-acoustic-biodiversity`) hold none, and themagoraproject.com (Squarespace) serves only the PNG lockups `magora-lockup-horizontal-green.png` and `magora-lockup-stacked-green.png`.
 
