@@ -391,7 +391,7 @@ export async function snapshotSchema(client) {
     put(`extension:${r.extname}`, r.schema)
     put(`extension-version:${r.extname}`, r.extversion)
   }
-  // storage.buckets is data, not catalog: it needs SELECT (Task 15b's grants). Unreadable is
+  // storage.buckets is data, not catalog: it needs SELECT (Task 27's grants). Unreadable is
   // recorded, not fatal, and is allowlisted only with David's agreement.
   try {
     for (const r of await rows(Q.buckets)) {

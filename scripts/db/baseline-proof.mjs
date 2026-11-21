@@ -5,7 +5,7 @@
 //   node scripts/db/baseline-proof.mjs --prod-snapshot FILE [--through STEM] [--allowlist FILE]
 //
 // --through names the last migration production had when FILE was taken (default: LAST_ON_PRODUCTION).
-// Files after it, such as Task 15b's grants migration until production has it, are left out, so the
+// Files after it, such as Task 27's grants migration until production has it, are left out, so the
 // replay matches the snapshot. Prints the comparison and exits 0 (no difference outside the
 // allowlist), 1 (differences) or 2 (could not run).
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'

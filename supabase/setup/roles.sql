@@ -6,7 +6,7 @@
 --
 -- This file grants NOTHING on any object, so applying it changes no ACL and the baseline proof
 -- (Task 12) still matches a production snapshot taken before the role existed. Read access arrives
--- in Task 15b's grants migration. Privileges held only through PUBLIC cannot be revoked from one
+-- in Task 27's grants migration. Privileges held only through PUBLIC cannot be revoked from one
 -- role; the privilege check (Task 11) inventories them.
 do $$
 begin
