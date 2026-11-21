@@ -279,7 +279,7 @@ Implements Decision R2, option 1.
 - [ ] **Step 7:** Run `node scripts/secrets/inventory-check.mjs` with `op` signed in and the four CLIs logged in. Expected: `0 problems`. This is criterion 4's first half. It is re-run after Tasks 20, 21, 23 and 25, because each adds names.
 - [ ] **Step 8: Commit** (PR A).
 
-### Task 7 (operator, private): Close the write paths behind criterion 8
+### Task 7 (operator): Close the write paths behind criterion 8 (private)
 
 - [ ] **Step 1 (David's approval):** file a private security advisory per `SECURITY.md` that lists every production write path reachable without a production credential, as of 2026-10-28. The handoff note for this session names where to start. Nothing about the paths goes in this repo's public files.
 - [ ] **Step 2:** fix each path in the advisory's temporary private fork, with a test, reviewed per AGENTS.md (`subtle-correctness`).
@@ -483,7 +483,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 
 ## Phase 3: Rollout step 3 (the staging project and its first refresh)
 
-### Task 13 (operator, with scripts): Setup entry point; staging and production setup
+### Task 13 (operator): Setup entry point; staging and production setup (with scripts)
 
 **Files:**
 - Create:
