@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "2a0f026859f881be3c76c9d839af092628a4390d",
+    "path": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "plan--d207c95be0b1--1#F1",
+      "severity": "P2",
+      "summary": "Task 13's manual check launches serve without --signed-in, so clicking Listen opens AuthModal rather than the promised ListenModal; seed the signed-in fixture for this check.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 376,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--2a0f026859f8--1"
+      }
+    }
+  ],
+  "supersedes": "plan--d207c95be0b1--1",
+  "rev": "576897580f9e8c045e76bb50f24d60deda42ba88",
+  "tasks": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6",
+    "T7",
+    "T8",
+    "T9",
+    "T10",
+    "T11",
+    "T12",
+    "T13",
+    "T14",
+    "T15"
+  ],
+  "createdAt": "2026-11-21T21:25:54.145Z"
+}
