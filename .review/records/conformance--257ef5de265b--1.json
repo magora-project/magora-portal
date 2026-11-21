@@ -1,0 +1,174 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "257ef5de265b46176d90c5d7d1a9b1c6818d6fd4",
+    "mergeBase": "576897580f9e8c045e76bb50f24d60deda42ba88",
+    "head": "31687302a6a87a278033e941ad602e809cf7d5ac"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "severity": "P1",
+      "id": "D1",
+      "summary": "plan: T8 line 294: untyped Files line \"- Create: `scripts/db/pg.mjs`, `scripts/db/apply-migrations.mjs`, `scripts/db/apply-migrations.test.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "severity": "P1",
+      "id": "D2",
+      "summary": "plan: T8 line 295: untyped Files line \"- Modify: `package.json` (devDependencies `pg@^8.23`, `pg-copy-streams@^7.0`; script `\\\"test:db\\\": \\\"node scripts/run-tests.mjs --pattern itest\\\"`, or a small `scripts/db/run-itests.mjs` if `run-tests.mjs` cannot take a pattern without changing its control-file contract. Prefer the separate runner.)\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "severity": "P1",
+      "id": "D3",
+      "summary": "plan: T9 line 312: untyped Files line \"- Create: `supabase/setup/roles.sql`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "severity": "P1",
+      "id": "D4",
+      "summary": "plan: T10 line 328: untyped Files line \"- Create: `scripts/db/schema-snapshot.mjs`, `scripts/db/schema-snapshot.test.mjs`, `scripts/db/schema-snapshot.itest.mjs`, `supabase/migrations/checks/schema-allowlist.txt`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "severity": "P1",
+      "id": "D5",
+      "summary": "plan: T11 line 382: untyped Files line \"- Create: `scripts/db/privilege-check.mjs`, `scripts/db/privilege-check.test.mjs`, `scripts/db/privilege-check.itest.mjs`, `supabase/migrations/checks/refresh-execute-allowlist.txt` (Step 3)\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "severity": "P1",
+      "id": "D6",
+      "summary": "plan: T12 line 424: untyped Files line \"- Create:\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "severity": "P1",
+      "id": "D7",
+      "summary": "plan: T12 line 425: untyped Files line \"- `supabase/migrations/20260625_baseline_prehistory.sql`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "severity": "P1",
+      "id": "D8",
+      "summary": "plan: T12 line 426: untyped Files line \"- `supabase/migrations/rollbacks/20260625_baseline_prehistory.rollback.sql`: a comment-only no-op, which says rolling back the baseline means dropping the database (§5.2)\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "severity": "P1",
+      "id": "D9",
+      "summary": "plan: T12 line 427: untyped Files line \"- `scripts/db/baseline-proof.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "severity": "P1",
+      "id": "D10",
+      "summary": "plan: T12 line 428: untyped Files line \"- `scripts/db/baseline-secrets.test.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "source": "postcondition"
+    },
+    {
+      "id": "D11",
+      "severity": "P1",
+      "summary": "D11: T10 requires the allowlist to reject public objects, but schemaOfKey returns null for schema:public, allowing public-schema ACL and ownership differences to be suppressed; no test covers this key.",
+      "file": "scripts/db/schema-snapshot.mjs",
+      "line": 144
+    },
+    {
+      "id": "D12",
+      "severity": "P1",
+      "summary": "D12: T10 promises coverage of every public table and function, but the catalog queries exclude extension members, so changes to public PostGIS function permissions or definitions escape comparison because extension keys record only installation metadata.",
+      "file": "scripts/db/schema-snapshot.mjs",
+      "line": 211
+    },
+    {
+      "id": "D13",
+      "severity": "P3",
+      "summary": "D13: T12 specifies exactly 32 migrations through 20260727, but the proof defaults to 33 through 20261106 and adds an overridable cutoff, an explicitly documented adjustment to match newer production.",
+      "file": "scripts/db/baseline-proof.mjs",
+      "line": 26
+    },
+    {
+      "id": "D14",
+      "severity": "P3",
+      "summary": "D14: T10 specifies pg_get_functiondef coverage, but the diff normalizes CRLF and body-edge whitespace, intentionally hiding CRLF changes inside string literals as acknowledged and approved in the commit message.",
+      "file": "scripts/db/schema-snapshot.mjs",
+      "line": 105
+    },
+    {
+      "id": "D15",
+      "severity": "P3",
+      "summary": "D15: T8 specifies wrapping each file in its own transaction, but files matching transaction-control text run without the wrapper, a documented accommodation for existing migrations.",
+      "file": "scripts/db/apply-migrations.mjs",
+      "line": 39
+    },
+    {
+      "id": "D16",
+      "severity": "P3",
+      "summary": "D16: T12 specifies a comment-only rollback, but the rollback executes SELECT 1, preserving its no-op effect while departing from the requested form.",
+      "file": "supabase/migrations/rollbacks/20260625_baseline_prehistory.rollback.sql",
+      "line": 7
+    },
+    {
+      "id": "D17",
+      "severity": "P3",
+      "summary": "D17: T10 specifies sabotaging default privileges with a grant to anon, but the integration test grants to itest_reader instead, testing the same catalog property with a different grantee.",
+      "file": "scripts/db/schema-snapshot.itest.mjs",
+      "line": 63
+    }
+  ],
+  "supersedes": null,
+  "conformance": {
+    "tasks": [
+      "T8",
+      "T9",
+      "T10",
+      "T11",
+      "T12"
+    ],
+    "deviations": [
+      "D1",
+      "D2",
+      "D3",
+      "D4",
+      "D5",
+      "D6",
+      "D7",
+      "D8",
+      "D9",
+      "D10",
+      "D11",
+      "D12",
+      "D13",
+      "D14",
+      "D15",
+      "D16",
+      "D17"
+    ],
+    "commands": [],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "blob": "04d7d5484e4951ee4941086cd1654d350e72cffc"
+    }
+  },
+  "createdAt": "2026-11-21T21:33:40.350Z"
+}
