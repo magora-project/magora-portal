@@ -37,3 +37,6 @@ scripts/__pycache__/
 
 # Machine-local review-evidence settings (npm run review -- init-local); the records beside it are committed
 .review/local.json
+
+# Screenshot-comparison harness output (scripts/visual/compare.mjs)
+.visual/
