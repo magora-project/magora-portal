@@ -1,7 +1,7 @@
 // Tests for scripts/db/schema-snapshot.mjs (pure functions; no database).
 // Run: node scripts/db/schema-snapshot.test.mjs
 import {
-  canonical, parseAclItem, normalizeAcl, normalizeViewOptions, diffSnapshots, schemaOfKey,
+  canonical, parseAclItem, normalizeAcl, normalizeViewOptions, normalizeFunctionDef, normalizeSnapshot, diffSnapshots, schemaOfKey,
   parseAllowlist, applyAllowlist, formatDiff,
 } from './schema-snapshot.mjs'
 
@@ -85,6 +85,35 @@ ok('a non-key line is an error', parseAllowlist('just words  # x\n').errors.leng
   ok('public definitions printed', text.includes('A-DEF') && text.includes('B-DEF'))
   ok('storage definitions printed', text.includes('S-DEF'))
   ok('other definitions not printed', !text.includes('V1') && !text.includes('C-DEF') && text.includes('extension-version:pg_net'))
+}
+
+// Function definitions: CRLF and the blank space just inside the body's dollar quotes do not count
+// (production holds bodies saved with CRLF; David, 2026-11-21). Anything else still differs.
+{
+  const head = 'CREATE OR REPLACE FUNCTION public.f(n uuid)\n RETURNS integer\n LANGUAGE sql\n'
+  const lf = `${head}AS $function$\n  select 1;\n$function$\n`
+  ok('CRLF equals LF', normalizeFunctionDef(lf.replace(/\n/g, '\r\n')) === normalizeFunctionDef(lf))
+  ok('body-edge blank space does not count', normalizeFunctionDef(`${head}AS $function$ select 1; $function$\n`) === normalizeFunctionDef(lf))
+  ok('a changed statement still differs', normalizeFunctionDef(`${head}AS $function$\n  select 2;\n$function$\n`) !== normalizeFunctionDef(lf))
+  ok('blank space inside the body still counts', normalizeFunctionDef(`${head}AS $function$\n  select  1;\n$function$\n`) !== normalizeFunctionDef(lf))
+  ok('a changed header still differs', normalizeFunctionDef(lf.replace('LANGUAGE sql', 'LANGUAGE plpgsql')) !== normalizeFunctionDef(lf))
+  ok('a literal is untouched apart from CRLF', normalizeFunctionDef(`${head}AS $function$ select ' x '; $function$\n`).includes("select ' x ';"))
+  const tagged = `${head}AS $function1$\n  select '$function$';\n$function1$\n`
+  ok('another dollar tag is trimmed at its own delimiters', normalizeFunctionDef(tagged).includes("AS $function1$select '$function$';$function1$"))
+  const atomic = 'CREATE OR REPLACE FUNCTION public.g()\r\n RETURNS integer\r\n LANGUAGE sql\r\nBEGIN ATOMIC\r\n SELECT 1;\r\nEND\r\n'
+  ok('a body with no dollar quotes only loses CR', normalizeFunctionDef(atomic) === atomic.replace(/\r\n/g, '\n'))
+  ok('null (an aggregate) stays null', normalizeFunctionDef(null) === null)
+}
+{
+  // A snapshot file written before the normalization compares equal to a fresh one, and nothing
+  // else in it changes.
+  const fn = (def) => canonical({ acl: [], def, kind: 'f', owner: 'postgres' })
+  const old = { 'function:public.f()': fn('X\r\nAS $function$ select 1; $function$\r\n'), 'table:public.t': 'T\r\n' }
+  const fresh = { 'function:public.f()': fn('X\nAS $function$select 1;$function$\n'), 'table:public.t': 'T\r\n' }
+  ok('normalizeSnapshot: old file equals fresh', eq(normalizeSnapshot(old), normalizeSnapshot(fresh)))
+  ok('normalizeSnapshot: non-function values untouched', normalizeSnapshot(old)['table:public.t'] === 'T\r\n')
+  ok('normalizeSnapshot: idempotent', eq(normalizeSnapshot(normalizeSnapshot(old)), normalizeSnapshot(old)))
+  ok('normalizeSnapshot: a real body change survives', !eq(normalizeSnapshot(old), normalizeSnapshot({ ...fresh, 'function:public.f()': fn('X\nAS $function$select 2;$function$\n') })))
 }
 
 console.log(`schema-snapshot: ${pass} passed, ${fail} failed`)

@@ -99,6 +99,23 @@ export function normalizeViewOptions(reloptions) {
   return out
 }
 
+// A function's pg_get_functiondef text, with two differences that change nothing removed (David,
+// 2026-11-21, Spec 2 Task 12): CRLF line endings become LF, and the blank space just inside the
+// body's dollar quotes is trimmed. Production holds bodies saved with CRLF and some with the body on
+// one line, while the repo's migrations replay them with LF. Blank space anywhere else in the body
+// still counts. Accepted cost: a change that only adds or removes a CR inside a string literal is
+// not seen.
+export function normalizeFunctionDef(def) {
+  if (def == null) return def
+  const d = def.replace(/\r\n/g, '\n')
+  const m = /^AS (\$[A-Za-z0-9_]*\$)/m.exec(d)
+  if (!m) return d
+  const open = m.index + m[0].length
+  const close = d.lastIndexOf(m[1])
+  if (close <= open) return d
+  return d.slice(0, open) + d.slice(open, close).trim() + d.slice(close)
+}
+
 // Table reloptions (fillfactor, autovacuum_*): sorted, verbatim.
 export const normalizeTableOptions = (reloptions) => [...(reloptions ?? [])].sort()
 
@@ -344,7 +361,7 @@ export async function snapshotSchema(client) {
   }
   for (const r of await rows(Q.functions)) {
     put(`function:public.${r.proname}(${r.args})`, {
-      kind: r.kind, def: r.def, owner: r.owner, acl: normalizeAcl(r.acl),
+      kind: r.kind, def: normalizeFunctionDef(r.def), owner: r.owner, acl: normalizeAcl(r.acl),
       security_definer: r.prosecdef, config: r.proconfig ? [...r.proconfig].sort() : null,
     })
   }
@@ -396,11 +413,24 @@ function arg(argv, name) {
   return argv[i + 1]
 }
 
+// Applies the comparison-time normalizations to a snapshot read from a file, so a snapshot written
+// before a normalization existed compares the same as a fresh one. Idempotent.
+export function normalizeSnapshot(snap) {
+  const out = {}
+  for (const [key, value] of Object.entries(snap)) {
+    if (key.startsWith('function:')) {
+      const v = JSON.parse(value)
+      out[key] = canonical({ ...v, def: normalizeFunctionDef(v.def) })
+    } else out[key] = value
+  }
+  return out
+}
+
 export function compareFiles(aPath, bPath, allowlistPath) {
   const { keys, errors } = parseAllowlist(readFileSync(allowlistPath, 'utf8'))
   if (errors.length) return { code: 2, text: `allowlist errors:\n  ${errors.join('\n  ')}` }
-  const a = JSON.parse(readFileSync(aPath, 'utf8'))
-  const b = JSON.parse(readFileSync(bPath, 'utf8'))
+  const a = normalizeSnapshot(JSON.parse(readFileSync(aPath, 'utf8')))
+  const b = normalizeSnapshot(JSON.parse(readFileSync(bPath, 'utf8')))
   const { outside, allowlisted, unused } = applyAllowlist(diffSnapshots(a, b), keys)
   const parts = []
   if (outside.length) parts.push(formatDiff(outside))
