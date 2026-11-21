@@ -135,11 +135,13 @@ export function diffSnapshots(a, b) {
 }
 
 // The schema a key's qualified name sits in: the part before the first '.', or null when the name
-// has no schema (extensions, publications, queues, buckets).
+// has no schema (extensions, publications, queues, buckets). A `schema:` key names its schema
+// itself, so `schema:public` is in public.
 export function schemaOfKey(key) {
   const colon = key.indexOf(':')
   if (colon < 0) return null
   const name = key.slice(colon + 1)
+  if (key.slice(0, colon) === 'schema') return name
   const dot = name.indexOf('.')
   return dot < 0 ? null : name.slice(0, dot)
 }

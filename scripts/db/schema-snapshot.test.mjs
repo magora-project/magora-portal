@@ -48,6 +48,13 @@ ok('schemaOfKey table', schemaOfKey('table:public.x') === 'public')
 ok('schemaOfKey function with dotted args', schemaOfKey('function:auth.uid()') === 'auth')
 ok('schemaOfKey extension -> null', schemaOfKey('extension:pgcrypto') === null)
 ok('schemaOfKey publication-table', schemaOfKey('publication-table:public.t@supabase_realtime') === 'public')
+// A schema key names its schema directly (conformance D11): schema:public is in public.
+ok('schemaOfKey schema:public -> public', schemaOfKey('schema:public') === 'public')
+ok('schemaOfKey schema:storage -> storage', schemaOfKey('schema:storage') === 'storage')
+{
+  const { keys, errors } = parseAllowlist('schema:public  # owner drift\n')
+  ok('allowlist refuses schema:public', keys.size === 0 && errors.length === 1 && /public/.test(errors[0]))
+}
 
 // Allowlist.
 {
