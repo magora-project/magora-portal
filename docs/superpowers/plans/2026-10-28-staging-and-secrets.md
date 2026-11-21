@@ -291,8 +291,13 @@ Implements Decision R2, option 1.
 ### Task 8: Connections and ordered apply
 
 **Files:**
-- Create: `scripts/db/pg.mjs`, `scripts/db/apply-migrations.mjs`, `scripts/db/apply-migrations.test.mjs`
-- Modify: `package.json` (devDependencies `pg@^8.23`, `pg-copy-streams@^7.0`; script `"test:db": "node scripts/run-tests.mjs --pattern itest"`, or a small `scripts/db/run-itests.mjs` if `run-tests.mjs` cannot take a pattern without changing its control-file contract. Prefer the separate runner.)
+- create: `scripts/db/pg.mjs`
+- create: `scripts/db/apply-migrations.mjs`
+- create: `scripts/db/apply-migrations.test.mjs`
+- create: `scripts/db/run-itests.mjs` (the separate itest runner, so `run-tests.mjs` keeps its control-file contract)
+- create: `scripts/db/local-stack.mjs` (the throwaway local stack the itests and Task 12's proof start)
+- modify: `package.json` (devDependencies `pg@^8.23`, `pg-copy-streams@^7.0`; script `"test:db": "node scripts/db/run-itests.mjs"`)
+- modify: `package-lock.json`
 
 **Interfaces:**
 - Produces:
@@ -309,7 +314,7 @@ Implements Decision R2, option 1.
 ### Task 9: The refresh login role
 
 **Files:**
-- Create: `supabase/setup/roles.sql`
+- create: `supabase/setup/roles.sql`
 
 **Interfaces:**
 - Produces: role `magora_refresh`, created by `postgres` as `LOGIN NOINHERIT BYPASSRLS` with no password. The password is set per database by an operator through `op run`, never in a file. The script is idempotent (`DO $$ … IF NOT EXISTS … $$`) and runs `ALTER ROLE magora_refresh SET default_transaction_read_only = on`.
@@ -325,7 +330,10 @@ Implements Decision R2, option 1.
 ### Task 10: Schema snapshot, diff, allowlist
 
 **Files:**
-- Create: `scripts/db/schema-snapshot.mjs`, `scripts/db/schema-snapshot.test.mjs`, `scripts/db/schema-snapshot.itest.mjs`, `supabase/migrations/checks/schema-allowlist.txt`
+- create: `scripts/db/schema-snapshot.mjs`
+- create: `scripts/db/schema-snapshot.test.mjs`
+- create: `scripts/db/schema-snapshot.itest.mjs`
+- create: `supabase/migrations/checks/schema-allowlist.txt` (its header; Task 12 adds the lines)
 
 The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on copied tables only) can take one. That is why the plan writes its own tool instead of using `pg_dump --schema-only`: `pg_dump` locks every table it dumps and so needs `SELECT` on each one.
 
@@ -379,7 +387,10 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 ### Task 11: Privilege check (criterion 7)
 
 **Files:**
-- Create: `scripts/db/privilege-check.mjs`, `scripts/db/privilege-check.test.mjs`, `scripts/db/privilege-check.itest.mjs`, `supabase/migrations/checks/refresh-execute-allowlist.txt` (Step 3)
+- create: `scripts/db/privilege-check.mjs`
+- create: `scripts/db/privilege-check.test.mjs`
+- create: `scripts/db/privilege-check.itest.mjs`
+- create: `supabase/migrations/checks/refresh-execute-allowlist.txt` (Step 3)
 
 **Interfaces:**
 - Produces:
@@ -421,19 +432,26 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 ### Task 12: The baseline and its proof
 
 **Files:**
-- Create:
-  - `supabase/migrations/20260625_baseline_prehistory.sql`
-  - `supabase/migrations/rollbacks/20260625_baseline_prehistory.rollback.sql`: a comment-only no-op, which says rolling back the baseline means dropping the database (§5.2)
-  - `scripts/db/baseline-proof.mjs`
-  - `scripts/db/baseline-secrets.test.mjs`
+- create: `supabase/migrations/20260625_baseline_prehistory.sql`
+- create: `supabase/migrations/rollbacks/20260625_baseline_prehistory.rollback.sql`: a comment-only no-op, which says rolling back the baseline means dropping the database (§5.2)
+- create: `scripts/db/baseline-proof.mjs`
+- create: `scripts/db/baseline-proof.test.mjs`
+- create: `scripts/db/baseline-secrets.test.mjs`
+- modify: `supabase/migrations/checks/schema-allowlist.txt` (the lines Step 4 needs, each with its reason)
+- modify: `scripts/db/schema-snapshot.mjs` (function-text normalization, Step 4)
+- modify: `scripts/db/schema-snapshot.test.mjs`
+- command: `node scripts/db/baseline-secrets.test.mjs`
+- command: `node scripts/db/baseline-proof.test.mjs`
+- command: `node scripts/db/schema-snapshot.test.mjs`
+- command: `npm run check:migrations`
 
 **Interfaces:**
 - Consumes: `listMigrationFiles` and `applyFiles` (Task 8), `snapshotSchema`/`compare` (Task 10), `supabase/setup/roles.sql` (Task 9).
-- Produces: `baseline-proof.mjs --prod-snapshot FILE`. It:
+- Produces: `baseline-proof.mjs --prod-snapshot FILE [--through STEM]`. It:
   1. makes a temp workspace with `supabase/config.toml` (copied) and an **empty** `supabase/migrations/`
   2. runs `supabase start` there
-  3. applies `roles.sql`, then the baseline, then **exactly the 32 files dated up to `20260727`**, via `applyFiles`, with `connect(…, {writeTarget: 'local'})`. Later migrations, the grants migration included, are excluded so the result matches the production snapshot taken in Step 1.
-  4. snapshots the result and compares it with `FILE` under the allowlist
+  3. applies `roles.sql`, then the baseline, then **every file up to and including the last migration production had when `FILE` was taken**, via `applyFiles`, with `connect(…, {writeTarget: 'local'})`. That is `--through`, defaulting to `LAST_ON_PRODUCTION` in the script: `20261106_claim_node_insights_skip_quarantined` for the 2026-11-21 snapshot, so 33 files, not the 32 up to `20260727` this plan first assumed (production had applied `20261106` by then). Later migrations, the grants migration included, are excluded so the result matches the production snapshot taken in Step 1. A `--through` naming no file is refused.
+  4. snapshots the result on a fresh connection (a file's session settings, such as the dump's empty `search_path`, must not shape how the catalog prints) and compares it with `FILE` under the allowlist
   5. runs `supabase stop --no-backup`
 
   It prints the comparison and exits with its code.
@@ -448,10 +466,11 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   It runs against the real file once it exists. Before that it fails on "file not found". Expected now: FAIL.
 - [ ] **Step 3: Derive the baseline** per §5.2.
   - Start from production's schema-only dump: David runs `pg_dump --schema-only --schema=public` through `op run` and hands over the path.
-  - Remove every object the 32 migrations create.
+  - Remove every object the later migrations create.
   - Restore what they alter or drop to its earlier form. For example, `public.users` and its policies under their 2026-07-25 names, which `20260725` alters and `20260726` drops. Read each migration for what it expects.
   - The baseline grants **nothing** to `magora_refresh`. It must reproduce production's history, and production's history has no such grants. The grants come in Task 15b's grants migration, which sorts after every existing file.
-- [ ] **Step 4: Run the proof** with `node scripts/db/baseline-proof.mjs --prod-snapshot <path>`. Iterate on the baseline until it exits 0. The only allowlist lines allowed are Supabase-owned objects, and the parser rejects `public` ones (criterion 9). Expected final output: `0 differences outside allowlist (N allowlisted)`.
+- [ ] **Step 4: Run the proof** with `node scripts/db/baseline-proof.mjs --prod-snapshot <path>`. Iterate on the baseline until it exits 0. The only allowlist lines allowed are Supabase-owned objects, and the parser rejects `public` ones (criterion 9).
+  - **Function text (David, 2026-11-21).** Production holds some function bodies saved with CRLF line endings, or with the body on one line, while the repo's migrations replay them with LF; three such functions are created by later migrations, so no baseline can match them. `normalizeFunctionDef` in `schema-snapshot.mjs` turns CRLF into LF and trims the blank space just inside the body's dollar quotes, in the snapshot and, through `normalizeSnapshot`, on both sides of `compareFiles`, so a snapshot taken before the change compares the same. Blank space anywhere else in a body still counts. Accepted cost: a change that only adds or removes a CR inside a string literal is not seen. Expected final output: `0 differences outside allowlist (N allowlisted)`.
 - [ ] **Step 5: Run the secrets test.** Expected: PASS.
 - [ ] **Step 6: Run `npm run check:migrations`.** Expected: PASS. The baseline has its rollback, and it is not added to the grandfather list.
 - [ ] **Step 7: Run the Task 7 ordering check** on the baseline text. Record "no unfixed advisory entry disclosed" privately in the advisory, not in the PR.

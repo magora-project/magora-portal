@@ -183,13 +183,14 @@ then. So the baseline is a **reconstructed pre-history schema**: the schema as i
 before `20260626`, including objects later migrations alter or drop (`public.users` and its
 policies) under their historical names. Staging is built from it (§5.3); Spec 2b will also use it.
 
-- **Derivation.** Start from production's schema-only dump, remove what the 32 migrations create,
-  and restore what they alter or drop to its earlier form, reading each migration to see what it
-  expects. Iterate until the proof below passes.
+- **Derivation.** Start from production's schema-only dump, remove what the later migrations
+  create, and restore what they alter or drop to its earlier form, reading each migration to see
+  what it expects. Iterate until the proof below passes.
 - **Proof.** On a fresh Supabase Postgres (the local `supabase start` stack, started from a
-  workspace whose migrations folder holds exactly the baseline and the 32 files, or a scratch
-  project; it supplies `auth`, `storage`, extensions and roles), with the roles of §5.10 created
-  first, apply the baseline then all 32 migrations in order. The resulting schema must equal
+  workspace with an empty migrations folder, or a scratch project; it supplies `auth`, `storage`,
+  extensions and roles), with the roles of §5.10 created first, apply the baseline then every
+  migration production has, in order (33 when the proof was first run on 2026-11-21; the 32
+  counted above plus `20261106`). The resulting schema must equal
   production's by the schema comparison the refresh uses (§5.3). Any difference that cannot be
   removed (for example, objects Supabase itself owns) goes in a reviewed allowlist file under
   `supabase/migrations/checks/`, each line with its reason. The allowlist may name no object in
