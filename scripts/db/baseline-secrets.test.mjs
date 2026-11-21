@@ -9,7 +9,22 @@ const BASELINE = new URL('../../supabase/migrations/20260625_baseline_prehistory
 
 // Single-quoted SQL string literals ('' is an escaped quote). Full-line comments are dropped first so
 // an apostrophe in prose cannot pair with a quote in code.
-const stringLiterals = (sql) => sql.split('\n').filter((l) => !/^\s*--/.test(l)).join('\n').match(/'(?:[^']|'')*'/g) ?? []
+const dropCommentLines = (sql) => sql.split('\n').filter((l) => !/^\s*--/.test(l)).join('\n')
+const quotedLiterals = (sql) => dropCommentLines(sql).match(/'(?:[^']|'')*'/g) ?? []
+// Dollar-quoted strings ($$...$$, $tag$...$tag$). One that follows AS or DO is a function or DO body:
+// code, not a value, so it is not itself a literal, but the literals inside it are, at any depth.
+const DOLLAR = /\$([A-Za-z_][A-Za-z0-9_]*)?\$([\s\S]*?)\$\1\$/g
+const dollarLiterals = (sql) => {
+  const out = []
+  const text = dropCommentLines(sql)
+  for (const m of text.matchAll(DOLLAR)) {
+    const before = text.slice(0, m.index).trimEnd()
+    if (/\b(as|do)$/i.test(before)) out.push(...dollarLiterals(m[2]))
+    else out.push(m[0])
+  }
+  return out
+}
+const stringLiterals = (sql) => [...quotedLiterals(sql), ...dollarLiterals(sql)]
 // A URL with a scheme, or a bare *.supabase.co / *.supabase.com host.
 const URLISH = /[a-z][a-z0-9+.-]*:\/\/[^\s'"()]+|[a-z0-9.-]+\.supabase\.com?\b[^\s'"()]*/gi
 
@@ -37,6 +52,10 @@ flags('Slack bot token', "-- xoxb-123", 'xoxb-')
 flags('Slack webhook', "select 'https://hooks.slack.com/services/T/B/x'", 'hooks.slack.com')
 flags('service_role in a literal', "select auth.role() = 'service_role'", 'service_role inside a string literal')
 flags('service_role in a literal inside a body', "as $$ begin if auth.role() = 'service_role' then null; end if; end $$", 'service_role inside a string literal')
+flags('service_role in a dollar-quoted literal', 'select $$service_role$$', 'service_role inside a string literal')
+flags('service_role in a tagged dollar-quoted literal', 'select auth.role() = $q$service_role$q$', 'service_role inside a string literal')
+flags('service_role in a dollar-quoted literal inside a body', 'create function f() returns bool language plpgsql as $fn$ begin return auth.role() = $$service_role$$; end $fn$', 'service_role inside a string literal')
+flags('service_role in a dollar-quoted literal inside a DO block', 'do $$ begin perform set_config($c$role$c$, $v$service_role$v$, true); end $$', 'service_role inside a string literal')
 flags('production API URL', `select 'https://${PRODUCTION_REF}.supabase.co/rest/v1'`, 'a production ref inside a URL')
 flags('production pooler URL', `-- postgresql://postgres.${PRODUCTION_REF}@aws-0-us.pooler.supabase.com:5432/postgres`, 'a production ref inside a URL')
 flags('staging bare host', `select '${STAGING_REF}.supabase.co'`, 'a staging ref inside a URL')
@@ -44,6 +63,8 @@ flags('staging bare host', `select '${STAGING_REF}.supabase.co'`, 'a staging ref
 // And not on the things the baseline legitimately holds.
 ok('TO service_role (a role, not a literal) is clean', findSecrets('create policy p on public.t to service_role using (true);').length === 0)
 ok('GRANT ... TO service_role is clean', findSecrets('grant all on table public.t to service_role;').length === 0)
+ok('a function body that grants to service_role (a role, not a literal) is clean', findSecrets('create function f() returns void language plpgsql as $$ begin grant select on public.t to service_role; end $$;').length === 0)
+ok('a DO body naming service_role as a role is clean', findSecrets('do $$ begin grant usage on schema s to service_role; end $$;').length === 0)
 ok('a short eyJ is clean', findSecrets("select 'eyJabc'").length === 0)
 ok('an apostrophe in a comment does not pair with code', findSecrets("-- elevation_m's unit\ncreate policy p on t to service_role using (true);\nselect 'x';").length === 0)
 ok('a bare ref outside a URL is clean', findSecrets(`-- project ${PRODUCTION_REF}`).length === 0)
