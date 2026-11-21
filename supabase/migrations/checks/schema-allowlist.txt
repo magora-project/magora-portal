@@ -1,0 +1,15 @@
+# Schema-comparison allowlist (Spec 2 spec §5.2, §5.3). One snapshot key per line, then "# reason".
+# May name no object in public (criterion 9); the parser refuses one.
+
+# Supabase Realtime's own publication for realtime.messages, and its daily partitions. Supabase
+# creates and rotates these on hosted projects; a local `supabase start` stack has neither. They are
+# platform objects outside `public` that no migration here touches. The partition names carry the
+# date, so these lines match the production snapshot of 2026-11-21 that the committed proof used.
+publication:supabase_realtime_messages_publication  # Supabase Realtime platform publication; absent on local stacks
+publication-table:realtime.messages_2026_11_12@supabase_realtime_messages_publication  # Realtime daily partition (Supabase-managed)
+publication-table:realtime.messages_2026_11_13@supabase_realtime_messages_publication  # Realtime daily partition (Supabase-managed)
+publication-table:realtime.messages_2026_11_14@supabase_realtime_messages_publication  # Realtime daily partition (Supabase-managed)
+publication-table:realtime.messages_2026_11_15@supabase_realtime_messages_publication  # Realtime daily partition (Supabase-managed)
+publication-table:realtime.messages_2026_11_16@supabase_realtime_messages_publication  # Realtime daily partition (Supabase-managed)
+publication-table:realtime.messages_2026_11_17@supabase_realtime_messages_publication  # Realtime daily partition (Supabase-managed)
+publication-table:realtime.messages_2026_11_18@supabase_realtime_messages_publication  # Realtime daily partition (Supabase-managed)
