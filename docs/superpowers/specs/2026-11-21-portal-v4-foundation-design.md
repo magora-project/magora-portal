@@ -41,7 +41,8 @@ from Noah's ongoing work. So v4 is built on `main`, behind an opt-in switch (dec
 - **D-2 Full mockup redesign.** The switch selects whole page versions, not just a skin.
 - **D-3 Launch in two steps.** One PR flips the default to v4. A later PR deletes the old pages, the
   old tokens, the switch, and the old icons and manifest.
-- **D-4 The manifest, icons, `theme-color` and service worker change only at launch.** A cookie cannot
+- **D-4 The manifest, icons, `theme-color` and service worker change only at launch.** The one exception
+  is the v4 font precache exclusion (§4.4). A cookie cannot
   vary a manifest per person, because the install fetches it once. The new app icon (A: mandala on cream)
   is previewed in the mockups until then.
 - **D-5 Noah's agreement.** Noah agrees to §4.2 (tokenising his 26 files) before that PR is opened.
@@ -64,9 +65,11 @@ from Noah's ongoing work. So v4 is built on `main`, behind an opt-in switch (dec
 
 - `readBrand({ search, cookie }) -> 'current' | 'v4'`. A `brand` query parameter of `v4` or `current`
   wins over the cookie. Any other value is ignored. With neither, the result is `'current'`.
-- `applyBrand(brand)` writes the cookie `magora_brand=<brand>` (path `/`, one year, `SameSite=Lax`) and
-  sets `document.documentElement.dataset.brand`. It also removes the `brand` parameter from the URL with
-  `history.replaceState`, so a shared link does not opt in its recipient.
+- `applyBrand(brand, { explicit })` sets `document.documentElement.dataset.brand`. Only an explicit choice
+  (a valid `brand` parameter) writes the cookie `magora_brand=<brand>` (path `/`, one year,
+  `SameSite=Lax`). The default is never persisted, so a visitor who never opted in holds no cookie and
+  follows whatever the default becomes at launch. An explicit choice also removes the `brand` parameter
+  from the URL with `history.replaceState`, so a shared link does not opt in its recipient.
 - `main.jsx` calls both once, before the first render. The brand does not change during a session
   without a reload.
 - A `BrandContext` exposes the value to components. It is read-only.
@@ -91,8 +94,12 @@ from Noah's ongoing work. So v4 is built on `main`, behind an opt-in switch (dec
 
 ### 4.4 Fonts and logo (PR 2)
 
-- Prodiga is loaded by an `@font-face` scoped by use: it is referenced only from v4 rules, so a
-  current-brand visitor never downloads it. Epilogue is loaded the same way.
+- Prodiga is loaded by an `@font-face` scoped by use: it is referenced only from v4 rules. Epilogue is
+  loaded the same way. Both files live under `public/fonts/v4/`.
+- The PWA precaches every built `.woff2` (`globPatterns` in `vite.config.js`), which would download the
+  v4 fonts for every visitor. So PR 2 adds `**/fonts/v4/**` to the precache `globIgnores`. That is the only
+  service-worker change before launch (D-4), and it means a current-brand visitor never downloads the v4
+  fonts. The launch PR removes the exclusion.
 - The current Google Fonts `<link>` in `index.html` is unchanged.
 - The mandala is a React SVG component, ported from `design/brand/mandala.py`. Noah's vector master,
   once located, replaces the redraw. The lockup sets MAGORA in Prodiga and PROJECT in Epilogue, as in the
@@ -125,7 +132,8 @@ A small fixed chip, "v4 preview · switch back", renders only when the brand is 
 ## 6. Testing
 
 - **`brand.js` unit tests** (`src/lib/brand.test.mjs`): parameter over cookie; an invalid parameter is
-  ignored; the default is `current`; `applyBrand` writes the cookie and strips the parameter.
+  ignored; the default is `current`; an explicit choice writes the cookie and strips the parameter; the
+  default writes no cookie.
 - **No-literal guard** (`scripts/ci/no-hex-literals.test.mjs`): fails if any `#[0-9a-fA-F]{6}` occurs in a
   `.js`, `.jsx` or `.css` file under `src/` outside `tokens.css`. Image assets are not scanned. Sabotage-tested by adding a literal and seeing it fail.
 - **Screenshot comparison for PR 1:**
@@ -151,6 +159,10 @@ The order is Home/Map, Place, Species, Journal, Sign-in (AuthModal). The pages t
 
 - **Launch PR:** the default becomes `v4`. The manifest, icons (app icon A, favicons from the two-ring
   mandala) and `theme-color` change, and the service worker version bumps.
-- **Cleanup PR:** deletes the `current` pages, the `current` tokens, `brand.js`, the chip and the old
-  icons.
+- **Cleanup PR:**
+  - deletes each `current` page **that has a v4 replacement**, and moves the v4 page into its place;
+  - keeps every page without one (About, Add Node, Register, Donate and Report, per §7) as the single
+    implementation, rendering in the v4 tokens;
+  - deletes the `current` token values, `brand.js`, `BrandPage`, the chip and the old icons;
+  - ignores and expires any leftover `magora_brand` cookie, so the switch leaves no state behind.
 - Both are separate PRs, each with its own review.

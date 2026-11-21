@@ -97,14 +97,29 @@ proves which.
 - **`scripts/cloud-setup.sh`** (committed; the environment's setup script calls it):
   - installs the Supabase CLI at a pinned version;
   - runs `npm ci`;
-  - fetches `supabase/migrations/` from magora-portal at the commit in `portal-pin.txt`.
+  - fetches `supabase/migrations/` and `supabase/functions/storage-upload/` from magora-portal at the
+    commit in `portal-pin.txt`.
   It fails loudly on any error.
+- **The schema baseline.**
+  - Portal migrations alone cannot build a fresh database. The earliest one (`20260626`) alters an
+    existing `nodes` table, and later ones assume production's pre-history schema and PostGIS.
+  - Spec 2 Task 12 adds that pre-history as `20260625_baseline_prehistory.sql`. It is not on `main` yet
+    (2026-11-21).
+  - Once it lands, `portal-pin.txt` must name a commit that contains it, and the stack applies the portal
+    migrations in order, baseline first. `cloud-setup.sh` refuses a pin without the baseline.
+  - Until then, the stack applies `supabase/contract-schema.sql` instead. This is a hand-written schema
+    holding only the tables, views, functions, policies and extensions that §3 uses, written from the
+    portal migrations at the pin, and it is marked as interim. The first pin bump after the baseline lands
+    deletes it.
+  - Contract tests run against whichever schema is in use.
 - **`portal-pin.txt`** holds one full portal commit SHA. Moving it is a PR, so a schema change reaches the
   app deliberately.
 - **SessionStart hook** (`.claude/settings.json`):
   - starts Docker if it is not running, then runs `supabase start`;
-  - applies the pinned migrations, then `supabase/seed.sql`, which holds synthetic places, nodes,
-    Listens and one test user with a fixed one-time code;
+  - applies the schema (the pinned migrations, or the interim contract schema), then `supabase/seed.sql`,
+    which holds synthetic places, nodes, Listens and one test user with a fixed one-time code;
+  - serves the pinned `storage-upload` Edge Function locally with `supabase functions serve`, so the
+    upload step of §3 runs real portal code against local Storage;
   - starts `scripts/fakes/server.mjs`, which serves canned BirdNET completions and `/api/insight`
     replies matching §3.
   A failure prints the step that failed and leaves the session usable for non-database work.
@@ -150,7 +165,8 @@ Cloud sessions see only what the repo carries. Task 0 adds the following:
 Run from one cloud session, with the results recorded in `docs/cloud-env-proof.md`:
 
 1. The setup script finishes, and a second session starts from the cache.
-2. `supabase start` succeeds, and the seed loads.
+2. `supabase start` succeeds, the schema and seed load, and an upload through the locally served
+   `storage-upload` function lands in local Storage.
 3. The session can quote a rule that appears only in `AGENTS.md`, which proves it loaded (or the import
    via `CLAUDE.md` did).
 4. `git push origin HEAD:main` is rejected by the ruleset.
@@ -183,5 +199,7 @@ its test, so cloud sessions can run it unattended.
   that the licence allows it, or supply the file at build time.
 - **Schema drift.** The pin can lag the portal. Contract tests fail when the pinned schema and the app
   disagree. Bumping the pin is a routine PR.
+- **The interim contract schema drifts from production** until the Spec 2 baseline lands (§4.2). It
+  covers only the contract's objects, and is replaced at the first pin bump after the baseline.
 - **Fakes drift from the real worker.** The fakes are written from the contract, not from the worker's
   code. The first device check against staging (1d) is where that is caught.
