@@ -432,8 +432,12 @@ which PostgreSQL grants to `PUBLIC` and which only sets session settings; David,
 `EXECUTE` on any function in **any** schema outside a reviewed allowlist (a SQL login is not
 limited to the schemas PostgREST exposes); no `CREATE` on any schema or on the database; owns no
 object; no role memberships; no role attributes beyond `LOGIN` and `BYPASSRLS`. A positive part
-reads each copied table and compares its row count with a count taken by a maintainer. It runs
-before the refresh workflow first receives the login, and at the start of every refresh. Any
+reads each copied table with `row_security = off`, which PostgreSQL refuses when a row-level
+security policy would filter the read, so a successful read shows the login reads every row. The
+check runs before the refresh workflow first receives the login, when the positive part also
+compares each row count with a count a maintainer takes just before it; and at the start of every
+refresh, with no count comparison, since production keeps writing between any two snapshots
+(David, 2026-11-21). Any
 grant it finds that lets this or another role write production unexpectedly is reported
 privately per `SECURITY.md`, not in this spec.
 

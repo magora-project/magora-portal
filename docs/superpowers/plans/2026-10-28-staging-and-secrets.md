@@ -90,7 +90,7 @@ These are inputs the spec implies but its own tests would not meet, most likely 
 | `scripts/db/schema-snapshot.mjs` (+ test, + itest), `supabase/migrations/checks/schema-allowlist.txt` | 10 | Catalog snapshot, diff, allowlist |
 | `scripts/db/privilege-check.mjs` (+ test, + itest), `supabase/migrations/checks/refresh-execute-allowlist.txt` | 11 | Success criterion 7 |
 | `scripts/db/apply-setup.mjs` (+ test) | 13 | Operator setup: the only script that writes production or scratch |
-| `supabase/migrations/20261029_refresh_login_grants.sql` (+ rollback) | 15b | The refresh login's grants |
+| `supabase/migrations/20261122_refresh_login_grants.sql` (+ rollback) | 15b | The refresh login's grants |
 | `scripts/staging/clients.mjs` | 2 | Guarded Supabase clients; `validateTargets` |
 | `scripts/staging/lease.mjs` (+ test) | 20 | Staging lease admission, claim, release |
 | `supabase/setup/rehearsal-fixture.sql`, `env/maintainer.env` | 26, 14 | Rehearsal source fixture; personal Supabase token reference |
@@ -301,7 +301,7 @@ Implements Decision R2, option 1.
 
 **Interfaces:**
 - Produces:
-  - `connect(envName: string, {readOnly?: boolean, writeTarget?: 'staging' | 'local'}) -> Promise<pg.Client>`. It reads the URL from `process.env[envName]`. With `writeTarget: 'staging'` it calls `assertStaging` first. With `writeTarget: 'local'` it accepts only `localhost`/`127.0.0.1`. With `readOnly` it runs `SET default_transaction_read_only = on`. A connection error is rethrown as `Error('connect failed: <ref or "local">: <pg error code>')`, with no URL.
+  - `connect(envName: string, {readOnly?: boolean, writeTarget?: 'staging' | 'local', localPorts?: number[]}) -> Promise<pg.Client>`. It reads the URL from `process.env[envName]`. With `writeTarget: 'staging'` it calls `assertStaging` first. With `writeTarget: 'local'` it accepts only `localhost`/`127.0.0.1` on a port in `localPorts` (the ports the caller's own stack printed; no default) and refuses a URL carrying query parameters, which libpq lets override the host or port. With `readOnly` it runs `SET default_transaction_read_only = on`. A connection error is rethrown as `Error('connect failed: <ref or "local">: <pg error code>')`, with no URL.
   - `listMigrationFiles(dir) -> string[]`: top-level `*.sql`, byte-order sorted, `rollbacks/` and `checks/` excluded.
   - `applyFiles(client, paths, {onEach?}) -> Promise<void>`: each file in its own transaction. It stops at the first error and reports the file name and the Postgres error position.
 
@@ -396,8 +396,8 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 - Produces:
   - `collectPrivileges(client) -> Promise<Facts>`, run while connected **as `magora_refresh`**.
   - `judge(facts, {executeAllowlist: string[], copiedTables: string[]}) -> string[]`: the violations.
-  - `positiveCheck(client, copiedTables, expectedCounts) -> string[]`
-  - CLI: `--db-url-env NAME [--counts FILE]`. It exits non-zero on any violation.
+  - `positiveCheck(client, copiedTables, expectedCounts?) -> string[]`. It first runs `SET row_security = off` (a refusal is one violation, and no table is read), then counts each copied table; a refused read is a violation. With `expectedCounts` (the first run) each count must also equal the maintainer's; without it (every refresh) no count is compared (spec §5.10, David, 2026-11-21).
+  - CLI: `--db-url-env NAME [--counts FILE | --tables FILE]`: `--counts` is `{"schema.table": n}` for the first run, `--tables` is `["schema.table"]` for a refresh; both at once is refused. It exits non-zero on any violation.
 
   Facts come from `has_table_privilege`, `has_column_privilege`, `has_sequence_privilege`, `has_function_privilege`, `has_schema_privilege` and `has_database_privilege`, evaluated for `current_user` across every schema; plus `pg_roles` attributes, `pg_auth_members`, and ownership in `pg_class`, `pg_proc`, `pg_namespace` and `pg_type`.
 
@@ -426,6 +426,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - `GRANT INSERT ON public.t TO magora_refresh`: it fails naming that grant. Revoke it.
   - `GRANT UPDATE (one column) …`: it fails. Revoke it.
   - `GRANT authenticated TO magora_refresh`: it fails on membership. Revoke it.
+  - Positive part: insert rows into `public.t`, enable RLS with a `using (false)` select policy. With `BYPASSRLS` the positive part passes, with and without the matching counts. `ALTER ROLE magora_refresh NOBYPASSRLS`: it reports exactly one violation, the refused read of `public.t`, rather than reading zero rows. Restore `BYPASSRLS`.
 - [ ] **Step 6: Run `npm run test:db`.** Expected: PASS. Every sabotage is caught.
 - [ ] **Step 7: Commit.**
 
@@ -450,7 +451,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 - Produces: `baseline-proof.mjs --prod-snapshot FILE [--through STEM]`. It:
   1. makes a temp workspace with `supabase/config.toml` (copied) and an **empty** `supabase/migrations/`
   2. runs `supabase start` there
-  3. applies `roles.sql`, then the baseline, then **every file up to and including the last migration production had when `FILE` was taken**, via `applyFiles`, with `connect(…, {writeTarget: 'local'})`. That is `--through`, defaulting to `LAST_ON_PRODUCTION` in the script: `20261106_claim_node_insights_skip_quarantined` for the 2026-11-21 snapshot, so 33 files, not the 32 up to `20260727` this plan first assumed (production had applied `20261106` by then). Later migrations, the grants migration included, are excluded so the result matches the production snapshot taken in Step 1. A `--through` naming no file is refused.
+  3. applies `roles.sql`, then the baseline, then **every file up to and including the last migration production had when `FILE` was taken**, via `applyFiles`, with `connect(…, {writeTarget: 'local'})`. That is `--through`, defaulting to `LAST_ON_PRODUCTION` in the script: `20261106_claim_node_insights_skip_quarantined` for the 2026-11-21 snapshot, so 33 files, not the 32 up to `20260727` this plan first assumed (production had applied `20261106` by then). Files that sort after `--through` are excluded so the result matches the production snapshot taken in Step 1. The grants migration is among them only because its stem is dated after `LAST_ON_PRODUCTION` (Task 15b): a stem dated earlier would sort inside the cutoff and be replayed, against a snapshot that lacks it. A `--through` naming no file is refused.
   4. snapshots the result on a fresh connection (a file's session settings, such as the dump's empty `search_path`, must not shape how the catalog prints) and compares it with `FILE` under the allowlist
   5. runs `supabase stop --no-backup`
 
@@ -494,7 +495,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - `apply-setup.mjs --target staging|production|scratch [--ref <ref>] --file <name>`, the operator-setup class (Global Constraints).
     - **Allowed pairs**, from a fixed table. `--file` is a name in that table, never a path.
       - staging: `roles.sql`, `staging-ops.sql`
-      - production: `roles.sql`, `20261029_refresh_login_grants.sql`, and, on Task 15b's route A only, `<date>_revoke_public_writer_functions.sql` (its name, once Task 15b fixes the date)
+      - production: `roles.sql`, `20261122_refresh_login_grants.sql`, and, on Task 15b's route A only, `<date>_revoke_public_writer_functions.sql` (its name, once Task 15b fixes the date)
       - scratch: `roles.sql`, `rehearsal-fixture.sql`, and each file `listMigrationFiles` returns in the current checkout, the baseline included (Task 26's rehearsal source)
     - **URL variable per target:** `STAGING_DB_URL`, `PROD_SETUP_DB_URL` or `SCRATCH_SETUP_DB_URL`.
     - **Ref checks:** the ref read from the URL must equal the target's ref. For scratch, it must equal `--ref`, which must be neither production's nor staging's.
@@ -516,7 +517,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - (b) Supabase support enabling the attribute
   - (c) a SECURITY DEFINER export function owned by `postgres`, which the privilege check's `executeAllowlist` would then have to name
 - [ ] **Step 3 (operator, David approves each of the three production writes):**
-  - Run `apply-setup.mjs --target production --file roles.sql`, then `--file 20261029_refresh_login_grants.sql`, then `--file <date>_revoke_public_writer_functions.sql`, from the production vault, after PR D merges. Before the second, David has approved Task 15b's exception and confirmed that day's daily backup; before the third, David has approved the revoke (Task 15b Step 4).
+  - Run `apply-setup.mjs --target production --file roles.sql`, then `--file 20261122_refresh_login_grants.sql`, then `--file <date>_revoke_public_writer_functions.sql`, from the production vault, after PR D merges. Before the second, David has approved Task 15b's exception and confirmed that day's daily backup; before the third, David has approved the revoke (Task 15b Step 4).
   - The third write exists only on Task 15b's route A. On route B there is no revoke migration, and the privilege check below stays red until Supabase support has revoked on production.
   - Set the login's password with `op run` from a new "Magora Project" item `supabase-refresh-login`.
   - Run `privilege-check.mjs` as that login against production. Expected: 0 violations. Run the positive part with counts David took as `postgres` the same hour. This is criterion 7. It must pass before Task 20 hands the login to the workflow.
@@ -591,7 +592,7 @@ This is a spec exception, for David to approve. The migration changes production
 
 **Files:**
 - Create:
-  - `supabase/migrations/20261029_refresh_login_grants.sql`, `supabase/migrations/rollbacks/20261029_refresh_login_grants.rollback.sql`
+  - `supabase/migrations/20261122_refresh_login_grants.sql`, `supabase/migrations/rollbacks/20261122_refresh_login_grants.rollback.sql`. The stem must sort after `LAST_ON_PRODUCTION` (Task 12, `20261106_…`), or Task 12's proof would replay it against a production snapshot without it; a later date for the stem is fine, an earlier one is not.
   - On Step 4's route A only: `supabase/migrations/<date>_revoke_public_writer_functions.sql`, `supabase/migrations/rollbacks/<date>_revoke_public_writer_functions.rollback.sql` and `scripts/db/revoke-writers.test.mjs`
 - Modify:
   - `supabase/migrations/checks/refresh-execute-allowlist.txt`

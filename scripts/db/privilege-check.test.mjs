@@ -106,7 +106,10 @@ ok('exact entry does not match another overload', !executeAllowed('public.f(text
 ok('quoteQualified', quoteQualified('public.t') === '"public"."t"')
 ok('quoteQualified refuses injection', (() => { try { quoteQualified('public.t; drop table x'); return false } catch { return true } })())
 {
+  const seen = []
   const client = { query: async (sql) => {
+    seen[seen.length] = sql
+    if (sql === 'set row_security = off') return { rows: [] }
     if (sql.includes('"public"."a"')) return { rows: [{ n: '3' }] }
     if (sql.includes('"public"."b"')) return { rows: [{ n: '5' }] }
     const e = new Error('denied'); e.code = '42501'; throw e
@@ -116,6 +119,28 @@ ok('quoteQualified refuses injection', (() => { try { quoteQualified('public.t; 
   ok('positive: wrong count reported', v.some((x) => x.includes('public.b: read 5 rows, expected 4')))
   ok('positive: unreadable table reported', v.some((x) => x.includes('public.c: count failed: 42501')))
   ok('positive: four tables -> three violations', v.length === 3, JSON.stringify(v))
+  ok('positive: row_security = off is set before any table is read', seen[0] === 'set row_security = off', JSON.stringify(seen))
+}
+{
+  // Refresh mode: no counts. Only an unreadable table is a violation; counts drift and are not compared.
+  const client = { query: async (sql) => {
+    if (sql === 'set row_security = off') return { rows: [] }
+    if (sql.includes('"public"."a"')) return { rows: [{ n: '3' }] }
+    const e = new Error('query would be affected by row-level security policy'); e.code = '42501'; throw e
+  } }
+  const v = await positiveCheck(client, ['public.a', 'public.b'], undefined)
+  ok('positive (refresh): a readable table passes with no count to compare', !v.some((x) => x.includes('public.a')), JSON.stringify(v))
+  ok('positive (refresh): an RLS-filtered table is reported', v.length === 1 && v[0] === 'copied table public.b: count failed: 42501', JSON.stringify(v))
+}
+{
+  let reads = 0
+  const client = { query: async (sql) => {
+    if (sql === 'set row_security = off') { const e = new Error('denied'); e.code = '42501'; throw e }
+    reads++
+    return { rows: [{ n: '1' }] }
+  } }
+  const v = await positiveCheck(client, ['public.a'], undefined)
+  ok('positive: a refused row_security = off is a violation, and no table is read without it', v.length === 1 && v[0].startsWith('row_security = off refused') && reads === 0, JSON.stringify(v))
 }
 
 console.log(`privilege-check: ${pass} passed, ${fail} failed`)

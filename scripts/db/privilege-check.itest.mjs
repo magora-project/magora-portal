@@ -8,10 +8,12 @@
 // 3. Tries lo_create as magora_refresh in a read-write transaction (rolled back). If it succeeds,
 //    the check must have reported lo_create.
 // 4. Each sabotage must add exactly one violation beyond the baseline, and its undo must remove it.
+// 5. The positive part reads an RLS table whose policy hides every row. With BYPASSRLS it reads all
+//    rows; with NOBYPASSRLS (sabotage) the read under row_security = off is refused and reported.
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { connect } from './pg.mjs'
-import { collectPrivileges, judge, functionName, WRITES_WITHOUT_TABLE_PRIVILEGE, REFRESH_ROLE } from './privilege-check.mjs'
+import { collectPrivileges, judge, positiveCheck, functionName, WRITES_WITHOUT_TABLE_PRIVILEGE, REFRESH_ROLE } from './privilege-check.mjs'
 
 let pass = 0, fail = 0
 const ok = (n, c, extra = '') => { if (c) { pass++ } else { fail++; console.log('  FAIL', n, extra) } }
@@ -34,6 +36,7 @@ const TEARDOWN = `
       revoke create on schema public from magora_refresh;
       revoke authenticated from magora_refresh;
       alter role magora_refresh password null;
+      alter role magora_refresh bypassrls;
     end if;
   end $$;
 `
@@ -95,6 +98,27 @@ try {
     await a(undo)
     const after = (await check(opts)).filter((v) => !baseline.includes(v))
     ok(`${name}: none after undo`, after.length === 0, JSON.stringify(after))
+  }
+
+  // Positive part: a policy that hides every row from every role that does not bypass RLS.
+  {
+    await a('insert into public.t (id) values (1), (2)')
+    await a('alter table public.t enable row level security')
+    await a('create policy itest_hide_all on public.t for select using (false)')
+    const positive = async (counts) => {
+      const c = await asRefresh()
+      try { return await positiveCheck(c, ['public.t'], counts) } finally { await c.end() }
+    }
+    const withBypass = await positive(undefined)
+    ok('positive: BYPASSRLS reads the hidden rows', withBypass.length === 0, JSON.stringify(withBypass))
+    const firstRun = await positive({ 'public.t': 2 })
+    ok('positive (first run): the maintainer count matches', firstRun.length === 0, JSON.stringify(firstRun))
+    await a('alter role magora_refresh nobypassrls')
+    const without = await positive(undefined)
+    ok('positive: NOBYPASSRLS (sabotage) is reported, not read as zero rows', without.length === 1 && without[0] === 'copied table public.t: count failed: 42501', JSON.stringify(without))
+    await a('alter role magora_refresh bypassrls')
+    const restored = await positive(undefined)
+    ok('positive: none after undo', restored.length === 0, JSON.stringify(restored))
   }
 } finally {
   try { await a(TEARDOWN) } catch (e) { fail++; console.log('  FAIL teardown', e.message) }

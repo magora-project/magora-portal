@@ -11,10 +11,14 @@
 //   - any role membership
 //   - any role attribute other than LOGIN and BYPASSRLS
 //   - a copied table the login cannot SELECT
-// The positive part counts each copied table's rows and compares with a maintainer's counts.
+// The positive part reads each copied table with row_security = off. PostgreSQL refuses such a read
+// when a row-level security policy would filter it, and refuses it when SELECT is missing, so a
+// successful read shows the login reads every row, with no snapshot to drift. On the first run it
+// also compares each count with a count a maintainer took just before it (--counts).
 //
-// CLI: node scripts/db/privilege-check.mjs --db-url-env NAME [--counts FILE] [--allowlist FILE]
-// FILE for --counts is JSON {"public.t": 123, ...}; its keys are the copied tables.
+// CLI: node scripts/db/privilege-check.mjs --db-url-env NAME [--counts FILE | --tables FILE] [--allowlist FILE]
+// FILE for --counts is JSON {"public.t": 123, ...}: the first run; its keys are the copied tables.
+// FILE for --tables is JSON ["public.t", ...]: every refresh; the copied tables, with no counts.
 // Exits non-zero on any violation. Never prints the URL.
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -176,8 +180,15 @@ export function quoteQualified(name) {
   return `"${m[1]}"."${m[2]}"`
 }
 
+// expectedCounts: an object on the first run (each count must match); null or undefined on a refresh,
+// where only the read itself is checked.
 export async function positiveCheck(client, copiedTables, expectedCounts) {
   const v = []
+  try {
+    await client.query('set row_security = off')
+  } catch (e) {
+    return [`row_security = off refused: ${e?.code ?? e?.message}`]
+  }
   for (const t of copiedTables) {
     let n
     try {
@@ -186,7 +197,8 @@ export async function positiveCheck(client, copiedTables, expectedCounts) {
       v.push(`copied table ${t}: count failed: ${e?.code ?? e?.message}`)
       continue
     }
-    if (!(t in (expectedCounts ?? {}))) v.push(`copied table ${t}: no expected count`)
+    if (expectedCounts == null) continue
+    if (!(t in expectedCounts)) v.push(`copied table ${t}: no expected count`)
     else if (Number(expectedCounts[t]) !== n) v.push(`copied table ${t}: read ${n} rows, expected ${expectedCounts[t]}`)
   }
   return v
@@ -204,14 +216,18 @@ async function main(argv) {
   const { entries, errors } = parseExecuteAllowlist(readFileSync(allowlistPath, 'utf8'))
   if (errors.length) { console.error(`privilege-check: allowlist errors:\n  ${errors.join('\n  ')}`); return 2 }
   const countsPath = argValue(argv, '--counts')
-  const counts = countsPath ? JSON.parse(readFileSync(countsPath, 'utf8')) : {}
-  const copiedTables = Object.keys(counts).sort()
+  const tablesPath = argValue(argv, '--tables')
+  if (countsPath && tablesPath) { console.error('privilege-check: give --counts (first run) or --tables (refresh), not both'); return 2 }
+  const counts = countsPath ? JSON.parse(readFileSync(countsPath, 'utf8')) : null
+  const tables = tablesPath ? JSON.parse(readFileSync(tablesPath, 'utf8')) : null
+  if (tables !== null && (!Array.isArray(tables) || !tables.every((t) => typeof t === 'string'))) { console.error('privilege-check: --tables must be a JSON array of schema.table names'); return 2 }
+  const copiedTables = (tables ?? Object.keys(counts ?? {})).slice().sort()
   const client = await connect(envName, { readOnly: true })
   let violations
   try {
     const facts = await collectPrivileges(client)
     violations = judge(facts, { executeAllowlist: entries, copiedTables })
-    if (countsPath) violations.push(...await positiveCheck(client, copiedTables, counts))
+    if (countsPath || tablesPath) violations.push(...await positiveCheck(client, copiedTables, counts))
   } finally {
     await client.end()
   }
