@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "54f96f1852bdcbe16e3b1b35fdda30ce75af0d61",
+    "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [],
+  "supersedes": "plan--197e3f0c2f57--1",
+  "rev": "576897580f9e8c045e76bb50f24d60deda42ba88",
+  "tasks": [
+    "T8",
+    "T9",
+    "T10",
+    "T11",
+    "T12"
+  ],
+  "createdAt": "2026-11-21T22:49:23.188Z"
+}

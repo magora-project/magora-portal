@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "197e3f0c2f57f3016e8f39e3a60958ffdd7fa27a",
+    "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "ref-1",
+      "severity": "P1",
+      "summary": "line 282: malformed task heading \"### Task 7 (operator, private): Close the write paths behind criterion 8\"; expected \"### Task <n>: <title>\" or \"### Task <n> (operator): <title>\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-2",
+      "severity": "P1",
+      "summary": "line 486: malformed task heading \"### Task 13 (operator, with scripts): Setup entry point; staging and production setup\"; expected \"### Task <n>: <title>\" or \"### Task <n> (operator): <title>\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "plan--e0e69258c713--49#F1",
+      "severity": "P2",
+      "summary": "The cutoff cannot exclude Task 15b's 20261029 grants migration because it sorts before 20261106, so rerunning the proof after PR D lands introduces public ACL differences against the original production snapshot.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 453,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--197e3f0c2f57--1"
+      }
+    },
+    {
+      "id": "plan--e0e69258c713--49#F2",
+      "severity": "P2",
+      "summary": "The local connection interface validates only the hostname and accepts no allowed-port list, so it cannot enforce the global fixture restriction or Task 18's requirement to accept only the target stack's printed port.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 304,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--197e3f0c2f57--1"
+      }
+    }
+  ],
+  "supersedes": "plan--e0e69258c713--49",
+  "rev": "576897580f9e8c045e76bb50f24d60deda42ba88",
+  "tasks": [
+    "T8",
+    "T9",
+    "T10",
+    "T11",
+    "T12"
+  ],
+  "createdAt": "2026-11-21T22:48:54.780Z"
+}

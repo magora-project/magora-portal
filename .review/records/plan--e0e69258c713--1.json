@@ -1,0 +1,355 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "e0e69258c7137ea38db7d17d9abea05404d60b9a",
+    "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "ref-1",
+      "severity": "P1",
+      "summary": "line 280: malformed task heading \"### Task 7 (operator, private): Close the write paths behind criterion 8\"; expected \"### Task <n>: <title>\" or \"### Task <n> (operator): <title>\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-2",
+      "severity": "P1",
+      "summary": "line 483: malformed task heading \"### Task 13 (operator, with scripts): Setup entry point; staging and production setup\"; expected \"### Task <n>: <title>\" or \"### Task <n> (operator): <title>\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-3",
+      "severity": "P1",
+      "summary": "T14 line 530: untyped Files line \"- Create: `scripts/staging/deploy-functions.mjs`, `scripts/staging/deploy-functions.test.mjs`, `env/maintainer.env`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-4",
+      "severity": "P1",
+      "summary": "T14 line 531: untyped Files line \"- Modify: `scripts/secrets/env-refs.test.mjs` (the `maintainer.env` case)\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-5",
+      "severity": "P1",
+      "summary": "T15 line 565: untyped Files line \"- Create: `supabase/staging/table-manifest.json`, `scripts/staging/manifest.mjs`, `scripts/staging/manifest.test.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-6",
+      "severity": "P1",
+      "summary": "line 588: malformed task heading \"### Task 15b: The refresh login's grants migration\"; expected \"### Task <n>: <title>\" or \"### Task <n> (operator): <title>\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-7",
+      "severity": "P1",
+      "summary": "T16 line 632: untyped Files line \"- Create: `scripts/staging/refresh/reset.mjs`, `supabase/setup/public-schema-defaults.sql`, `scripts/staging/refresh/refresh.itest.mjs` (extended by Tasks 17 and 18)\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-8",
+      "severity": "P1",
+      "summary": "T17 line 666: untyped Files line \"- Create: `scripts/staging/refresh/identities.mjs`, `scripts/staging/refresh/identities.test.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-9",
+      "severity": "P1",
+      "summary": "T18 line 698: untyped Files line \"- Create:\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-10",
+      "severity": "P1",
+      "summary": "T18 line 699: untyped Files line \"- `scripts/staging/refresh/copy.mjs`, with `copy.test.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-11",
+      "severity": "P1",
+      "summary": "T18 line 700: untyped Files line \"- `scripts/staging/refresh/synthetic.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-12",
+      "severity": "P1",
+      "summary": "T18 line 701: untyped Files line \"- `scripts/staging/refresh/integrity.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-13",
+      "severity": "P1",
+      "summary": "T18 line 702: untyped Files line \"- `scripts/staging/refresh/index.mjs`: the orchestrator CLI\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-14",
+      "severity": "P1",
+      "summary": "T19 line 750: untyped Files line \"- Create: `scripts/staging/simulated-node.mjs`, `scripts/staging/simulated-node.test.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-15",
+      "severity": "P1",
+      "summary": "T20 line 785: untyped Files line \"- Create: `.github/workflows/staging-refresh.yml`, `scripts/staging/lease.mjs`, `scripts/staging/lease.test.mjs` (Step 1b)\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-16",
+      "severity": "P1",
+      "summary": "T21 line 831: untyped Files line \"- Create: `.github/workflows/staging-deploy.yml`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-17",
+      "severity": "P1",
+      "summary": "T21 line 833: untyped Files line \"- [ ] **Step 1 (operator, David): confirm the mechanism (§5.9).**\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-18",
+      "severity": "P1",
+      "summary": "T21 line 834: untyped Files line \"- Create the Vercel custom environment `staging` **with no branch tracking**.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-19",
+      "severity": "P1",
+      "summary": "T21 line 835: untyped Files line \"- Set its env vars from the staging vault. The list is every name read by `process.env.*` under `api/` (re-run `grep -rhoE \\\"process\\\\.env\\\\.[A-Z_]+\\\" api | sort -u` first). On 2026-10-28 that was `ANTHROPIC_API_KEY`, `CRON_SECRET`, `EBIRD_API_KEY`, `PROVISION_SECRET`, `SLACK_WEBHOOK_URL`, `SUPABASE_SERVICE_ROLE_KEY` (staging's), `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_URL` and `XENO_CANTO_API_KEY`. Record each 1Password reference in the variable's comment field, or in the inventory doc if the CLI has no comment field.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-20",
+      "severity": "P1",
+      "summary": "T21 line 836: untyped Files line \"- Run one manual `vercel deploy --target=staging` from a clean `main` checkout.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-21",
+      "severity": "P1",
+      "summary": "T21 line 837: untyped Files line \"- Read back that the deployment is listed under `staging`, and that Production's latest deployment is unchanged.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-22",
+      "severity": "P1",
+      "summary": "T21 line 838: untyped Files line \"- If the custom environment cannot be created without a branch, or the targeted deploy does not land in it, stop and bring the alternatives back to David (§5.9).\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-23",
+      "severity": "P1",
+      "summary": "T21 line 839: untyped Files line \"- [ ] **Step 2 (operator, David):**\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-24",
+      "severity": "P1",
+      "summary": "T21 line 840: untyped Files line \"- Add the Cloudflare DNS-only CNAME `staging.themagoraportal.org` pointing at Vercel's target, and attach the domain to the `staging` environment.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-25",
+      "severity": "P1",
+      "summary": "T21 line 841: untyped Files line \"- Record whether production deployments are protected (§5.3).\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-26",
+      "severity": "P1",
+      "summary": "T21 line 842: untyped Files line \"- Check protection with plain `curl` without the bypass header. Expected: `https://staging.themagoraportal.org/` returns 401 or 403. If it does not, switch protection to cover all non-production deployments, re-check, and record the setting.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-27",
+      "severity": "P1",
+      "summary": "T21 line 843: untyped Files line \"- Register in staging Supabase Auth: the site URL `https://staging.themagoraportal.org`, plus redirect URLs for it and for the preview pattern `https://magora-portal-*-<team>.vercel.app/**`.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-28",
+      "severity": "P1",
+      "summary": "T21 line 844: untyped Files line \"- Register each OAuth provider's callback for the staging project.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-29",
+      "severity": "P1",
+      "summary": "T21 line 845: untyped Files line \"- Add Method's embed origin `https://staging.themagoraportal.org`.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-30",
+      "severity": "P1",
+      "summary": "T21 line 846: untyped Files line \"- [ ] **Step 3: Write the workflow.**\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-31",
+      "severity": "P1",
+      "summary": "T21 line 847: untyped Files line \"- Trigger: `push: branches: [main]`.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-32",
+      "severity": "P1",
+      "summary": "T21 line 848: untyped Files line \"- `permissions: contents: read`; `environment: staging-deploy`, set to `main` only, holding `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` and `STAGING_SLACK_WEBHOOK_URL`; `concurrency: {group: staging-deploy, cancel-in-progress: true}`.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-33",
+      "severity": "P1",
+      "summary": "T21 line 849: untyped Files line \"- Steps: checkout with `persist-credentials: false`, then one command, `npx --yes vercel@58.9.0 deploy --target=staging --yes --token \\\"$VERCEL_TOKEN\\\"`, with `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` set in `env:`. Vercel builds remotely with the `staging` environment's own variables. There is **no `vercel pull` and no `--prebuilt`**, because `pull` writes resolved values to `.vercel/.env.*` on the runner.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-34",
+      "severity": "P1",
+      "summary": "T21 line 850: untyped Files line \"- `if: failure()` posts to the staging Slack webhook.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-35",
+      "severity": "P1",
+      "summary": "T21 line 851: untyped Files line \"- Production's deploy stays on the Git integration and does not depend on this job.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-36",
+      "severity": "P1",
+      "summary": "T21 line 852: untyped Files line \"- [ ] **Step 4: Lint** with `actionlint` and read the YAML as in Task 20 Step 2.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-37",
+      "severity": "P1",
+      "summary": "T21 line 853: untyped Files line \"- [ ] **Step 5: Read back after merge (operator).** One `main` SHA appears in two deployments, Production and staging (`vercel ls`, matching on the git SHA in each deployment's meta). `dig +short staging.themagoraportal.org` resolves to Vercel. `curl -vI` shows a valid certificate. The Supabase ref check comes in Task 22.\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-38",
+      "severity": "P1",
+      "summary": "T21 line 854: untyped Files line \"- [ ] **Step 6: Commit** (PR E, together with Task 22).\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-39",
+      "severity": "P1",
+      "summary": "T22 line 859: untyped Files line \"- Create: `scripts/staging/refresh/smoke.mjs`, `scripts/staging/refresh/smoke.test.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-40",
+      "severity": "P1",
+      "summary": "line 886: malformed task heading \"### Task 22b: Exposure check (§5.3), with full endpoint fixtures\"; expected \"### Task <n>: <title>\" or \"### Task <n> (operator): <title>\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-41",
+      "severity": "P1",
+      "summary": "T23 line 1004: untyped Files line \"- Create: `scripts/dev/proxy-config.mjs`, `scripts/dev/proxy-config.test.mjs`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-42",
+      "severity": "P1",
+      "summary": "T23 line 1005: untyped Files line \"- Modify:\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-43",
+      "severity": "P1",
+      "summary": "T23 line 1006: untyped Files line \"- `vite.config.js:7-15`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-44",
+      "severity": "P1",
+      "summary": "T23 line 1007: untyped Files line \"- `package.json`: `\\\"dev\\\": \\\"op run --env-file=env/staging.env -- vite\\\"`, and `\\\"dev:no-op\\\": \\\"vite\\\"` kept for contributors without 1Password, documented as proxying to staging without the bypass, which therefore fails closed\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-45",
+      "severity": "P1",
+      "summary": "T23 line 1008: untyped Files line \"- `env/staging.env`\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-46",
+      "severity": "P1",
+      "summary": "T26 line 1062: untyped Files line \"- Create: `docs/runbooks/interim-migrations.md`, `supabase/setup/rehearsal-fixture.sql` (Step 4)\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-47",
+      "severity": "P1",
+      "summary": "T26 line 1063: untyped Files line \"- Modify:\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-48",
+      "severity": "P1",
+      "summary": "T26 line 1064: untyped Files line \"- `AGENTS.md` (Migrations: \\\"Never apply a migration **to production** until its PR is green at its final head\\\")\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "ref-49",
+      "severity": "P1",
+      "summary": "T26 line 1065: untyped Files line \"- `scripts/db/apply-migrations.mjs` and `scripts/db/apply-migrations.test.mjs` (the `--file` entry point, Step 2)\"; write \"- existing|create|modify|delete|command: `value`\"",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md"
+    },
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "The cutoff cannot exclude Task 15b's 20261029 grants migration because it sorts before 20261106, so rerunning the proof after PR D lands introduces public ACL differences against the original production snapshot.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 453
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "The local connection interface validates only the hostname and accepts no allowed-port list, so it cannot enforce the global fixture restriction or Task 18's requirement to accept only the target stack's printed port.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 304
+    },
+    {
+      "id": "F3",
+      "severity": "P2",
+      "summary": "Task 22 omits typed Modify targets for scripts/staging/refresh/index.mjs and .github/workflows/staging-refresh.yml even though Step 3 requires changing both, leaving its declared task targets incomplete.",
+      "file": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "line": 858
+    }
+  ],
+  "supersedes": null,
+  "rev": "576897580f9e8c045e76bb50f24d60deda42ba88",
+  "tasks": [
+    "T8",
+    "T9",
+    "T10",
+    "T11",
+    "T12",
+    "T14",
+    "T15",
+    "T16",
+    "T17",
+    "T18",
+    "T19",
+    "T20",
+    "T21",
+    "T22",
+    "T23",
+    "T26"
+  ],
+  "createdAt": "2026-11-21T22:06:33.249Z"
+}
