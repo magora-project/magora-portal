@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "d9d80ab2f0bc1d3f4a9fd7ba8546cf75925661a9",
+    "path": "docs/superpowers/specs/2026-11-21-field-app-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "Fetching only the portal migrations cannot bootstrap a fresh Supabase database: the earliest migration alters an existing nodes table, and subsequent migrations depend on baseline schema and PostGIS that these migrations do not create, so cloud startup and CI require an explicit synthetic baseline.",
+      "file": "docs/superpowers/specs/2026-11-21-field-app-design.md",
+      "line": 100
+    },
+    {
+      "id": "F2",
+      "severity": "P1",
+      "summary": "The local stack neither fetches nor serves the storage-upload Edge Function required by §3, while the specified fakes cover only BirdNET and insight, so the upload contract and complete Listen smoke test cannot run as written.",
+      "file": "docs/superpowers/specs/2026-11-21-field-app-design.md",
+      "line": 108
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-21T19:44:14.803Z"
+}

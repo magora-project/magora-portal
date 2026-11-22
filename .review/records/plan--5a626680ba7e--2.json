@@ -1,0 +1,106 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "5a626680ba7e9c90ac10ce2179d0372674d14664",
+    "path": "docs/superpowers/plans/2026-11-21-field-app.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "ref-1",
+      "severity": "P1",
+      "summary": "T2 line 54: create target package.json already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md",
+      "disposition": {
+        "kind": "reclassified-nit",
+        "reason": "Target is in the new magora-field-app repo (plan: Where paths point); the reference check reads magora-portal, where a same-named file exists."
+      }
+    },
+    {
+      "id": "ref-2",
+      "severity": "P1",
+      "summary": "T2 line 57: create target eslint.config.js already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md"
+    },
+    {
+      "id": "ref-3",
+      "severity": "P1",
+      "summary": "T2 line 62: create target .github/workflows/ci.yml already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md"
+    },
+    {
+      "id": "ref-4",
+      "severity": "P1",
+      "summary": "T3 line 79: create target AGENTS.md already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md"
+    },
+    {
+      "id": "ref-5",
+      "severity": "P1",
+      "summary": "T3 line 80: create target CLAUDE.md already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md"
+    },
+    {
+      "id": "ref-6",
+      "severity": "P1",
+      "summary": "T3 line 81: create target .claude/rules/process.md already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md"
+    },
+    {
+      "id": "ref-7",
+      "severity": "P1",
+      "summary": "T3 line 82: create target .claude/settings.json already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md"
+    },
+    {
+      "id": "ref-8",
+      "severity": "P1",
+      "summary": "T3 line 83: create target .claude/skills/brainstorming/SKILL.md already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md"
+    },
+    {
+      "id": "ref-9",
+      "severity": "P1",
+      "summary": "T3 line 84: create target .claude/skills/writing-plans/SKILL.md already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md"
+    },
+    {
+      "id": "ref-10",
+      "severity": "P1",
+      "summary": "T4 line 123: create target supabase/config.toml already exists at the revision under review",
+      "file": "docs/superpowers/plans/2026-11-21-field-app.md"
+    }
+  ],
+  "supersedes": "plan--5a626680ba7e--1",
+  "rev": "576897580f9e8c045e76bb50f24d60deda42ba88",
+  "tasks": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6",
+    "T7",
+    "T8",
+    "T9",
+    "T10",
+    "T11",
+    "T12",
+    "T13",
+    "T14",
+    "T15",
+    "T16",
+    "T17",
+    "T18"
+  ],
+  "createdAt": "2026-11-21T21:59:07.373Z"
+}

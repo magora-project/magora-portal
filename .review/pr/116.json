@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "pr": 116,
+  "slots": [],
+  "findings": [
+    {
+      "id": "thread:PRRT_kwDOSsky0866b0VT",
+      "source": "codex",
+      "severity": "P2",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "5357f85025a0160bb59fe768c419049ce105d950"
+      }
+    },
+    {
+      "id": "thread:PRRT_kwDOSsky0866b0VX",
+      "source": "codex",
+      "severity": "P2",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "5357f85025a0160bb59fe768c419049ce105d950"
+      }
+    },
+    {
+      "id": "thread:PRRT_kwDOSsky0866b0Vc",
+      "source": "codex",
+      "severity": "P2",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "5357f85025a0160bb59fe768c419049ce105d950"
+      }
+    }
+  ],
+  "reclassified": [],
+  "writtenAt": "2026-11-22T00:02:29.414Z"
+}
