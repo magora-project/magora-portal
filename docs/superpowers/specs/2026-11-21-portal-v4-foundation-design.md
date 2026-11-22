@@ -78,9 +78,13 @@ from Noah's ongoing work. So v4 is built on `main`, behind an opt-in switch (dec
 
 - Add `src/styles/tokens.css`, holding one custom property per distinct colour role now in use. Each
   property's value is the current literal.
-- Replace every literal in `src/` (316 occurrences across 26 files on 2026-11-21) with `var(--…)`. In
-  inline styles and JS colour maps, read the value through a `token('name')` helper, so canvas and Leaflet
-  code still receives a concrete colour.
+- Replace every literal in `src/` (299 occurrences across 24 files, measured at `5768975` on 2026-11-21)
+  with `var(--…)`. Inline styles and JS colour maps hold `var(--…)` strings, which resolve at paint time,
+  so a map evaluated at import follows the brand set later. Only a value that reaches a sink that cannot
+  resolve `var()` (Leaflet `pathOptions`, canvas, an `html2canvas` option, an SVG presentation attribute)
+  reads a concrete colour through a `token('name')` helper. `token()` is called at render or event time,
+  never during module initialisation, because the brand is applied in `main.jsx` after the imports are
+  evaluated.
 - Font families get the same treatment: `--font-display`, `--font-label`, `--font-body`.
 - This PR changes no pixel. §6 defines the check.
 
@@ -134,6 +138,10 @@ A small fixed chip, "v4 preview · switch back", renders only when the brand is 
 - **`brand.js` unit tests** (`src/lib/brand.test.mjs`): parameter over cookie; an invalid parameter is
   ignored; the default is `current`; an explicit choice writes the cookie and strips the parameter; the
   default writes no cookie.
+- **Token resolution tests** (`src/lib/tokens.test.mjs`): `token()` throws on an unknown name; every
+  referenced token is defined; no `token()` call at module scope. A cold-load v4 capture (the
+  `magora_brand=v4` cookie set before the first navigation) covers every §4.5 route and the shared modals
+  and prompts, ListenModal and AuthModal among them.
 - **No-literal guard** (`scripts/ci/no-hex-literals.test.mjs`): fails if any `#[0-9a-fA-F]{6}` occurs in a
   `.js`, `.jsx` or `.css` file under `src/` outside `tokens.css`. Image assets are not scanned. Sabotage-tested by adding a literal and seeing it fail.
 - **Screenshot comparison for PR 1:**

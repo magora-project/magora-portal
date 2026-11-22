@@ -150,8 +150,9 @@ Cloud sessions see only what the repo carries. Task 0 adds the following:
 - **`.claude/rules/process.md`**, adapted from the portal's: lanes, stages, depth labels and the PR-bot
   matrix. The `.review/` evidence gate is not copied in Phase 1. Bot reviews are triaged in the PR, as on
   the portal before Spec 3.
-- **`.claude/skills/`**: brainstorming, writing-plans, subagent-driven-development and
-  test-driven-development, copied from magora-portal.
+- **`.claude/skills/`**: brainstorming and writing-plans, copied from magora-portal at the pin; and
+  subagent-driven-development and test-driven-development, which magora-portal does not carry, copied
+  unchanged from `obra/superpowers` at a pinned commit (MIT), with their supporting files.
 - **CI** (`.github/workflows/ci.yml`): type check, lint, Jest, and the contract tests (Docker-based
   Supabase on GitHub's runner).
 - **GitHub settings** (David, once):
