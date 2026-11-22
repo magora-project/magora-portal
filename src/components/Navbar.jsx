@@ -47,9 +47,9 @@ function AccountMenu({ user, listener, signOut }) {
         aria-label="Account menu"
         style={{
           width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
-          background: '#1D9E75', color: '#fff', fontWeight: 700, fontSize: '14px',
+          background: 'var(--c-forest-accent)', color: '#fff', fontWeight: 700, fontSize: '14px',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          border: open ? '2px solid #5DCAA5' : '2px solid transparent',
+          border: open ? '2px solid var(--c-forest-accent-light)' : '2px solid transparent',
           padding: 0, cursor: 'pointer', overflow: 'hidden',
         }}
       >
@@ -60,7 +60,7 @@ function AccountMenu({ user, listener, signOut }) {
       {open && (
         <div role="menu" style={{
           position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 50,
-          minWidth: '170px', background: '#163d22', border: '1px solid #1f5230',
+          minWidth: '170px', background: 'var(--c-forest-card)', border: '1px solid var(--c-forest-border)',
           borderRadius: '12px', padding: '6px', boxShadow: '0 10px 30px rgba(0,0,0,0.45)',
         }}>
           <Link to="/journal/me" role="menuitem" className="account-menu-item" onClick={() => setOpen(false)}>
@@ -101,7 +101,7 @@ export default function Navbar() {
             <AccountMenu user={user} listener={listener} signOut={signOut} />
           ) : (
             <button onClick={openSignIn} style={{
-              background: 'transparent', border: '1px solid #1f5230', color: '#c8e6d0',
+              background: 'transparent', border: '1px solid var(--c-forest-border)', color: 'var(--c-forest-text-sub)',
               borderRadius: '8px', padding: '7px 14px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
             }}>
               Sign in

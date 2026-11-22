@@ -4,9 +4,9 @@ import { useAuth } from '../lib/auth'
 import { createListener, validateHandle } from '../lib/listener'
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  accent: '#1D9E75', accentLight: '#5DCAA5',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  accent: 'var(--c-forest-accent)', accentLight: 'var(--c-forest-accent-light)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 // Shown once per sign-in (dismissable) to a signed-in Listener who hasn't claimed
@@ -92,7 +92,7 @@ export default function HandlePrompt({ onDismiss }) {
           </button>
         </form>
 
-        {error && <div style={{ fontSize: '13px', color: '#fb7a6a', marginTop: '12px', lineHeight: 1.5 }}>{error}</div>}
+        {error && <div style={{ fontSize: '13px', color: 'var(--c-forest-error)', marginTop: '12px', lineHeight: 1.5 }}>{error}</div>}
       </div>
     </div>
   )
@@ -116,15 +116,15 @@ const S = {
   at: { color: C.textMuted, fontSize: '15px', fontWeight: 700 },
   handleInput: {
     flex: 1, background: 'none', border: 'none', color: C.text,
-    fontSize: '15px', padding: '11px 0', outline: 'none', fontFamily: "'DM Sans', sans-serif",
+    fontSize: '15px', padding: '11px 0', outline: 'none', fontFamily: 'var(--font-body)',
   },
   primary: (busy) => ({
     width: '100%', padding: '12px', borderRadius: '10px',
     background: busy ? C.border : C.accent, border: 'none', color: '#fff',
-    fontSize: '15px', fontWeight: 700, cursor: busy ? 'default' : 'pointer', fontFamily: "'DM Sans', sans-serif",
+    fontSize: '15px', fontWeight: 700, cursor: busy ? 'default' : 'pointer', fontFamily: 'var(--font-body)',
   }),
   link: {
     width: '100%', marginTop: '10px', background: 'none', border: 'none',
-    color: C.accentLight, fontSize: '13px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+    color: C.accentLight, fontSize: '13px', cursor: 'pointer', fontFamily: 'var(--font-body)',
   },
 }

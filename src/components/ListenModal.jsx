@@ -13,8 +13,8 @@ import {
 } from '../lib/listenSession'
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 // Wait at most this long for the worker before letting the user close with a
@@ -373,7 +373,7 @@ export default function ListenModal({ onClose }) {
             </p>
             <div style={S.locBox}>
               {locError
-                ? <span style={{ color: '#fb7a6a' }}>{locError}</span>
+                ? <span style={{ color: 'var(--c-forest-error)' }}>{locError}</span>
                 : place
                   ? <><span style={{ color: C.textMuted }}>You’re near</span> <strong style={{ color: C.text }}>{place}</strong></>
                   : <span style={{ color: C.textMuted }}>Finding your location…</span>}
@@ -424,7 +424,7 @@ export default function ListenModal({ onClose }) {
           return (
             <div style={{ textAlign: 'center' }}>
               <canvas ref={canvasRef} width={320} height={90} style={S.canvas} />
-              <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '2.6rem', fontWeight: 900, color: AMBER.light, lineHeight: 1 }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '2.6rem', fontWeight: 900, color: AMBER.light, lineHeight: 1 }}>
                 {isOpen ? formatClock(elapsed) : `${remaining}s`}
               </div>
               <div style={{ height: '5px', background: C.border, borderRadius: '3px', margin: '14px 0', overflow: 'hidden' }}>
@@ -579,7 +579,7 @@ export default function ListenModal({ onClose }) {
 
         {step === 'error' && (
           <div style={{ textAlign: 'center', padding: '8px 0' }}>
-            <p style={{ ...S.sub, color: '#fb7a6a' }}>{errorMsg}</p>
+            <p style={{ ...S.sub, color: 'var(--c-forest-error)' }}>{errorMsg}</p>
             <button onClick={onClose} style={S.ghostBtn}>Close</button>
           </div>
         )}
@@ -616,10 +616,10 @@ const S = {
   // clips the top on tall content and can't be scrolled back up.
   sheet: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: '18px', padding: '22px', width: '100%', maxWidth: '400px', maxHeight: 'calc(100dvh - 40px)', overflowY: 'auto' },
   close: { background: 'none', border: 'none', color: C.textMuted, fontSize: '16px', cursor: 'pointer', padding: '4px 8px' },
-  h2: { fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '1.5rem', fontWeight: 900, color: C.text, textTransform: 'uppercase', letterSpacing: '-0.01em', margin: '0 0 8px' },
+  h2: { fontFamily: 'var(--font-display)', fontSize: '1.5rem', fontWeight: 900, color: C.text, textTransform: 'uppercase', letterSpacing: '-0.01em', margin: '0 0 8px' },
   sub: { fontSize: '13px', color: C.textMuted, lineHeight: 1.6, margin: '0 0 16px' },
   locBox: { background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '12px 14px', fontSize: '13px', marginBottom: '16px', lineHeight: 1.5 },
-  amberBtn: (busy) => ({ width: '100%', padding: '13px', borderRadius: '10px', background: busy ? C.border : AMBER.base, border: 'none', color: busy ? C.textMuted : AMBER.ink, fontSize: '15px', fontWeight: 800, cursor: busy ? 'default' : 'pointer', fontFamily: "'DM Sans', sans-serif" }),
+  amberBtn: (busy) => ({ width: '100%', padding: '13px', borderRadius: '10px', background: busy ? C.border : AMBER.base, border: 'none', color: busy ? C.textMuted : AMBER.ink, fontSize: '15px', fontWeight: 800, cursor: busy ? 'default' : 'pointer', fontFamily: 'var(--font-body)' }),
   ghostBtn: { width: '100%', marginTop: '10px', padding: '10px', borderRadius: '10px', background: 'transparent', border: `1px solid ${C.border}`, color: C.textSub, fontSize: '13px', fontWeight: 700, cursor: 'pointer' },
   canvas: { width: '100%', maxWidth: '320px', height: '90px', background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', marginBottom: '12px' },
   pulse: { fontSize: '40px', color: AMBER.light, animation: 'pulse 1.4s ease-in-out infinite', marginBottom: '6px' },
@@ -628,11 +628,11 @@ const S = {
   web: { background: C.card, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '16px' },
   webHead: { fontSize: '11px', fontWeight: 700, color: AMBER.light, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' },
   webCorroboration: { fontSize: '12px', color: AMBER.light, background: C.bg, border: `1px solid ${AMBER.dark}`, borderRadius: '8px', padding: '7px 10px', marginBottom: '10px', lineHeight: 1.45 },
-  webGroupBtn: { width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '8px 10px', fontSize: '13px', fontWeight: 600, color: C.textSub, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" },
+  webGroupBtn: { width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '8px 10px', fontSize: '13px', fontWeight: 600, color: C.textSub, cursor: 'pointer', fontFamily: 'var(--font-body)' },
   webSpeciesRow: { display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', padding: '4px 6px', borderRadius: '8px', background: C.card },
   webThumb: { borderRadius: '6px', objectFit: 'cover', flexShrink: 0, background: C.border },
   webThumbFallback: { width: '28px', height: '28px', display: 'grid', placeItems: 'center', fontSize: '14px', background: C.card, border: `1px solid ${C.border}`, borderRadius: '6px', flexShrink: 0 },
   summary: { cursor: 'pointer', color: C.textSub, fontSize: '13px', fontWeight: 700 },
   metaLabel: { display: 'block', fontSize: '11px', fontWeight: 700, color: C.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' },
-  textarea: { width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', color: C.text, padding: '8px 10px', fontFamily: "'DM Sans', sans-serif", fontSize: '13px', resize: 'vertical' },
+  textarea: { width: '100%', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', color: C.text, padding: '8px 10px', fontFamily: 'var(--font-body)', fontSize: '13px', resize: 'vertical' },
 }

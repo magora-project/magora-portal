@@ -5,9 +5,9 @@ import { updateListener, uploadListenerAvatar } from '../lib/listener'
 import { setFollowsPublic } from '../lib/journalFollows'
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  accent: '#1D9E75', accentLight: '#5DCAA5',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  accent: 'var(--c-forest-accent)', accentLight: 'var(--c-forest-accent-light)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 // Edit-your-profile form as an app-root modal, opened from the navbar account
@@ -147,17 +147,17 @@ const S = {
   close: { background: 'none', border: 'none', color: C.textMuted, fontSize: '16px', cursor: 'pointer', padding: '4px 8px' },
   label: { display: 'flex', flexDirection: 'column', gap: '8px', color: C.textMuted, fontSize: '13px' },
   input: {
-    background: '#0f2918', border: `1px solid ${C.border}`, borderRadius: '12px', color: C.text,
+    background: 'var(--c-forest-input-bg)', border: `1px solid ${C.border}`, borderRadius: '12px', color: C.text,
     padding: '12px 14px', fontSize: '14px', width: '100%', boxSizing: 'border-box',
   },
   textarea: {
-    background: '#0f2918', border: `1px solid ${C.border}`, borderRadius: '12px', color: C.text,
+    background: 'var(--c-forest-input-bg)', border: `1px solid ${C.border}`, borderRadius: '12px', color: C.text,
     padding: '12px 14px', fontSize: '14px', width: '100%', boxSizing: 'border-box',
   },
   fileInput: { color: C.textMuted, fontSize: '13px', marginTop: '6px' },
   toggleRow: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px',
-    background: '#0f2918', border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px',
+    background: 'var(--c-forest-input-bg)', border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px',
   },
   switch: (on, busy) => ({
     flexShrink: 0, width: '46px', height: '26px', borderRadius: '999px', position: 'relative',
@@ -169,9 +169,9 @@ const S = {
     position: 'absolute', top: '2px', left: on ? '22px' : '2px', width: '20px', height: '20px',
     borderRadius: '50%', background: '#fff', transition: 'left 0.15s ease',
   }),
-  error: { color: '#fb7a6a', fontSize: '13px', background: '#3e1f16', borderRadius: '12px', padding: '10px' },
+  error: { color: 'var(--c-forest-error)', fontSize: '13px', background: 'var(--c-forest-error-bg)', borderRadius: '12px', padding: '10px' },
   primaryButton: (busy) => ({
-    background: busy ? '#1a3a28' : C.accentLight, color: C.bg,
+    background: busy ? 'var(--c-forest-button-busy)' : C.accentLight, color: C.bg,
     border: 'none', borderRadius: '12px', padding: '12px 18px', cursor: busy ? 'default' : 'pointer', fontWeight: 700,
   }),
 }
