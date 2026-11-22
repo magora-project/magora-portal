@@ -54,12 +54,47 @@ test('every referenced token is defined in :root', () => {
   assert.deepEqual(missing, [])
 })
 
+// Lines (1-based) that call token() inside a top-level statement evaluated at import time. A line
+// starting at column 0 with an identifier starts a statement; it runs at import time unless it is a
+// function declaration or an import. Everything up to the next such line belongs to it, so a call in
+// a multi-line `const C = {` object is caught, not only one on the declaration's own line. Conservative:
+// an arrow function inside such a statement is flagged too. Comment lines are skipped.
+function moduleScopeTokenCalls(text) {
+  const lines = []
+  let evaluated = false
+  text.split('\n').forEach((line, i) => {
+    if (/^[A-Za-z_$]/.test(line)) evaluated = !/^((export\s+(default\s+)?)?(async\s+)?function\b|import\b)/.test(line)
+    if (evaluated && /\btoken\(/.test(line) && !/^\s*(\/\/|\/\*|\*)/.test(line)) lines.push(i + 1)
+  })
+  return lines
+}
+
+test('moduleScopeTokenCalls finds calls that run at import time', () => {
+  const src = [
+    "import { token } from './tokens'", // 1
+    "const A = token('a')", // 2: flagged
+    'const C = {', // 3
+    "  bg: token('b'),", // 4: flagged (a multi-line object)
+    '}', // 5
+    'export default function Page() {', // 6
+    "  const fill = token('c')", // 7: render time
+    '  return fill', // 8
+    '}', // 9
+    'export const P = {', // 10
+    "  // token('d') in a comment", // 11
+    '}', // 12
+    "setDefault(token('e'))", // 13: flagged
+    'function f() {', // 14
+    "  return token('f')", // 15: call time
+    '}', // 16
+  ].join('\n')
+  assert.deepEqual(moduleScopeTokenCalls(src), [2, 4, 13])
+})
+
 test('token() is never called at module scope', () => {
   const offenders = []
   for (const file of sourceFiles(['.js', '.jsx'])) {
-    readFileSync(join(ROOT, file), 'utf8').split('\n').forEach((line, i) => {
-      if (/^(export )?const .*token\(/.test(line)) offenders.push(`${file}:${i + 1}`)
-    })
+    for (const n of moduleScopeTokenCalls(readFileSync(join(ROOT, file), 'utf8'))) offenders.push(`${file}:${n}`)
   }
   assert.deepEqual(offenders, [])
 })
