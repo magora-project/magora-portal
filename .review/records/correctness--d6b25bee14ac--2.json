@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "d6b25bee14ac2c2325f4f1b5618f224781b713db",
+    "mergeBase": "576897580f9e8c045e76bb50f24d60deda42ba88",
+    "head": "973865ebdb3406ec4e05f6c6f2fb16f0be318c29"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "Excluding extension members hides ACL and security changes to public PostGIS functions: revoking EXECUTE on public.st_x(public.geometry) leaves the snapshot unchanged because extension keys record only schema and version.",
+      "file": "scripts/db/schema-snapshot.mjs",
+      "line": 276,
+      "disposition": {
+        "kind": "reclassified-nit",
+        "reason": "Known limitation, same as conformance D12 (justified): extension members in public are compared by installation metadata only; member owner/ACL/definition coverage is tracked in #118 (David, 2026-11-21).",
+        "issue": "https://github.com/magora-project/magora-portal/issues/118"
+      }
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "The fixed project IDs shared by concurrent proof or integration-test runs let Supabase reuse the same containers, so one run can modify the other's fixtures and stop its database with --no-backup.",
+      "file": "scripts/db/local-stack.mjs",
+      "line": 29
+    }
+  ],
+  "supersedes": "correctness--d6b25bee14ac--1",
+  "createdAt": "2026-11-22T00:04:11.044Z"
+}

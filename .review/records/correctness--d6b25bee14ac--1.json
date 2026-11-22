@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "d6b25bee14ac2c2325f4f1b5618f224781b713db",
+    "mergeBase": "576897580f9e8c045e76bb50f24d60deda42ba88",
+    "head": "973865ebdb3406ec4e05f6c6f2fb16f0be318c29"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "Excluding extension members hides ACL and security changes to public PostGIS functions: revoking EXECUTE on public.st_x(public.geometry) leaves the snapshot unchanged because extension keys record only schema and version.",
+      "file": "scripts/db/schema-snapshot.mjs",
+      "line": 276
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "The fixed project IDs shared by concurrent proof or integration-test runs let Supabase reuse the same containers, so one run can modify the other's fixtures and stop its database with --no-backup.",
+      "file": "scripts/db/local-stack.mjs",
+      "line": 29
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-22T00:02:46.108Z"
+}

@@ -3,6 +3,7 @@
 // migrations directory, so `supabase start` applies nothing from this repo: the repo's migrations
 // assume the pre-history schema that only the baseline (Task 12) provides.
 import { spawnSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -20,13 +21,17 @@ function run(args, { capture = false } = {}) {
   return r.stdout
 }
 
+// The project_id names the stack's containers, so it is made unique per run: two runs (from two
+// worktrees, say) never share containers, and one run's `stop --no-backup` cannot stop the other's
+// database. Both stacks bind the CLI's default ports, so a second concurrent start fails instead.
 export function makeWorkspace({ projectId = 'magora-local' } = {}) {
   const work = mkdtempSync(join(tmpdir(), 'magora-stack-'))
   mkdirSync(join(work, 'supabase', 'migrations'), { recursive: true })
   const config = readFileSync(join(REPO, 'supabase', 'config.toml'), 'utf8')
   // The repo's project_id is production's ref; it only names containers, but a local stack should
   // not carry it.
-  writeFileSync(join(work, 'supabase', 'config.toml'), config.replace(/^project_id = .*$/m, `project_id = "${projectId}"`))
+  const unique = `${projectId}-${randomBytes(4).toString('hex')}`
+  writeFileSync(join(work, 'supabase', 'config.toml'), config.replace(/^project_id = .*$/m, `project_id = "${unique}"`))
   return work
 }
 
