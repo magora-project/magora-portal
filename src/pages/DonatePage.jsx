@@ -10,9 +10,9 @@ const METHOD_ORG = 'themagoraproject'
 const METHOD_GIVE_URL = `https://give.themethodproject.org/${METHOD_ORG}`
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  red: '#c0392b', accent: '#1D9E75', accentLight: '#5DCAA5',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  red: 'var(--c-forest-danger)', accent: 'var(--c-forest-accent)', accentLight: 'var(--c-forest-accent-light)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 const WAYS = [
@@ -47,7 +47,7 @@ export default function DonatePage() {
 
       {/* Hero */}
       <h1 style={{
-        fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900,
+        fontFamily: 'var(--font-display)', fontWeight: 900,
         fontSize: 'clamp(2.2rem, 8vw, 3.2rem)', color: C.text, textTransform: 'uppercase',
         letterSpacing: '-0.01em', lineHeight: 1.03, margin: '0 0 18px',
       }}>
@@ -59,7 +59,7 @@ export default function DonatePage() {
         recording, data public, and the network growing.
       </p>
       <div style={{ borderLeft: `4px solid ${C.red}`, paddingLeft: '18px', margin: '24px 0 34px' }}>
-        <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: '22px', color: C.text, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '22px', color: C.text, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
           Every place is speaking. Help us keep listening.
         </span>
       </div>
@@ -70,7 +70,7 @@ export default function DonatePage() {
           <div key={w.title} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: '14px', padding: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
               <span style={{ fontSize: '20px' }}>{w.icon}</span>
-              <h2 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: '18px', color: C.text, textTransform: 'uppercase', letterSpacing: '0.02em', margin: 0 }}>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '18px', color: C.text, textTransform: 'uppercase', letterSpacing: '0.02em', margin: 0 }}>
                 {w.title}
               </h2>
             </div>
@@ -80,7 +80,7 @@ export default function DonatePage() {
       </div>
 
       {/* Donation form */}
-      <h2 style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, fontSize: '20px', color: C.text, textTransform: 'uppercase', letterSpacing: '0.02em', margin: '0 0 16px' }}>
+      <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 900, fontSize: '20px', color: C.text, textTransform: 'uppercase', letterSpacing: '0.02em', margin: '0 0 16px' }}>
         ♥ Support the project
       </h2>
       <tmp-donate org={METHOD_ORG} style={{ display: 'block', minHeight: '760px', marginBottom: '20px' }}>
@@ -94,7 +94,7 @@ export default function DonatePage() {
             flex: 1, minWidth: '200px', textAlign: 'center', padding: '13px 22px',
             background: 'transparent', color: C.text, border: `2px solid ${C.border}`,
             borderRadius: '10px', textDecoration: 'none',
-            fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '1.05rem', fontWeight: 700,
+            fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700,
             letterSpacing: '0.05em', textTransform: 'uppercase',
           }}
         >

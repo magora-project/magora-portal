@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { addQueuedListen } from '../lib/listenQueue'
+import { token } from '../lib/tokens'
 import { uploadViaFunction } from '../lib/storageUpload'
 import { fetchNearbyLife, summarizeGroups, inatTaxonUrl, corroboratedCount } from '../lib/inat'
 import {
@@ -109,12 +110,14 @@ export default function ListenModal({ onClose }) {
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     const buf = new Uint8Array(analyser.frequencyBinCount)
+    // A canvas cannot resolve var(): read the colour once, when recording starts.
+    const stroke = token('c-amber-light')
     const render = () => {
       rafRef.current = requestAnimationFrame(render)
       analyser.getByteTimeDomainData(buf)
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       ctx.lineWidth = 2
-      ctx.strokeStyle = AMBER.light
+      ctx.strokeStyle = stroke
       ctx.beginPath()
       const slice = canvas.width / buf.length
       for (let i = 0; i < buf.length; i++) {

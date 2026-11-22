@@ -31,9 +31,9 @@ import ProvenanceChip from '../components/ProvenanceChip'
 // Each is blocked on an unbuilt reference slice; see the 2026-07-31 architectural eval.
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  accent: '#1D9E75', accentLight: '#5DCAA5',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  accent: 'var(--c-forest-accent)', accentLight: 'var(--c-forest-accent-light)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 const HABITAT_EMOJI = {
@@ -359,10 +359,10 @@ export default function NodePage() {
   const disclosureBtn = {
     width: '100%', textAlign: 'left', background: 'none', border: `1px solid ${C.border}`,
     borderRadius: '10px', padding: '12px 14px', cursor: 'pointer',
-    fontFamily: "'DM Sans', sans-serif", fontSize: '14px', fontWeight: '700',
+    fontFamily: 'var(--font-body)', fontSize: '14px', fontWeight: '700',
     color: C.accentLight, lineHeight: 1.35,
   }
-  const webGroupBtn = { width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '8px 10px', fontSize: '13px', fontWeight: 600, color: C.textSub, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }
+  const webGroupBtn = { width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '8px 10px', fontSize: '13px', fontWeight: 600, color: C.textSub, cursor: 'pointer', fontFamily: 'var(--font-body)' }
   const webSpeciesRow = { display: 'flex', alignItems: 'center', gap: '8px', textDecoration: 'none', padding: '4px 6px', borderRadius: '8px', background: C.card }
   const webThumb = { borderRadius: '6px', objectFit: 'cover', flexShrink: 0, background: C.border }
   const webThumbFallback = { width: '28px', height: '28px', display: 'grid', placeItems: 'center', fontSize: '14px', background: C.card, border: `1px solid ${C.border}`, borderRadius: '6px', flexShrink: 0 }
@@ -425,7 +425,7 @@ export default function NodePage() {
                   fontSize: '12px', fontWeight: '600', padding: '6px 10px', borderRadius: '8px',
                   background: 'rgba(13,40,24,0.82)', backdropFilter: 'blur(4px)',
                   border: `1px solid ${C.border}`, color: C.textMuted,
-                  cursor: bannerBusy ? 'default' : 'pointer', fontFamily: "'DM Sans', sans-serif",
+                  cursor: bannerBusy ? 'default' : 'pointer', fontFamily: 'var(--font-body)',
                 }}
               >
                 Remove
@@ -438,7 +438,7 @@ export default function NodePage() {
                 fontSize: '12px', fontWeight: '700', padding: '6px 12px', borderRadius: '8px',
                 background: 'rgba(13,40,24,0.82)', backdropFilter: 'blur(4px)',
                 border: `1px solid ${C.accent}`, color: C.accentLight,
-                cursor: bannerBusy ? 'default' : 'pointer', fontFamily: "'DM Sans', sans-serif",
+                cursor: bannerBusy ? 'default' : 'pointer', fontFamily: 'var(--font-body)',
               }}
             >
               {bannerBusy ? 'Saving…' : bannerImg ? 'Change photo' : '📷 Add a photo'}
@@ -456,8 +456,8 @@ export default function NodePage() {
 
       {bannerError && (
         <div style={{
-          fontSize: '12px', color: '#ffb4a2', background: '#3d1f1a',
-          border: '1px solid #6b2f24', borderRadius: '10px',
+          fontSize: '12px', color: 'var(--c-forest-alert-text)', background: 'var(--c-forest-alert-bg)',
+          border: '1px solid var(--c-forest-alert-border)', borderRadius: '10px',
           padding: '8px 12px', marginBottom: '12px', marginTop: '-6px',
         }}>
           {bannerError}
@@ -508,7 +508,7 @@ export default function NodePage() {
           aria-label="Follow Their Journal"
           style={{
             flex: 1, padding: '11px', borderRadius: '10px', cursor: followBusy ? 'default' : 'pointer',
-            fontSize: '14px', fontWeight: '700', fontFamily: "'DM Sans', sans-serif",
+            fontSize: '14px', fontWeight: '700', fontFamily: 'var(--font-body)',
             background: following ? C.bg : C.accent,
             border: `1px solid ${following ? C.border : C.accent}`,
             color: following ? C.textSub : '#fff',
@@ -524,7 +524,7 @@ export default function NodePage() {
           style={{
             flex: '0 0 auto', padding: '11px 14px', borderRadius: '10px', cursor: 'pointer',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            background: shareState === 'copied' ? '#0f3020' : C.card,
+            background: shareState === 'copied' ? 'var(--c-forest-button-done)' : C.card,
             border: `1px solid ${shareState === 'copied' ? C.accent : C.border}`,
             color: shareState === 'copied' ? C.accentLight : C.textSub,
           }}

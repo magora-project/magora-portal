@@ -39,6 +39,33 @@
   --c-forest-error: #fb7a6a;
   --c-forest-error-bg: #3e1f16;
   --c-forest-danger: #c0392b;
+  --c-forest-text-footnote: #7a9b88;
+  --c-forest-avatar-bg: #162e20;
+  --c-forest-notice-bg: #1f3326;
+  --c-forest-notice-border: #3a6247;
+  --c-forest-queued-bg: #1f3326;
+  --c-forest-alert-text: #ffb4a2;
+  --c-forest-alert-bg: #3d1f1a;
+  --c-forest-alert-border: #6b2f24;
+  --c-forest-button-done: #0f3020;
+  --c-forest-selected-bg: #1a4a28;
+  --c-forest-form-error: #f87171;
+
+  /* Amber: the phone-listen palette (AMBER in src/lib/listen.js). */
+  --c-amber-base: #d9952b;
+  --c-amber-light: #f0c14b;
+  --c-amber-dark: #b87a1e;
+  --c-amber-ink: #3a2c0e;
+
+  /* Map: Leaflet markers and popups (MapPage.jsx, JournalPage.jsx, SpeciesPage.jsx). Markers read these
+     through token(), because pathOptions become SVG attributes. */
+  --c-map-node-active-fill: #1D9E75;
+  --c-map-node-active-stroke: #0F6E56;
+  --c-map-node-offline: #7aad8a;
+  --c-map-journal-fill: #1D9E75;
+  --c-map-journal-stroke: #5DCAA5;
+  --c-map-species-fill: #c0392b;
+  --c-map-popup-text: #0f2718;
 
   /* Status: the live heartbeat and node-active dots. */
   --c-status-live: #22c55e;
@@ -54,6 +81,7 @@
   --c-warn-bg: #2a1a0a;
   --c-warn-border: #f97316;
   --c-warn-text: #fb923c;
+  --c-warn-heading: #f97316;
 
   /* Editorial: the light paper sections (EcologicalCommons.jsx, EcologicalPipeline.jsx). */
   --c-editorial-bg: #f0ebe0;
@@ -63,6 +91,8 @@
   --c-editorial-text: #4a4440;
   --c-editorial-text-sub: #5a5248;
   --c-editorial-text-muted: #9a9080;
+  --c-editorial-strip-bg: #e8e2d5;
+  --c-editorial-stat-label: #7a7060;
 
   /* Paper: the exported share card (ShareSheet.jsx PAPER, INK, FOREST, ACCENT). */
   --c-paper-bg: #f0ebe0;

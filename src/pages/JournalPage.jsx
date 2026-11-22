@@ -16,11 +16,12 @@ import {
   uploadListenerAvatar,
 } from '../lib/listener'
 import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
+import { token } from '../lib/tokens'
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  accent: '#1D9E75', accentLight: '#5DCAA5',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  accent: 'var(--c-forest-accent)', accentLight: 'var(--c-forest-accent-light)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 function MapController({ points }) {
@@ -411,7 +412,7 @@ export default function JournalPage() {
     // page gutter (16px on mobile); adding more double-pads and cramps small screens.
     <div style={{ padding: '4px 0 40px' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ width: '90px', height: '90px', borderRadius: '22px', background: '#162e20', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: '90px', height: '90px', borderRadius: '22px', background: 'var(--c-forest-avatar-bg)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {avatarUrl ? (
             <img src={avatarUrl} alt={headerName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
@@ -481,10 +482,10 @@ export default function JournalPage() {
                   key={entry.id}
                   center={[entry.lat, entry.lon]}
                   radius={10}
-                  pathOptions={{ color: C.accentLight, fillColor: C.accent, fillOpacity: 0.9, weight: 2 }}
+                  pathOptions={{ color: token('c-map-journal-stroke'), fillColor: token('c-map-journal-fill'), fillOpacity: 0.9, weight: 2 }}
                 >
                   <Popup>
-                    <div style={{ color: '#0f2718' }}>
+                    <div style={{ color: 'var(--c-map-popup-text)' }}>
                       <div style={{ fontWeight: 700, marginBottom: '4px' }}>{formatDate(entry.detected_at)}</div>
                       <div>{visibleSpecies(entry).length} species</div>
                     </div>
@@ -580,21 +581,21 @@ export default function JournalPage() {
 const S = {
   label: { display: 'flex', flexDirection: 'column', gap: '8px', color: C.textMuted, fontSize: '13px' },
   input: {
-    background: '#0f2918', border: `1px solid ${C.border}`, borderRadius: '12px', color: C.text,
+    background: 'var(--c-forest-input-bg)', border: `1px solid ${C.border}`, borderRadius: '12px', color: C.text,
     padding: '12px 14px', fontSize: '14px', width: '100%', boxSizing: 'border-box',
   },
   textarea: {
-    background: '#0f2918', border: `1px solid ${C.border}`, borderRadius: '12px', color: C.text,
+    background: 'var(--c-forest-input-bg)', border: `1px solid ${C.border}`, borderRadius: '12px', color: C.text,
     padding: '12px 14px', fontSize: '14px', width: '100%', boxSizing: 'border-box',
   },
   fileInput: {
     color: C.textMuted, fontSize: '13px', marginTop: '6px'
   },
   error: {
-    color: '#fb7a6a', fontSize: '13px', background: '#3e1f16', borderRadius: '12px', padding: '10px',
+    color: 'var(--c-forest-error)', fontSize: '13px', background: 'var(--c-forest-error-bg)', borderRadius: '12px', padding: '10px',
   },
   primaryButton: (busy) => ({
-    background: busy ? '#1a3a28' : C.accentLight,
+    background: busy ? 'var(--c-forest-button-busy)' : C.accentLight,
     color: C.bg,
     border: 'none', borderRadius: '12px', padding: '12px 18px', cursor: busy ? 'default' : 'pointer',
     fontWeight: 700,
@@ -605,7 +606,7 @@ const S = {
   },
   statButton: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
-    background: '#0d2818', border: `1px solid ${C.border}`, borderRadius: '16px',
+    background: 'var(--c-forest-bg)', border: `1px solid ${C.border}`, borderRadius: '16px',
     padding: '16px 10px', cursor: 'pointer', color: C.text,
   },
   statValue: {

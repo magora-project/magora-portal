@@ -3,14 +3,14 @@ import { Link } from 'react-router-dom'
 import ListenButton from '../components/ListenButton'
 
 const C = {
-  bg:        '#0d2818',
-  card:      '#163d22',
-  border:    '#1f5230',
-  red:       '#c0392b',
-  accent:    '#1D9E75',
-  text:      '#f0ede8',
-  textSub:   '#c8e6d0',
-  textMuted: '#7aad8a',
+  bg:        'var(--c-forest-bg)',
+  card:      'var(--c-forest-card)',
+  border:    'var(--c-forest-border)',
+  red:       'var(--c-forest-danger)',
+  accent:    'var(--c-forest-accent)',
+  text:      'var(--c-forest-text)',
+  textSub:   'var(--c-forest-text-sub)',
+  textMuted: 'var(--c-forest-text-muted)',
 }
 
 const P = ({ children, style }) => (
@@ -30,7 +30,7 @@ const Card = ({ title, children, cta }) => (
     borderRadius: '12px', padding: '22px',
   }}>
     <div style={{
-      fontFamily: "'Big Shoulders Display', sans-serif",
+      fontFamily: 'var(--font-display)',
       fontSize: '22px', fontWeight: '900',
       color: C.red, textTransform: 'uppercase',
       letterSpacing: '0.04em', marginBottom: '10px', lineHeight: 1.1,
@@ -46,7 +46,7 @@ const nodeCtaStyle = {
   display: 'inline-flex', alignItems: 'center', gap: '8px',
   padding: '11px 22px', background: C.accent, color: '#fff',
   borderRadius: '3px', textDecoration: 'none',
-  fontFamily: "'Big Shoulders Display', sans-serif", fontSize: '1rem',
+  fontFamily: 'var(--font-display)', fontSize: '1rem',
   fontWeight: '700', letterSpacing: '0.07em', textTransform: 'uppercase',
 }
 
@@ -61,7 +61,7 @@ export default function AboutPage() {
       {/* Hero */}
       <div style={{ marginBottom: '28px' }}>
         <h1 style={{
-          fontFamily: "'Big Shoulders Display', sans-serif",
+          fontFamily: 'var(--font-display)',
           fontSize: 'clamp(2.4rem, 9vw, 3.4rem)', fontWeight: '900',
           color: C.text, textTransform: 'uppercase',
           letterSpacing: '-0.01em', lineHeight: 1.02, marginBottom: '0',
@@ -100,7 +100,7 @@ export default function AboutPage() {
 
       <div style={{ borderLeft: `4px solid ${C.red}`, paddingLeft: '18px', margin: '28px 0 8px' }}>
         <span style={{
-          fontFamily: "'Big Shoulders Display', sans-serif",
+          fontFamily: 'var(--font-display)',
           fontSize: '24px', fontWeight: '900',
           color: C.text, textTransform: 'uppercase', letterSpacing: '0.03em', lineHeight: 1.15,
         }}>
@@ -125,7 +125,7 @@ export default function AboutPage() {
       </div>
 
       {/* Data sources & attribution */}
-      <p style={{ marginTop: '32px', fontSize: '12px', lineHeight: 1.7, color: '#7a9b88', opacity: 0.85 }}>
+      <p style={{ marginTop: '32px', fontSize: '12px', lineHeight: 1.7, color: 'var(--c-forest-text-footnote)', opacity: 0.85 }}>
         Data sources: species observations from the iNaturalist community and eBird;
         bird trait data (foraging guild) from AVONET (Tobias et al. 2022, <em>Ecology Letters</em>),
         licensed CC-BY 4.0.

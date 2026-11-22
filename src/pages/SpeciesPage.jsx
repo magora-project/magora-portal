@@ -5,11 +5,12 @@ import 'leaflet/dist/leaflet.css'
 import { supabase, MIN_CONFIDENCE } from '../lib/supabase'
 import { parseNodeLocation } from '../lib/geo'
 import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
+import { token } from '../lib/tokens'
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  accent: '#1D9E75', accentLight: '#5DCAA5',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  accent: 'var(--c-forest-accent)', accentLight: 'var(--c-forest-accent-light)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 const SEASONS = [
@@ -199,7 +200,7 @@ export default function SpeciesPage() {
                   key={p.node.id}
                   center={[p.coords.lat, p.coords.lon]}
                   radius={8}
-                  pathOptions={{ fillColor: '#c0392b', color: '#fff', weight: 2, fillOpacity: 0.95 }}
+                  pathOptions={{ fillColor: token('c-map-species-fill'), color: '#fff', weight: 2, fillOpacity: 0.95 }}
                   eventHandlers={{ click: () => navigate(`/node/${p.node.id}`) }}
                 >
                   <Tooltip direction="top" offset={[0, -8]} opacity={0.95}>
