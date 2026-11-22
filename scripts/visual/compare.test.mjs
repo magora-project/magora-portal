@@ -24,7 +24,9 @@ test('fixture routes are classified', () => {
   assert.equal(classifyRequest(`${ORIGIN}/api/insight`, ORIGIN), 'api')
   assert.equal(classifyRequest(`${ORIGIN}/assets/index.js`, ORIGIN), 'app')
   assert.equal(classifyRequest('https://fonts.gstatic.com/s/dmsans/v1/a.woff2', ORIGIN), 'font')
-  assert.equal(classifyRequest('https://a.basemaps.cartocdn.com/light_all/3/1/2.png', ORIGIN), 'tile')
+  assert.equal(classifyRequest('https://a.tile.openstreetmap.org/3/1/2.png', ORIGIN), 'tile')
+  // The app no longer uses CARTO tiles, so a request for one fails the run.
+  assert.equal(classifyRequest('https://a.basemaps.cartocdn.com/light_all/3/1/2.png', ORIGIN), 'blocked')
   assert.equal(classifyRequest('https://en.wikipedia.org/api/rest_v1/page/summary/X', ORIGIN), 'external-fixture')
 })
 

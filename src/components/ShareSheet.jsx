@@ -51,7 +51,8 @@ export default function ShareSheet({ d, node, photo, moment, onClose }) {
   async function render() {
     if (document.fonts?.ready) { try { await document.fonts.ready } catch { /* ignore */ } }
     const canvas = await html2canvas(cardRef.current, {
-      useCORS: true, backgroundColor: token('c-paper-bg'), scale, // an html2canvas option, not CSS: no var() logging: false,
+      // backgroundColor is an html2canvas option, not CSS, so it cannot take var().
+      useCORS: true, backgroundColor: token('c-paper-bg'), scale, logging: false,
     })
     return new Promise(res => canvas.toBlob(res, 'image/png', 0.95))
   }

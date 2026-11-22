@@ -107,7 +107,7 @@ export const STATES = [
 
 // Which kind of request is this? Anything that is not named here is 'blocked'.
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com']
-const TILE_HOSTS = ['tile.openstreetmap.org', 'basemaps.cartocdn.com']
+const TILE_HOSTS = ['tile.openstreetmap.org']
 // Nominatim answers the Listen modal's place name. give.themethodproject.org serves DonatePage's donation
 // widget script, which the fixtures answer with an empty script, so the page keeps its fallback link.
 const EXTERNAL_FIXTURE_HOSTS = [
