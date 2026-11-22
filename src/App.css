@@ -1,7 +1,7 @@
 body {
-  font-family: 'DM Sans', sans-serif;
-  background: #0d2818;
-  color: #f0ede8;
+  font-family: var(--font-body);
+  background: var(--c-forest-bg);
+  color: var(--c-forest-text);
   min-height: 100vh;
   overflow-x: hidden;
 }
@@ -22,28 +22,28 @@ body {
 
 button {
   cursor: pointer;
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-body);
 }
 
 input, select, textarea {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
   padding: 10px 14px;
-  border: 1px solid #1f5230;
+  border: 1px solid var(--c-forest-border);
   border-radius: 10px;
-  background: #0d2818;
-  color: #f0ede8;
+  background: var(--c-forest-bg);
+  color: var(--c-forest-text);
   width: 100%;
 }
 
-input::placeholder { color: #4a7a58; }
-input:focus, select:focus { outline: none; border-color: #1D9E75; }
-select option { background: #163d22; color: #f0ede8; }
+input::placeholder { color: var(--c-forest-placeholder); }
+input:focus, select:focus { outline: none; border-color: var(--c-forest-accent); }
+select option { background: var(--c-forest-card); color: var(--c-forest-text); }
 
 /* ---- Navbar ---- */
 .navbar {
-  background: #0d2818;
-  border-bottom: 1px solid #1f5230;
+  background: var(--c-forest-bg);
+  border-bottom: 1px solid var(--c-forest-border);
   padding: 16px 16px 0;
 }
 
@@ -58,7 +58,7 @@ select option { background: #163d22; color: #f0ede8; }
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: #5DCAA5;
+  background: var(--c-forest-accent-light);
   flex-shrink: 0;
   animation: brand-pulse 2s infinite;
 }
@@ -75,10 +75,10 @@ select option { background: #163d22; color: #f0ede8; }
 }
 
 .brand-title {
-  font-family: 'Jost', sans-serif;
+  font-family: var(--font-label);
   font-size: 17px;
   font-weight: 700;
-  color: #f0ede8;
+  color: var(--c-forest-text);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   line-height: 1.2;
@@ -89,7 +89,7 @@ select option { background: #163d22; color: #f0ede8; }
 
 .brand-sub {
   font-size: 13px;
-  color: #7aad8a;
+  color: var(--c-forest-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -104,7 +104,7 @@ select option { background: #163d22; color: #f0ede8; }
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #c8e6d0;
+  color: var(--c-forest-text-sub);
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
@@ -114,7 +114,7 @@ select option { background: #163d22; color: #f0ede8; }
 
 .account-menu-item:hover,
 .account-menu-item:focus-visible {
-  background: #1f5230;
+  background: var(--c-forest-border);
   color: #fff;
   outline: none;
 }
@@ -131,7 +131,7 @@ select option { background: #163d22; color: #f0ede8; }
 
 .donate-tab {
   display: block;
-  background: #0d2818;
+  background: var(--c-forest-bg);
   text-decoration: none;
   cursor: pointer;
   overflow: hidden;
@@ -142,12 +142,12 @@ select option { background: #163d22; color: #f0ede8; }
   display: block;
   /* Dark fill matches the navbar so any sliver at the poster's rounded corners
      blends in rather than showing green. */
-  background: #0d2818;
+  background: var(--c-forest-bg);
   text-decoration: none;
   transition: box-shadow 0.15s;
   cursor: pointer;
   overflow: hidden;
-  color: #c8e6d0;
+  color: var(--c-forest-text-sub);
   /* Portrait tiles matching the poster art (~3:4), butted edge to edge. */
   aspect-ratio: 3 / 4;
 }
@@ -155,7 +155,7 @@ select option { background: #163d22; color: #f0ede8; }
 /* Tiles are flush with no borders or gaps, so an outer ring would hide under the
    neighbors — the active tab reads as an inset accent ring instead. */
 .navbar-links a.active {
-  box-shadow: inset 0 0 0 3px #1D9E75;
+  box-shadow: inset 0 0 0 3px var(--c-forest-accent);
 }
 
 .tab-icon {
@@ -166,7 +166,7 @@ select option { background: #163d22; color: #f0ede8; }
 .tab-label {
   font-size: 13px;
   font-weight: 700;
-  color: #c8e6d0;
+  color: var(--c-forest-text-sub);
   letter-spacing: -0.2px;
   white-space: nowrap;
 }
@@ -193,8 +193,8 @@ select option { background: #163d22; color: #f0ede8; }
 
 /* ---- Stat cards ---- */
 .stat-card {
-  background: #163d22;
-  border: 1px solid #1f5230;
+  background: var(--c-forest-card);
+  border: 1px solid var(--c-forest-border);
   border-radius: 14px;
   padding: 12px 10px;
   text-align: center;
@@ -202,7 +202,7 @@ select option { background: #163d22; color: #f0ede8; }
 .stat-card-label {
   font-size: 10px;
   font-weight: 700;
-  color: #7aad8a;
+  color: var(--c-forest-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 4px;
@@ -211,13 +211,13 @@ select option { background: #163d22; color: #f0ede8; }
   font-family: 'Playfair Display', serif;
   font-size: 26px;
   font-weight: 600;
-  color: #5DCAA5;
+  color: var(--c-forest-accent-light);
   line-height: 1;
   margin-bottom: 3px;
 }
 .stat-card-sub {
   font-size: 10px;
-  color: #7aad8a;
+  color: var(--c-forest-text-muted);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;

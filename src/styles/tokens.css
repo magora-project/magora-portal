@@ -18,4 +18,19 @@
   --font-display: 'Big Shoulders Display', sans-serif;
   --font-label: 'Jost', sans-serif;
   --font-body: 'DM Sans', sans-serif;
+
+  /* Forest: the site-wide dark palette (`C` in MapPage.jsx and DetectionCard.jsx, src/App.css, src/index.css). */
+  --c-forest-bg: #0d2818;
+  --c-forest-card: #163d22;
+  --c-forest-border: #1f5230;
+  --c-forest-accent: #1D9E75;
+  --c-forest-accent-light: #5DCAA5;
+  --c-forest-text: #f0ede8;
+  --c-forest-text-sub: #c8e6d0;
+  --c-forest-text-muted: #7aad8a;
+  --c-forest-placeholder: #4a7a58;
+  --c-forest-code-bg: #0a1f12;
+
+  /* Status: the live heartbeat dot (src/index.css). */
+  --c-status-live: #22c55e;
 }
