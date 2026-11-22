@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "8ea3368e36afe59e3324abb5340812f9b51f5ed5",
+    "path": "docs/superpowers/specs/2026-11-21-field-app-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [],
+  "supersedes": "spec--0e09db066ec0--1",
+  "createdAt": "2026-11-22T00:13:52.160Z"
+}

@@ -3,8 +3,9 @@
 - **Date:** 2026-11-21
 - **Status:** draft. This writes up the design David approved in the 2026-11-21 session, for review.
 - **Lane:** Specced. It adds a capability, touches auth and PII (location, audio, email), and creates a repo.
-- **Home:** this spec is reviewed in magora-portal, because the app repo does not exist yet. Once the repo
-  `magora-field-app` is created (§5, task 0), the spec is copied there and this copy points to it.
+- **Home:** this spec was reviewed in magora-portal, before the app repo existed. The repo now exists at
+  https://github.com/magora-project/magora-field-app, and its copy of this spec and of the plan is the one
+  that changes from here on.
 - **Sources:**
   - `~/Magora Mockups/Magora Field App Summary.pdf` and `Magora Field App PRD.pdf` (Sep 2026).
   - The v4 token contract `design/DESIGN.md` and mockups at https://claude.ai/artifact/3DETVQXnHNokvDXitVDrqj.
