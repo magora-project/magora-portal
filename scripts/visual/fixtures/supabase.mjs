@@ -7,7 +7,7 @@
 // session by the listener `fixture`; and one signed-in user with a handle and one without.
 //
 // Every time is derived from NOW, which the capture also installs as the page clock.
-// A table or RPC nobody answers is recorded in `unknown` and printed by the capture.
+// A table or RPC nobody answers is recorded in `unknown`, and fails the capture.
 
 export const NOW = Date.parse('2026-11-20T12:00:00Z')
 const iso = (offsetMs) => new Date(NOW + offsetMs).toISOString()

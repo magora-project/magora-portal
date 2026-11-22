@@ -1,7 +1,7 @@
 // Fixture answers for the app's own /api/* functions and the few third-party APIs the pages call
 // (Wikipedia, GBIF, iNaturalist, Nominatim). handle({ method, url, headers, body }) ->
 // { status, headers, body }. Nothing here reaches a network. An endpoint nobody answers is recorded in
-// `unknown` and printed by the capture.
+// `unknown`, and fails the capture.
 //
 // Species photos, iNaturalist photos and Xeno-canto recordings are deliberately absent: each would be one
 // more host to serve, so the cards show their placeholder art and "No recording".

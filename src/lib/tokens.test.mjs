@@ -67,5 +67,6 @@ test('token() is never called at module scope', () => {
 test('the font tokens hold the current families', () => {
   const css = readFileSync(join(ROOT, TOKENS_CSS_PATH), 'utf8')
   assert.deepEqual([...definedTokens(css, ':root')].filter((n) => n.startsWith('font-')).sort(), ['font-body', 'font-display', 'font-label'])
-  assert.match(relative(ROOT, join(ROOT, TOKENS_CSS_PATH)), /^src\/styles\/tokens\.css$/)
+  // `/`-joined, as sourceFiles() does: on Windows relative() returns `\` separators.
+  assert.match(relative(ROOT, join(ROOT, TOKENS_CSS_PATH)).split(sep).join('/'), /^src\/styles\/tokens\.css$/)
 })

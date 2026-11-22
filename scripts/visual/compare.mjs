@@ -563,7 +563,9 @@ async function capture({ dist, out, brand, only }) {
             const r = await shootOnce(browser, { origin, brand, item, width, file })
             blocked.push(...r.blocked.map((u) => `${file}: ${u}`))
             if (r.v4Fonts.length) failures.push(`${file}: --brand current requested /fonts/v4/: ${r.v4Fonts.join(', ')}`)
-            for (const e of r.errors) console.warn(`  [${file}] page error: ${e}`)
+            // A page error fails the shot: a route that throws can render the same empty or fallback state
+            // in both revisions and still compare equal.
+            for (const e of r.errors) failures.push(`${file}: page error: ${e}`)
             shotsOf.push(r.png)
           }
           if (!shotsOf[0].equals(shotsOf[1])) {
@@ -584,7 +586,9 @@ async function capture({ dist, out, brand, only }) {
     server.close()
   }
   const unknownFixtures = [...supabaseFixtures.unknown, ...apiFixtures.unknown]
-  if (unknownFixtures.length) console.log(`unanswered fixture requests:\n  ${unknownFixtures.join('\n  ')}`)
+  // An unanswered request fails the run (Review Focus 1): the fixtures answer it with an empty result or a
+  // 404, so both revisions could render the same empty state and compare equal.
+  if (unknownFixtures.length) failures.push(`unanswered fixture requests:\n  ${unknownFixtures.join('\n  ')}`)
   if (blocked.length) failures.push(`blocked requests:\n  ${blocked.join('\n  ')}`)
   const seconds = Math.round((Date.now() - started) / 1000)
   if (failures.length) {
