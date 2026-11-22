@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "pr": 117,
+  "slots": [],
+  "findings": [
+    {
+      "id": "thread:PRRT_kwDOSsky0866d7X-",
+      "source": "codex",
+      "severity": "P2",
+      "disposition": { "kind": "fixed", "commit": "0fd74a00d8357029eee7cb54e186bd76c5019633" }
+    }
+  ],
+  "reclassified": [],
+  "writtenAt": "2026-11-22T02:07:46.197Z"
+}

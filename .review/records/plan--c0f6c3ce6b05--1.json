@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "c0f6c3ce6b0553d33481ab7fff42190e807df4c2",
+    "path": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "ref-1",
+      "severity": "P1",
+      "summary": "line 384: malformed task heading \"### Task 15 (operator, when found): Swap in Noah's vector master\"; expected \"### Task <n>: <title>\" or \"### Task <n> (operator): <title>\"",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md"
+    },
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "The reference scan includes tokens.test.mjs itself, so it finds the deliberately undefined token('nope') and c-forest-bg before Task 3 defines it, making Task 2's expected PASS impossible unless test fixtures are excluded.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 129
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "The prescribed tests embed six-digit hex literals in src/lib/tokens.test.mjs, with more added in Task 8, so Task 6's repository-wide no-hex guard necessarily fails unless these fixtures move outside src or avoid literal hex strings.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 127
+    },
+    {
+      "id": "F3",
+      "severity": "P2",
+      "summary": "Requiring every v4 declaration value to belong to the hex-only V4_PALETTE rejects the three required font-family declarations, so this test must restrict validation to colour properties.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 248
+    },
+    {
+      "id": "F4",
+      "severity": "P2",
+      "summary": "Task 4 omits src/components/ListenButton.jsx, whose heroStyle hard-codes Big Shoulders Display, leaving the About page's Listen action outside the font tokens and breaking the promised v4 font coverage.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 161
+    },
+    {
+      "id": "F5",
+      "severity": "P1",
+      "summary": "ShareSheet also passes PAPER directly as html2canvas's backgroundColor option, which requires a resolved colour rather than var(), so following this instruction breaks image export while the prescribed open-sheet screenshot never exercises that path.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 173
+    }
+  ],
+  "supersedes": null,
+  "rev": "576897580f9e8c045e76bb50f24d60deda42ba88",
+  "tasks": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6",
+    "T7",
+    "T8",
+    "T9",
+    "T10",
+    "T11",
+    "T12",
+    "T13",
+    "T14"
+  ],
+  "createdAt": "2026-11-21T21:22:28.962Z"
+}
