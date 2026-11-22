@@ -5,7 +5,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { classifyRequest, FIXTURE_SUPABASE_URL, metaProblems, requestKey, ROUTES, STATES, WIDTHS } from './compare.mjs'
+import {
+  classifyRequest, coverageProblems, expectedShots, FIXTURE_SUPABASE_URL, metaProblems, requestKey, ROUTES, STATES,
+  subsetProblems, WIDTHS,
+} from './compare.mjs'
 import * as fontFixtures from './fixtures/fonts.mjs'
 
 const ORIGIN = 'http://127.0.0.1:4173'
@@ -84,6 +87,44 @@ test('diff refuses a set with no or incomplete meta.json', () => {
   assert.match(metaProblems(META, null, 'base', 'head')[0], /head has no meta\.json/)
   assert.match(metaProblems(META, { browser: 'chromium' }, 'base', 'head')[0], /head meta\.json has no browserVersion/)
   assert.match(metaProblems({ browserVersion: '1' }, META, 'base', 'head')[0], /base meta\.json has no browser/)
+})
+
+// Codex correctness--20cc322f8ca0--1 F1: a failed capture must never pass diff with coverage missing.
+const FULL = expectedShots(null)
+
+test('expectedShots is every route and state at both widths', () => {
+  assert.equal(FULL.length, (ROUTES.length + STATES.length) * WIDTHS.length)
+  assert.ok(FULL.includes('map-375.png') && FULL.includes('handle-prompt-1280.png'))
+  assert.deepEqual(expectedShots(['about']), ['about-1280.png', 'about-375.png'])
+})
+
+test('a complete set whose PNGs match its meta has no coverage problem', () => {
+  assert.deepEqual(coverageProblems({ complete: true, only: null, shots: FULL }, FULL, 'base'), [])
+})
+
+test('an incomplete capture is refused', () => {
+  const p = coverageProblems({ complete: false, only: null, shots: FULL }, FULL, 'base')
+  assert.match(p.join('\n'), /base is not a complete capture/)
+  assert.match(coverageProblems({ only: null, shots: FULL }, FULL, 'base').join('\n'), /not a complete capture/)
+})
+
+test('a missing or extra PNG is refused', () => {
+  const missing = coverageProblems({ complete: true, only: null, shots: FULL }, FULL.slice(1), 'head')
+  assert.match(missing.join('\n'), new RegExp(`head is missing ${FULL[0].replace('.', '\\.')}`))
+  const extra = coverageProblems({ complete: true, only: null, shots: FULL }, [...FULL, 'stray-375.png'], 'head')
+  assert.match(extra.join('\n'), /head has an unexpected stray-375\.png/)
+})
+
+test('a meta shot list short of the full set is refused', () => {
+  const short = FULL.slice(2)
+  assert.match(coverageProblems({ complete: true, only: null, shots: short }, short, 'head').join('\n'), /head is missing/)
+})
+
+test('two sets captured with different --only subsets are refused', () => {
+  assert.match(subsetProblems({ only: ['about'] }, { only: null }, 'base', 'head').join('\n'), /different --only/)
+  assert.match(subsetProblems({ only: ['about'] }, { only: ['donate'] }, 'base', 'head').join('\n'), /different --only/)
+  assert.deepEqual(subsetProblems({ only: ['about'] }, { only: ['about'] }), [])
+  assert.deepEqual(subsetProblems({ only: null }, {}), [])
 })
 
 test('requestKey orders held requests by method, URL and body', () => {

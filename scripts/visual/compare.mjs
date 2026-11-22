@@ -309,6 +309,31 @@ export function metaProblems(a, b, nameA = 'A', nameB = 'B') {
   return problems
 }
 
+// The shot files a full capture writes, or a capture limited by --only. Sorted.
+export function expectedShots(only) {
+  const ids = [...ROUTES, ...STATES].map((it) => it.id).filter((id) => !only || only.includes(id))
+  return ids.flatMap((id) => WIDTHS.map((w) => `${id}-${w}.png`)).sort()
+}
+
+// Whether one capture set covers what it must. Only a capture that succeeded writes `complete: true`, so a
+// failed run can never be compared, even when another run failed on the same pages (Codex
+// correctness--20cc322f8ca0--1 F1). The set's PNGs must be exactly the expected set for its --only subset.
+// Pure, for the tests: `meta` is the parsed meta.json, `pngs` the PNG names in the directory.
+export function coverageProblems(meta, pngs, name = 'set') {
+  if (!meta || meta.complete !== true) return [`${name} is not a complete capture (its capture failed or was cut short); capture it again`]
+  const expected = expectedShots(meta.only ?? null)
+  const problems = []
+  for (const f of expected) if (!pngs.includes(f) || !(meta.shots ?? []).includes(f)) problems.push(`${name} is missing ${f}`)
+  for (const f of pngs) if (!expected.includes(f)) problems.push(`${name} has an unexpected ${f}`)
+  return problems
+}
+
+// Two sets limited by different --only subsets cover different pages, so a diff of them proves nothing.
+export function subsetProblems(a, b, nameA = 'A', nameB = 'B') {
+  const subset = (m) => JSON.stringify(m?.only ? [...m.only].sort() : null)
+  return subset(a) === subset(b) ? [] : [`${nameA} and ${nameB} were captured with different --only subsets: ${subset(a)}, ${subset(b)}`]
+}
+
 function readMeta(dir) {
   const file = path.join(dir, META_FILE)
   if (!fs.existsSync(file)) return null
@@ -558,8 +583,6 @@ async function capture({ dist, out, brand, only }) {
     await browser.close()
     server.close()
   }
-  fs.writeFileSync(path.join(outDir, META_FILE), `${JSON.stringify(meta, null, 2)}\n`)
-
   const unknownFixtures = [...supabaseFixtures.unknown, ...apiFixtures.unknown]
   if (unknownFixtures.length) console.log(`unanswered fixture requests:\n  ${unknownFixtures.join('\n  ')}`)
   if (blocked.length) failures.push(`blocked requests:\n  ${blocked.join('\n  ')}`)
@@ -568,6 +591,16 @@ async function capture({ dist, out, brand, only }) {
     console.error(`capture FAILED (${shots} of ${items.length * WIDTHS.length} shots, ${seconds} s):\n${failures.join('\n')}`)
     return false
   }
+  // meta.json is written last, and only after a fully successful run, so diff can tell a complete set from a
+  // failed one. The stale meta.json was deleted at the start of the run.
+  const written = fs.readdirSync(outDir).filter((f) => f.endsWith('.png')).sort()
+  const full = { ...meta, complete: true, only: only ?? null, shots: written }
+  const problems = coverageProblems(full, written, outDir)
+  if (problems.length) {
+    console.error(`capture FAILED: ${problems.join('; ')}`)
+    return false
+  }
+  fs.writeFileSync(path.join(outDir, META_FILE), `${JSON.stringify(full, null, 2)}\n`)
   console.log(`capture ok: ${shots} shots in ${outDir} (${seconds} s)`)
   return true
 }
@@ -602,14 +635,19 @@ async function diff(dirA, dirB) {
   if (!dirA || !dirB) throw new Error('diff needs <dirA> <dirB>')
   // Screenshots from two browser builds differ in text rendering for reasons unrelated to the app, so
   // comparing them would prove nothing either way. Refuse.
-  const problems = metaProblems(readMeta(dirA), readMeta(dirB), dirA, dirB)
+  const list = (d) => fs.readdirSync(d).filter((f) => f.endsWith('.png')).sort()
+  const a = list(dirA)
+  const b = list(dirB)
+  const metaA = readMeta(dirA)
+  const metaB = readMeta(dirB)
+  const problems = metaProblems(metaA, metaB, dirA, dirB)
+  if (!problems.length) {
+    problems.push(...coverageProblems(metaA, a, dirA), ...coverageProblems(metaB, b, dirB), ...subsetProblems(metaA, metaB, dirA, dirB))
+  }
   if (problems.length) {
     for (const p of problems) console.log(`refusing to compare: ${p}`)
     return false
   }
-  const list = (d) => fs.readdirSync(d).filter((f) => f.endsWith('.png')).sort()
-  const a = list(dirA)
-  const b = list(dirB)
   let ok = true
   for (const f of a) if (!b.includes(f)) { console.log(`only in ${dirA}: ${f}`); ok = false }
   for (const f of b) if (!a.includes(f)) { console.log(`only in ${dirB}: ${f}`); ok = false }
