@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "2411f3d882e4ecbba5ae0cdb5f55c01f48d7637a",
+    "mergeBase": "4af4c1259c13f31b45e02f9b550a0fb4a59a403d",
+    "head": "bfbb2fa14d9d1bb6e741f418b5d23f55334dac2b"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "Since there is no import hunk in this diff, `sep` is likely not imported from `node:path`, which will cause `split(sep)` to throw a ReferenceError.",
+      "file": "src/lib/tokens.test.mjs",
+      "line": 72,
+      "disposition": {
+        "kind": "reclassified-nit",
+        "reason": "false positive: sep is imported at src/lib/tokens.test.mjs:12 (import { join, relative, sep } from 'node:path'); the test passes 6/6"
+      }
+    }
+  ],
+  "supersedes": "completeness--2411f3d882e4--1",
+  "createdAt": "2026-11-22T17:18:46.021Z"
+}
