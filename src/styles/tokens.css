@@ -1,0 +1,21 @@
+/*
+ * Design tokens (portal v4 spec §4.2, plan Task 2). The one file under src/ that may hold literal colours
+ * (scripts/ci/no-hex-literals.test.mjs).
+ *
+ * Naming: colour roles are --c-<surface>-<role>, for example --c-forest-bg for the map and card palette
+ * (`C` in MapPage.jsx and DetectionCard.jsx), --c-amber-* for AMBER in src/lib/listen.js, and
+ * --c-paper-* for ShareSheet's PAPER, INK, FOREST and ACCENT. Fonts are --font-display, --font-label and
+ * --font-body.
+ *
+ * Tokens are per ROLE, not per value: two uses of one literal get two tokens when they play different
+ * roles, so the v4 block (PR 2) can map them apart. In :root each value is the current literal, byte for
+ * byte, so PR 1 changes no pixel.
+ *
+ * Use var(--…) everywhere. Only a sink that cannot resolve var() reads a value through token() in
+ * src/lib/tokens.js, at render or event time.
+ */
+:root {
+  --font-display: 'Big Shoulders Display', sans-serif;
+  --font-label: 'Jost', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+}
