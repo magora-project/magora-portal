@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "4564f8e0e6a762afc1a5ccb7dbf40f7d02fc169f",
+    "path": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "Capture never invalidates an existing meta.json before reusing an output directory, so a failed rerun can leave complete:true alongside partially replaced screenshots and allow diff to accept an incomplete capture; remove the manifest at startup or publish each successful capture atomically.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 104
+    }
+  ],
+  "supersedes": "plan--2a0f026859f8--1",
+  "rev": "051c7d0035ef1c8ce94154b6c27e5bccf6c6cb9c",
+  "tasks": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6",
+    "T7",
+    "T8",
+    "T9",
+    "T10",
+    "T11",
+    "T12",
+    "T13",
+    "T14",
+    "T15"
+  ],
+  "createdAt": "2026-11-22T02:06:30.726Z"
+}
