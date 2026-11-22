@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "b677ac76b171df824b29f190f2473903cdb876ac",
+    "mergeBase": "4af4c1259c13f31b45e02f9b550a0fb4a59a403d",
+    "head": "b80ceb7c40ac66740bfdb074353fccf113bc4386"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "D50",
+      "severity": "P3",
+      "summary": "D50: Task 4 promises token substitutions, but the replacement comments out the existing logging: false option, unintentionally enabling html2canvas's default logging during exports.",
+      "file": "src/components/ShareSheet.jsx",
+      "line": 54
+    },
+    {
+      "id": "D51",
+      "severity": "P3",
+      "summary": "D51: Task 6 specifies scanning source files for hex literals, but the implementation additionally refuses every symlink under src/, an unplanned restriction with no accompanying test.",
+      "file": "scripts/ci/no-hex-literals.test.mjs",
+      "line": 26
+    },
+    {
+      "id": "D52",
+      "severity": "P3",
+      "summary": "D52: Task 1 names OpenStreetMap and GBIF as fixture tile hosts, but the classifier additionally accepts basemaps.cartocdn.com and its subdomains, harmlessly broadening the fixture allowlist beyond the plan.",
+      "file": "scripts/visual/compare.mjs",
+      "line": 114
+    }
+  ],
+  "supersedes": null,
+  "conformance": {
+    "tasks": [
+      "T1",
+      "T2",
+      "T3",
+      "T4",
+      "T5",
+      "T6"
+    ],
+    "deviations": [
+      "D50",
+      "D51",
+      "D52"
+    ],
+    "commands": [
+      {
+        "cmd": "node scripts/visual/compare.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "node src/lib/tokens.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "node scripts/ci/no-hex-literals.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "npm test",
+        "exit": 0
+      },
+      {
+        "cmd": "npm run build",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "blob": "6c9605941d7f3fd7372de912e8fbd47365f611b5"
+    }
+  },
+  "createdAt": "2026-11-22T08:55:33.321Z"
+}
