@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "ce30231088388c65aa49d580bd32d61f972f6fc0",
+    "mergeBase": "576897580f9e8c045e76bb50f24d60deda42ba88",
+    "head": "c833feb212aaa68058b502b2ac921dcec2afb3c0"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "The functions query excludes extension members, so changes to ACLs or SECURITY DEFINER on public PostGIS functions produce identical snapshots despite the promise to compare public function permissions and security attributes.",
+      "file": "scripts/db/schema-snapshot.mjs"
+    },
+    {
+      "id": "correctness--d6b25bee14ac--2#F2",
+      "severity": "P2",
+      "summary": "The fixed project IDs shared by concurrent proof or integration-test runs let Supabase reuse the same containers, so one run can modify the other's fixtures and stop its database with --no-backup.",
+      "file": "scripts/db/local-stack.mjs",
+      "line": 29,
+      "disposition": {
+        "kind": "fixed",
+        "by": "correctness--ce3023108838--1"
+      }
+    }
+  ],
+  "supersedes": "correctness--d6b25bee14ac--2",
+  "createdAt": "2026-11-22T02:03:07.330Z"
+}
