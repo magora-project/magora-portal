@@ -13,10 +13,20 @@
 // SAFETY. `vite dev` and `vite preview` proxy to production, so this tool never runs them. The app is built
 // with VITE_SUPABASE_URL set to a fixture host that does not resolve, and every browser request goes through
 // classifyRequest: only the fixture app, the fixture Supabase host, fonts, map tiles and a short list of
-// third-party APIs are served, and each of those (apart from the app and fonts) is answered from fixtures.
-// Anything else is aborted, recorded, and fails the run. This file imports nothing from src/.
+// third-party APIs are served, and each of those (apart from the app itself) is answered from fixtures,
+// fonts included (fixtures/fonts.mjs). Anything else is aborted, recorded, and fails the run. This file
+// imports nothing from src/.
+//
+// DETERMINISM. Two captures of one build must be byte-identical, or a diff proves nothing. That holds by
+// construction, not by retrying: the page clock is paused and advanced in fixed steps; every fixture response
+// is held and released one at a time in a fixed order, only while the page is quiet and never mid-step (pump,
+// settle); readiness is a condition (nothing in flight, no DOM change, images and fonts done), never a sleep;
+// and Chromium rasters whole tiles (CHROMIUM_ARGS). Each page is still shot twice in fresh contexts, and a
+// difference fails the run loudly; that check is never retried. capture writes meta.json with the browser
+// build, and diff refuses two sets taken with different builds.
 
 import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
@@ -24,6 +34,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import * as supabaseFixtures from './fixtures/supabase.mjs'
 import * as apiFixtures from './fixtures/api.mjs'
+import * as fontFixtures from './fixtures/fonts.mjs'
 
 export const FIXTURE_SUPABASE_URL = 'https://fixture.supabase.invalid'
 export const WIDTHS = [375, 1280]
@@ -47,60 +58,50 @@ export const ROUTES = [
 ]
 
 // Modal and menu states. `signedIn` is false (signed out), true (the listener `fixture`, who has a handle)
-// or 'no-handle' (a signed-in listener with no handle yet). `act(page)` brings the state up.
+// or 'no-handle' (a signed-in listener with no handle yet). `act(page)` brings the state up; it only clicks
+// (or runs the clock), and never waits for data, because responses are held until the harness pumps them
+// (see pump). `shows(page)` is a locator that must match once the page has settled after `act`.
 export const STATES = [
   {
     id: 'auth-modal', path: '/', signedIn: false,
-    async act(page) {
-      await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-      await page.locator('input[type="email"]').waitFor()
-    },
+    act: (page) => page.getByRole('button', { name: 'Sign in', exact: true }).click(),
+    shows: (page) => page.locator('input[type="email"]'),
   },
   {
     // Signed in, because a signed-out Listen opens AuthModal instead.
     id: 'listen-modal', path: '/', signedIn: true,
-    async act(page) {
-      await page.getByRole('button', { name: 'Listen', exact: true }).first().click()
-      await page.getByText('Fixtureville').waitFor()
-    },
+    act: (page) => page.getByRole('button', { name: 'Listen', exact: true }).first().click(),
+    shows: (page) => page.getByText('Fixtureville'),
   },
   {
     id: 'share-sheet', path: '/node/fixture-node-1', signedIn: false,
-    async act(page) {
-      await page.getByRole('button', { name: 'Share this detection' }).first().click()
-      await page.getByText('Download').first().waitFor()
-    },
+    act: (page) => page.getByRole('button', { name: 'Share this detection' }).first().click(),
+    shows: (page) => page.getByText('Download'),
   },
   {
-    // DonatePrompt shows after a 60 s timer; the fake clock runs it at once.
+    // DonatePrompt shows after a 60 s timer; the paused fake clock is run past it.
     id: 'donate-prompt', path: '/about', signedIn: false,
-    async act(page) {
-      await page.clock.runFor(60000)
-      await page.getByText('Finding this valuable?').waitFor()
-    },
+    act: (page) => page.clock.runFor(60000),
+    shows: (page) => page.getByText('Finding this valuable?'),
   },
   {
     id: 'account-menu', path: '/', signedIn: true,
-    async act(page) {
-      await page.getByRole('button', { name: 'Account menu' }).click()
-      await page.getByRole('menu').waitFor()
-    },
+    act: (page) => page.getByRole('button', { name: 'Account menu' }).click(),
+    shows: (page) => page.getByRole('menu'),
   },
   {
     id: 'profile-editor', path: '/', signedIn: true,
     async act(page) {
       await page.getByRole('button', { name: 'Account menu' }).click()
       await page.getByRole('menuitem', { name: 'Edit profile' }).click()
-      await page.getByText('Follows').first().waitFor()
     },
+    shows: (page) => page.getByText('Follows'),
   },
   {
     // A signed-in listener with no handle who tries to follow a journal: NodePage calls promptHandleClaim.
     id: 'handle-prompt', path: '/node/fixture-node-1', signedIn: 'no-handle',
-    async act(page) {
-      await page.getByRole('button', { name: 'Follow Their Journal' }).click()
-      await page.getByText('Claim your field journal').waitFor()
-    },
+    act: (page) => page.getByRole('button', { name: 'Follow Their Journal' }).click(),
+    shows: (page) => page.getByText('Claim your field journal'),
   },
 ]
 
@@ -201,18 +202,35 @@ async function serveDist(dist) {
 
 const TILE_PNG = fs.readFileSync(path.join(HERE, 'fixtures', 'tile.png'))
 
-// MapPage re-fits its map every time one more source of markers arrives, and Leaflet animates each fit. If
-// the sources land close together the animations interrupt each other and the final view moves by a few
-// pixels from run to run, so the sources that feed the map's markers are answered in a fixed order, far
-// enough apart for each animation to finish.
-const STAGGER_MS = { public_mobile_detections: 700, public_listen_sessions: 1400 }
-function staggerMs(url) {
-  const table = new URL(url).pathname.match(/^\/rest\/v1\/([^/]+)/)?.[1]
-  return STAGGER_MS[table] ?? 0
+// Every response except the app's own files is held here until the harness releases it (see pump). The
+// harness releases one at a time, in a fixed order, and only when the page is quiet; nothing is released while
+// the virtual clock steps. So the page receives its data in the same order, at the same virtual time, on
+// every run, however fast or slow the machine is.
+//
+// Why the order matters: MapPage re-fits its Leaflet map each time one more marker source arrives. A fit at
+// the same zoom is an animated pan whose offset Leaflet truncates to whole pixels from wherever the map is at
+// that moment, so the final view depends on which sources arrived together, and the markers can land a pixel
+// apart (measured: map-375 differed by 589 px between two fresh contexts when sources arrived as they came).
+export function requestKey({ method, url, postData }) {
+  return `${method} ${url} ${postData || ''}`
+}
+
+function makeGate() {
+  const held = []
+  return {
+    held,
+    hold(entry) { return new Promise((resolve) => held.push({ ...entry, release: resolve })) },
+    // Releases the held request whose key sorts first.
+    releaseNext() {
+      held.sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0))
+      held.shift().release()
+    },
+    count(type) { return held.filter((h) => h.type === type).length },
+  }
 }
 
 // Routes every request of a context through classifyRequest. Returns the log it fills.
-async function installRouting(context, { origin, brand }) {
+async function installRouting(context, { origin, brand, gate = null }) {
   const log = { blocked: [], v4Fonts: [], counts: {} }
   await context.route('**/*', async (route) => {
     const req = route.request()
@@ -222,13 +240,20 @@ async function installRouting(context, { origin, brand }) {
     if (brand === 'current') {
       try { if (new URL(url).pathname.includes('/fonts/v4/')) log.v4Fonts.push(url) } catch { /* not a URL */ }
     }
+    if (gate && kind !== 'app') {
+      await gate.hold({ key: requestKey({ method: req.method(), url, postData: req.postData() }), type: req.resourceType() })
+    }
     const fulfil = (r) => route.fulfill({ status: r.status, headers: r.headers, body: r.body })
     switch (kind) {
       case 'app':
-      case 'font':
         return route.continue()
+      case 'font': {
+        const r = fontFixtures.handle({ url })
+        if (r) return fulfil(r)
+        log.blocked.push(`${url} (font not in fixtures/fonts)`)
+        return route.abort('blockedbyclient')
+      }
       case 'supabase':
-        await new Promise((resolve) => setTimeout(resolve, staggerMs(url)))
         return fulfil(supabaseFixtures.handle({ method: req.method(), url, headers: req.headers() }))
       case 'api':
       case 'external-fixture':
@@ -243,12 +268,51 @@ async function installRouting(context, { origin, brand }) {
   return log
 }
 
-// Chromium's launch options. Playwright finds its own browser; MAGORA_VISUAL_CHROMIUM names another
-// executable when the one this Playwright version wants is not installed. Compare runs only against
-// screenshots taken with the same browser build.
-function launchOptions(extra = {}) {
-  const executablePath = process.env.MAGORA_VISUAL_CHROMIUM
-  return executablePath ? { executablePath, ...extra } : extra
+// Requests the browser has started and not finished, counted in Node.
+function trackRequests(context) {
+  const net = { inflight: new Set(), started: 0 }
+  context.on('request', (r) => { net.inflight.add(r); net.started++ })
+  context.on('requestfinished', (r) => net.inflight.delete(r))
+  context.on('requestfailed', (r) => net.inflight.delete(r))
+  return net
+}
+
+// The browser is always the headless Chromium build this Playwright version was released with
+// (`npx playwright install chromium` fetches it); there is no override. Two capture sets are comparable only
+// when one browser build took both, so capture records the build in meta.json and diff checks it.
+export const META_FILE = 'meta.json'
+
+// Chromium normally re-rasters only the part of a tile a change invalidated ("partial raster"), so the pixels
+// of an unchanged element depend on which intermediate frames the compositor happened to draw. Measured
+// 2026-11-21 on account-menu-1280: one anti-aliased pixel of the Leaflet zoom control's rounded corner came
+// out one level apart in 6 of 59 fresh-context captures with partial raster on, and in 0 of 59 (0 of 79 under
+// CPU load) with it off. Off, every tile is rastered whole, so the result depends only on the final page.
+export const CHROMIUM_ARGS = ['--disable-partial-raster']
+
+// What diff refuses to compare. Pure, for the tests: `a` and `b` are parsed meta.json contents or null.
+export function metaProblems(a, b, nameA = 'A', nameB = 'B') {
+  const problems = []
+  if (!a) problems.push(`${nameA} has no ${META_FILE}; capture it again with this harness`)
+  if (!b) problems.push(`${nameB} has no ${META_FILE}; capture it again with this harness`)
+  if (problems.length) return problems
+  for (const key of ['browser', 'browserVersion']) {
+    if (typeof a[key] !== 'string' || !a[key]) problems.push(`${nameA} ${META_FILE} has no ${key}`)
+    if (typeof b[key] !== 'string' || !b[key]) problems.push(`${nameB} ${META_FILE} has no ${key}`)
+  }
+  if (problems.length) return problems
+  if (a.browser !== b.browser || a.browserVersion !== b.browserVersion) {
+    problems.push(`browser differs: ${nameA} ${a.browser} ${a.browserVersion}, ${nameB} ${b.browser} ${b.browserVersion}`)
+  }
+  // Launch flags change rasterisation (CHROMIUM_ARGS), so they must match too.
+  const args = (m) => JSON.stringify(m.args ?? [])
+  if (args(a) !== args(b)) problems.push(`browser flags differ: ${nameA} ${args(a)}, ${nameB} ${args(b)}`)
+  return problems
+}
+
+function readMeta(dir) {
+  const file = path.join(dir, META_FILE)
+  if (!fs.existsSync(file)) return null
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return null }
 }
 
 // A seeded Math.random, so nothing that draws on it varies between runs.
@@ -265,12 +329,18 @@ const SEED_RANDOM = () => {
 // `animations: 'disabled'` at screenshot time does not stop an infinite CSS animation for good: the layer an
 // animation promoted keeps rasterising differently from run to run. So no animation or transition ever runs.
 const STOP_ANIMATIONS = () => {
-  // Leaflet's documented switch: without 3D transforms it does not animate zooms, whose end state
-  // otherwise comes out a pixel apart from run to run.
+  // Leaflet's documented switch: without 3D transforms it does not animate zooms.
   window.L_DISABLE_3D = true
   const style = document.createElement('style')
   style.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }'
   document.addEventListener('DOMContentLoaded', () => document.head.appendChild(style))
+}
+
+// Counts DOM mutations, so the harness can tell when the page has stopped changing.
+const COUNT_MUTATIONS = () => {
+  window.__visualMutations = 0
+  new MutationObserver((records) => { window.__visualMutations += records.length })
+    .observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
 }
 
 // supabase-js reads its session from localStorage['sb-<first label of the host>-auth-token'].
@@ -287,31 +357,99 @@ async function addBrandCookie(context, origin, brand) {
   if (brand === 'v4') await context.addCookies([{ name: 'magora_brand', value: 'v4', url: origin }])
 }
 
-async function settle(page) {
-  await page.waitForLoadState('networkidle')
-  await page.evaluate(() => document.fonts.ready)
-  await page.waitForFunction(
-    () => !/Loading|Gathering the record|Looking around/.test(document.body.innerText),
-    null, { timeout: 15000, polling: 100 },
-  )
-  // Leaflet pans and zooms to fit its markers once data arrives, and has no "animation done" signal.
-  await page.waitForTimeout(1800)
-  await page.waitForLoadState('networkidle')
-  await page.evaluate(() => document.fonts.ready)
+// One snapshot of everything that can still change the page. Before reading, it lets every task already
+// queued run: React schedules its renders and effects as MessageChannel tasks, which run in order, so a few
+// round trips through a MessageChannel drain work that a response or a click queued.
+async function pageSnapshot(page) {
+  return page.evaluate(async () => {
+    for (let i = 0; i < 4; i++) {
+      await new Promise((resolve) => {
+        const ch = new MessageChannel()
+        ch.port1.onmessage = () => resolve()
+        ch.port2.postMessage(null)
+      })
+    }
+    return {
+      mutations: window.__visualMutations,
+      images: [...document.images].filter((img) => !img.complete).length,
+      fonts: document.fonts.status,
+      ready: document.readyState,
+    }
+  })
 }
 
-// Rendering is not always finished when the network and fonts are: under load, text and map layers can
-// still be rastering. Shoot until two shots in a row are byte-identical, and fail if that never happens.
-async function stableScreenshot(page) {
-  const shoot = () => page.screenshot({ fullPage: true, animations: 'disabled' })
-  let previous = await shoot()
-  for (let attempt = 0; attempt < 8; attempt++) {
-    await page.waitForTimeout(500)
-    const next = await shoot()
-    if (next.equals(previous)) return next
-    previous = next
+// With the clock paused, releases held responses one at a time until none is left and the page is quiet:
+// no request in flight that is not held, no image still decoding except those whose response is held, no
+// font loading unless a font response is held, and three snapshots in a row with no DOM change and no new
+// request. Each of these is a condition, not a delay: under load it simply takes longer. It fails loudly
+// rather than give up.
+const QUIET_SNAPSHOTS = 3
+const QUIET_TIMEOUT_MS = 30000
+async function pump(page, net, gate, label) {
+  const deadline = Date.now() + QUIET_TIMEOUT_MS
+  let previous = null
+  let streak = 0
+  for (;;) {
+    const s = await pageSnapshot(page)
+    const key = `${s.mutations}|${net.started}|${gate.held.length}`
+    const quiet = net.inflight.size === gate.held.length
+      && s.images <= gate.count('image')
+      && (s.fonts === 'loaded' || gate.count('font') > 0)
+    streak = quiet && key === previous ? streak + 1 : 0
+    previous = key
+    if (streak >= QUIET_SNAPSHOTS - 1) {
+      if (gate.held.length === 0) {
+        if (s.ready === 'complete') return s
+      } else {
+        gate.releaseNext()
+        streak = 0
+        previous = null
+        continue
+      }
+    }
+    if (Date.now() > deadline) {
+      const pending = [...net.inflight].map((r) => r.url()).join(', ')
+      throw new Error(`${label}: the page never went quiet (requests in flight or held: ${pending || 'none'}; `
+        + `images loading: ${s.images}; fonts: ${s.fonts}; document: ${s.ready})`)
+    }
   }
-  throw new Error('the page never stopped changing between screenshots')
+}
+
+// The page's clock is Playwright's fake clock, installed at FIXED_TIME and PAUSED: no timer, interval or
+// animation frame runs unless the harness advances it. settle() advances it in fixed steps and pumps the
+// held responses between steps, never during one. So every capture of a page sees the same events in the
+// same virtual order and ends at the same virtual time. Leaflet's pan animation and tile fade, and React
+// effects that wait on a timer, all run on that virtual time, so they always finish within the steps.
+// SETTLE_MS is far below the shortest app timer that would change a page (DonatePrompt's 60 s; the 30 s
+// refetch intervals), and the same for every page, so no page sees a different "now".
+const STEP_MS = 100
+const SETTLE_MS = 3000
+const VERIFY_MS = 1000
+async function settle(page, net, gate, label) {
+  await pump(page, net, gate, `${label} (before the clock runs)`)
+  for (let t = 0; t < SETTLE_MS; t += STEP_MS) {
+    await page.clock.runFor(STEP_MS)
+    await pump(page, net, gate, `${label} (at +${t + STEP_MS} ms)`)
+  }
+}
+
+// After settling, a further VERIFY_MS of virtual time must change nothing: no DOM mutation and no request.
+// A page that fails this is still animating or still loading, and the capture fails loudly instead of
+// shooting it.
+async function verifyStill(page, net, gate, label) {
+  const before = await pump(page, net, gate, `${label} (verify)`)
+  const started = net.started
+  await page.clock.runFor(VERIFY_MS)
+  const after = await pump(page, net, gate, `${label} (verify)`)
+  if (after.mutations !== before.mutations || net.started !== started) {
+    throw new Error(`${label}: the page still changed after settling (${after.mutations - before.mutations} DOM `
+      + `mutations, ${net.started - started} requests in ${VERIFY_MS} ms of page time)`)
+  }
+  if (after.images || after.fonts !== 'loaded') throw new Error(`${label}: images or fonts still loading after settling`)
+  const loading = await page.evaluate(() => (document.body.innerText.match(/Loading|Gathering the record|Looking around/) || [])[0])
+  if (loading) throw new Error(`${label}: the page still shows "${loading}" after settling`)
+  const tiles = await page.evaluate(() => document.querySelectorAll('.leaflet-tile:not(.leaflet-tile-loaded)').length)
+  if (tiles) throw new Error(`${label}: ${tiles} map tiles are not loaded after settling`)
 }
 
 // One capture of one page at one width, in a fresh browser context.
@@ -327,26 +465,32 @@ async function shootOnce(browser, { origin, brand, item, width, file }) {
     permissions: ['geolocation'],
     geolocation: { latitude: 40.01, longitude: -105.27 },
   })
-  const log = await installRouting(context, { origin, brand })
+  const gate = makeGate()
+  const log = await installRouting(context, { origin, brand, gate })
+  const net = trackRequests(context)
+  const errors = []
   try {
     await addBrandCookie(context, origin, brand)
     await context.addInitScript(SEED_RANDOM)
     await context.addInitScript(STOP_ANIMATIONS)
+    await context.addInitScript(COUNT_MUTATIONS)
     const session = sessionFor(item.signedIn)
     if (session) await context.addInitScript(SEED_SESSION, session)
     const page = await context.newPage()
-    page.on('pageerror', (e) => console.warn(`  [${file}] page error: ${e.message}`))
-    // The clock starts at FIXED_TIME and then runs, because freezing Date stops Leaflet's pan animation
-    // part-way. Fixture times sit whole minutes from FIXED_TIME, so the seconds a capture takes cannot
-    // change a relative time ("35 min ago").
+    page.on('pageerror', (e) => errors.push(e.message))
     await page.clock.install({ time: FIXED_TIME })
-    await page.goto(origin + item.path, { waitUntil: 'networkidle' })
-    await settle(page)
+    await page.clock.pauseAt(FIXED_TIME)
+    // 'commit': the load event cannot come until pump releases the held stylesheets, fonts and data.
+    await page.goto(origin + item.path, { waitUntil: 'commit' })
+    await settle(page, net, gate, file)
     if (item.act) {
       await item.act(page)
-      await settle(page)
+      await settle(page, net, gate, `${file} after ${item.id}`)
+      if (await item.shows(page).count() === 0) throw new Error(`${file}: ${item.id} did not come up`)
     }
-    return { png: await stableScreenshot(page), blocked: log.blocked, v4Fonts: log.v4Fonts }
+    await verifyStill(page, net, gate, file)
+    const png = await page.screenshot({ fullPage: true, animations: 'disabled', caret: 'hide' })
+    return { png, blocked: log.blocked, v4Fonts: log.v4Fonts, errors }
   } finally {
     await context.close()
   }
@@ -357,8 +501,10 @@ async function capture({ dist, out, brand, only }) {
   if (brand !== 'current' && brand !== 'v4') throw new Error('capture needs --brand current|v4')
   const { chromium } = await import('playwright')
   const outDir = path.resolve(out)
+  const unstableDir = path.join(outDir, 'unstable')
   fs.mkdirSync(outDir, { recursive: true })
-  for (const f of fs.readdirSync(outDir)) if (f.endsWith('.png')) fs.rmSync(path.join(outDir, f))
+  for (const f of fs.readdirSync(outDir)) if (f.endsWith('.png') || f === META_FILE) fs.rmSync(path.join(outDir, f))
+  fs.rmSync(unstableDir, { recursive: true, force: true })
 
   const items = [
     ...ROUTES.map((r) => ({ id: r.id, path: r.path, signedIn: false, act: null })),
@@ -367,7 +513,16 @@ async function capture({ dist, out, brand, only }) {
   if (only && items.length !== only.length) throw new Error(`--only names an unknown id: ${only.join(',')}`)
 
   const { server, origin } = await serveDist(dist)
-  const browser = await chromium.launch(launchOptions())
+  const browser = await chromium.launch({ args: CHROMIUM_ARGS })
+  const meta = {
+    browser: browser.browserType().name(),
+    browserVersion: browser.version(),
+    playwright: createRequire(import.meta.url)('playwright/package.json').version,
+    args: CHROMIUM_ARGS,
+    brand,
+  }
+  console.log(`browser: ${meta.browser} ${meta.browserVersion} (Playwright ${meta.playwright})`)
+  const started = Date.now()
   const failures = []
   const blocked = []
   let shots = 0
@@ -376,19 +531,22 @@ async function capture({ dist, out, brand, only }) {
       for (const width of WIDTHS) {
         const file = `${item.id}-${width}.png`
         try {
-          // A page is shot in fresh contexts until two in a row are byte-identical. A single capture
-          // occasionally lands a pixel off (a Leaflet marker, a glyph) for no reason a wait can see.
-          let previous = null
-          let png = null
-          for (let attempt = 0; attempt < 4 && !png; attempt++) {
+          // Every page is shot twice, each time in a fresh context. The two must be byte-identical. This is a
+          // check, not a retry: a difference fails the run and keeps both shots in unstable/ to look at.
+          const shotsOf = []
+          for (let n = 0; n < 2; n++) {
             const r = await shootOnce(browser, { origin, brand, item, width, file })
             blocked.push(...r.blocked.map((u) => `${file}: ${u}`))
             if (r.v4Fonts.length) failures.push(`${file}: --brand current requested /fonts/v4/: ${r.v4Fonts.join(', ')}`)
-            if (previous && previous.equals(r.png)) png = r.png
-            previous = r.png
+            for (const e of r.errors) console.warn(`  [${file}] page error: ${e}`)
+            shotsOf.push(r.png)
           }
-          if (!png) throw new Error('four captures in a row never produced two identical ones')
-          fs.writeFileSync(path.join(outDir, file), png)
+          if (!shotsOf[0].equals(shotsOf[1])) {
+            fs.mkdirSync(unstableDir, { recursive: true })
+            shotsOf.forEach((png, n) => fs.writeFileSync(path.join(unstableDir, file.replace(/\.png$/, `.${n + 1}.png`)), png))
+            throw new Error(`two captures in fresh contexts differ; both are in ${unstableDir}`)
+          }
+          fs.writeFileSync(path.join(outDir, file), shotsOf[0])
           shots++
           console.log(`captured ${file}`)
         } catch (e) {
@@ -400,15 +558,17 @@ async function capture({ dist, out, brand, only }) {
     await browser.close()
     server.close()
   }
+  fs.writeFileSync(path.join(outDir, META_FILE), `${JSON.stringify(meta, null, 2)}\n`)
 
   const unknownFixtures = [...supabaseFixtures.unknown, ...apiFixtures.unknown]
   if (unknownFixtures.length) console.log(`unanswered fixture requests:\n  ${unknownFixtures.join('\n  ')}`)
   if (blocked.length) failures.push(`blocked requests:\n  ${blocked.join('\n  ')}`)
+  const seconds = Math.round((Date.now() - started) / 1000)
   if (failures.length) {
-    console.error(`capture FAILED (${shots} of ${items.length * WIDTHS.length} shots):\n${failures.join('\n')}`)
+    console.error(`capture FAILED (${shots} of ${items.length * WIDTHS.length} shots, ${seconds} s):\n${failures.join('\n')}`)
     return false
   }
-  console.log(`capture ok: ${shots} shots in ${outDir}`)
+  console.log(`capture ok: ${shots} shots in ${outDir} (${seconds} s)`)
   return true
 }
 
@@ -418,7 +578,7 @@ async function serve({ dist, brand = 'current', signedIn }) {
   if (!dist) throw new Error('serve needs --dist <dir>')
   const { chromium } = await import('playwright')
   const { server, origin } = await serveDist(dist)
-  const browser = await chromium.launch(launchOptions({ headless: false }))
+  const browser = await chromium.launch({ headless: false })
   const context = await browser.newContext({
     viewport: null, locale: 'en-US', serviceWorkers: 'block',
     permissions: ['geolocation'], geolocation: { latitude: 40.01, longitude: -105.27 },
@@ -440,6 +600,13 @@ async function serve({ dist, brand = 'current', signedIn }) {
 
 async function diff(dirA, dirB) {
   if (!dirA || !dirB) throw new Error('diff needs <dirA> <dirB>')
+  // Screenshots from two browser builds differ in text rendering for reasons unrelated to the app, so
+  // comparing them would prove nothing either way. Refuse.
+  const problems = metaProblems(readMeta(dirA), readMeta(dirB), dirA, dirB)
+  if (problems.length) {
+    for (const p of problems) console.log(`refusing to compare: ${p}`)
+    return false
+  }
   const list = (d) => fs.readdirSync(d).filter((f) => f.endsWith('.png')).sort()
   const a = list(dirA)
   const b = list(dirB)
@@ -457,7 +624,7 @@ async function diff(dirA, dirB) {
       if (bufA.equals(bufB)) { console.log(`ok ${f}`); continue }
       if (!page) {
         const { chromium } = await import('playwright')
-        browser = await chromium.launch(launchOptions())
+        browser = await chromium.launch()
         page = await browser.newPage()
       }
       // Decode both in a canvas and count the pixels where any channel differs.

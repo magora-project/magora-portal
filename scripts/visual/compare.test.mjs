@@ -1,9 +1,12 @@
 // Tests for the screenshot comparison harness (scripts/visual/compare.mjs). They cover the request
-// classifier, the one thing that keeps a capture run off production, and the route and width tables.
+// classifier, the one thing that keeps a capture run off production; the route, state and width tables;
+// diff's refusal to compare two browser builds; the held-response order; and the font fixtures.
 // Run: node scripts/visual/compare.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { classifyRequest, FIXTURE_SUPABASE_URL, ROUTES, STATES, WIDTHS } from './compare.mjs'
+import fs from 'node:fs'
+import { classifyRequest, FIXTURE_SUPABASE_URL, metaProblems, requestKey, ROUTES, STATES, WIDTHS } from './compare.mjs'
+import * as fontFixtures from './fixtures/fonts.mjs'
 
 const ORIGIN = 'http://127.0.0.1:4173'
 
@@ -47,4 +50,64 @@ test('STATES has the seven spec ids', () => {
   assert.deepEqual(STATES.map((s) => s.id), [
     'auth-modal', 'listen-modal', 'share-sheet', 'donate-prompt', 'account-menu', 'profile-editor', 'handle-prompt',
   ])
+})
+
+test('every state brings itself up with act and says what must show', () => {
+  for (const s of STATES) {
+    assert.equal(typeof s.act, 'function', s.id)
+    assert.equal(typeof s.shows, 'function', s.id)
+  }
+})
+
+const META = { browser: 'chromium', browserVersion: '156.0.8078.4' }
+
+test('diff accepts two sets taken with one browser build', () => {
+  assert.deepEqual(metaProblems(META, { ...META, brand: 'v4' }), [])
+})
+
+test('diff refuses two sets taken with different browser builds', () => {
+  const p = metaProblems(META, { ...META, browserVersion: '157.0.1.0' }, 'base', 'head')
+  assert.equal(p.length, 1)
+  assert.match(p[0], /browser differs: base chromium 156\.0\.8078\.4, head chromium 157\.0\.1\.0/)
+  assert.equal(metaProblems(META, { ...META, browser: 'firefox' }).length, 1)
+})
+
+test('diff refuses two sets taken with different browser flags', () => {
+  const p = metaProblems({ ...META, args: ['--disable-partial-raster'] }, META, 'base', 'head')
+  assert.equal(p.length, 1)
+  assert.match(p[0], /browser flags differ/)
+  assert.deepEqual(metaProblems({ ...META, args: ['--x'] }, { ...META, args: ['--x'] }), [])
+})
+
+test('diff refuses a set with no or incomplete meta.json', () => {
+  assert.match(metaProblems(null, META, 'base', 'head')[0], /base has no meta\.json/)
+  assert.match(metaProblems(META, null, 'base', 'head')[0], /head has no meta\.json/)
+  assert.match(metaProblems(META, { browser: 'chromium' }, 'base', 'head')[0], /head meta\.json has no browserVersion/)
+  assert.match(metaProblems({ browserVersion: '1' }, META, 'base', 'head')[0], /base meta\.json has no browser/)
+})
+
+test('requestKey orders held requests by method, URL and body', () => {
+  const keys = [
+    { method: 'GET', url: 'https://fixture.supabase.invalid/rest/v1/nodes' },
+    { method: 'GET', url: 'https://fixture.supabase.invalid/rest/v1/aci_logs' },
+    { method: 'POST', url: 'https://fixture.supabase.invalid/rest/v1/rpc/x', postData: '{"a":1}' },
+  ].map(requestKey).sort()
+  assert.deepEqual(keys, [
+    'GET https://fixture.supabase.invalid/rest/v1/aci_logs ',
+    'GET https://fixture.supabase.invalid/rest/v1/nodes ',
+    'POST https://fixture.supabase.invalid/rest/v1/rpc/x {"a":1}',
+  ])
+})
+
+test('Google Fonts are answered from fixtures, and an unknown font URL is not', () => {
+  const css = fontFixtures.handle({ url: 'https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&display=swap' })
+  assert.equal(css.status, 200)
+  // Every file the saved stylesheets name is saved too, and none is the l/font?kit variant.
+  for (const sheet of ['css2-site.css', 'css2-big-shoulders.css']) {
+    const text = fs.readFileSync(new URL(`./fixtures/fonts/${sheet}`, import.meta.url), 'utf8')
+    assert.doesNotMatch(text, /\/l\/font\?kit=/)
+    for (const [, u] of text.matchAll(/url\((https:[^)]+)\)/g)) assert.ok(fontFixtures.handle({ url: u }), u)
+  }
+  assert.equal(fontFixtures.handle({ url: 'https://fonts.gstatic.com/s/jost/v20/missing.woff2' }), null)
+  assert.equal(fontFixtures.handle({ url: 'https://fonts.googleapis.com/css2?family=Roboto' }), null)
 })
