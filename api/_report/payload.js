@@ -23,6 +23,7 @@ import { nodeCoords, aciMean, hasPriorDetection } from '../_pulse/sources.js'
 import { assignSurfaces } from '../_pulse/select.js'
 import { PULSE_CONFIG } from '../_pulse/payload.js'
 import { classifyLabel, isVoice } from './labels.js'
+import { nodeTimeZone, nodeDayWindow, toNodeLocal, nodeTenure, isValidLocalDate } from '../_lib/nodeTime.js'
 
 const enc = encodeURIComponent
 
@@ -72,6 +73,7 @@ const REPORT_ANTHRO_TYPES = 4 // human/machine noise types surfaced in the human
  * @property {{ count:number, distinct_types:number, types:{label:string,count:number}[] }} human_activity  anthropophony context — never a voice
  * @property {object} phenology
  * @property {{ has_detections:boolean, has_aci:boolean, degraded:boolean }} coverage
+ * @property {object} tenure
  */
 
 /** All cadences the contract implements. */
@@ -118,8 +120,14 @@ function blockWindow(block, seasonYear) {
  * Daily window from a date (UTC calendar day). period_key = the date. Default = today (UTC).
  * @param {string} [date] 'YYYY-MM-DD'
  */
-export function resolveDailyWindow(date) {
-  const period_key = date || new Date().toISOString().slice(0, 10)
+export function resolveDailyWindow(date, tz) {
+  const periodKeyFromLocalNow = () => toNodeLocal(new Date(), tz).date
+  const period_key = date || (tz ? periodKeyFromLocalNow() : new Date().toISOString().slice(0, 10))
+  if (!isValidLocalDate(period_key)) throw new Error(`invalid report date: ${date}`)
+  if (tz) {
+    const [start, end] = nodeDayWindow(period_key, tz)
+    return { start, end, cadence: 'daily', period_key }
+  }
   const dayStart = new Date(`${period_key}T00:00:00.000Z`)
   if (Number.isNaN(dayStart.getTime())) throw new Error(`invalid report date: ${date}`)
   const dayEnd = new Date(dayStart.getTime() + 86400000)
@@ -179,6 +187,33 @@ export function resolvePeriodKey(cadence, dateOrKey, lat) {
     default: throw new Error(`unsupported cadence: ${cadence}`)
   }
 }
+
+// The span the node was actually listening within `window`: clipped to first_heard_at at the
+// start, never extended past now (generation time) at the end. Pure framing for narration — the
+// report's query window is NOT narrowed by this, so midnight-stored pulses and any pre-heartbeat
+// observations in the day stay in the aggregation.
+export function observedSpan(window, tenure, now = new Date()) {
+  const start = tenure?.first_heard_at && new Date(tenure.first_heard_at) > new Date(window.start)
+    ? tenure.first_heard_at
+    : window.start
+  const capped = new Date(window.end) > now
+  const end = capped ? now.toISOString() : window.end
+  const clipped = new Date(start) > new Date(window.start)
+  // clipped: the start was tenure-clipped (young node). partial: the period is still running, so
+  // the span ends at generation time — narration must not claim a full day/season/year it has not
+  // witnessed.
+  return { start, end, clipped, partial: capped }
+}
+
+// ISO week-of-year (1..53) of a civil date string 'YYYY-MM-DD'. Takes the node-LOCAL calendar date
+// (period_key), not a UTC instant: for nodes east of UTC the local-midnight instant falls on the
+// preceding UTC date, which would shift the week whenever the local date crosses an ISO boundary.
+function isoWeekOfDate(periodKey) {
+  const d = new Date(`${periodKey}T00:00:00.000Z`)
+  if (Number.isNaN(d.getTime())) return null
+  return isoWeek(d)
+}
+export { isoWeekOfDate }
 
 // ISO week-of-year (1..53).
 function isoWeek(d) {
@@ -256,7 +291,7 @@ function aggregateAnthro(rows) {
 }
 
 // Aggregate raw rows into per-species stats + totals + hour-of-day histogram.
-function aggregate(rows) {
+function aggregate(rows, tz) {
   const bySpecies = new Map()
   const hourCounts = new Array(24).fill(0)
   let total = 0
@@ -277,7 +312,7 @@ function aggregate(rows) {
       cur.last_seen = r.detected_at
       if ((r.confidence ?? 0) > cur.confidence_max) cur.confidence_max = r.confidence ?? 0
     }
-    const h = new Date(r.detected_at).getUTCHours()
+    const h = tz ? toNodeLocal(r.detected_at, tz).hour : new Date(r.detected_at).getUTCHours()
     if (h >= 0 && h < 24) hourCounts[h] += 1
   }
   return { bySpecies, hourCounts, total }
@@ -297,7 +332,11 @@ function hourLabel(h) {
 
 // Peak 3-hour band from the hour histogram. For daily, a concrete span on the day (start/end ISO);
 // for seasonal/annual, a recurring time-of-day pattern (label + count only, start/end null).
-function peakBand(hourCounts, dayStart) {
+// `localMidnight` is the UTC instant of the node's local midnight at the START of the report day
+// (resolveDailyWindow's window.start — NOT clipped to first_heard_at). The histogram is indexed by
+// local wall-clock hour, so the band's wall-clock start is resolved through the timezone (DST-safe):
+// local hour H is `H` hours after local midnight, which is not H elapsed UTC hours on transition days.
+export function peakBand(hourCounts, localMidnight, tz) {
   let bestStart = 0
   let bestSum = -1
   for (let h = 0; h < 24; h++) {
@@ -305,11 +344,31 @@ function peakBand(hourCounts, dayStart) {
     if (sum > bestSum) { bestSum = sum; bestStart = h }
   }
   if (bestSum <= 0) return null
-  if (dayStart) {
-    const startMs = dayStart.getTime() + bestStart * 3600000
-    return { start: new Date(startMs).toISOString(), end: new Date(startMs + 3 * 3600000).toISOString(), label: hourLabel(bestStart), count: bestSum }
+  if (localMidnight) {
+    const start = localHourUtc(localMidnight, bestStart, tz)
+    const end = localHourUtc(localMidnight, bestStart + 3, tz)
+    return { start, end, label: hourLabel(bestStart), count: bestSum }
   }
   return { start: null, end: null, label: hourLabel(bestStart), count: bestSum }
+}
+
+// UTC instant of local hour `h` on the local day that begins at `localMidnightUtc`, resolved through
+// the timezone so DST transitions land on the right wall-clock hour. Without tz, falls back to
+// treating local midnight as a fixed UTC anchor (the pre-timezone behavior).
+export function localHourUtc(localMidnightUtc, h, tz) {
+  const midnight = new Date(localMidnightUtc)
+  if (!tz) return new Date(midnight.getTime() + h * 3600000).toISOString()
+  const localDate = toNodeLocal(midnight, tz).date
+  const targetWall = Date.UTC(...localDate.split('-').map((v, i) => (i === 1 ? Number(v) - 1 : Number(v))), h, 0)
+  let guess = midnight.getTime() + h * 3600000
+  for (let i = 0; i < 4; i++) {
+    const local = toNodeLocal(new Date(guess), tz)
+    const localWall = Date.UTC(...local.date.split('-').map((v, idx) => (idx === 1 ? Number(v) - 1 : Number(v))), local.hour, local.minute)
+    const adjustment = targetWall - localWall
+    guess += adjustment
+    if (adjustment === 0) break
+  }
+  return new Date(guess).toISOString()
 }
 
 // One-line, payload-derived summary of a notable pulse.
@@ -393,41 +452,41 @@ async function gatherCommon(nodeId, window) {
     detectionRows(nodeId, window),
     notablePulses(nodeId, window),
   ])
+  const tz = nodeTimeZone(node)
 
-  // Label quality: partition the window's detections. bird + biophony are the place's VOICES and
-  // feed the species aggregation + tallies; anthropophony (human/machine noise) is pulled out and
-  // becomes ambient human-activity context — never a voice, never counted as a species. Insect /
-  // amphibian / mammal biophony (katydids, frogs, a coyote) stays a voice. Applies to every cadence
-  // (this is the shared builder).
   const cls = await classifyWindowSpecies(rawRows.map((r) => r.species_name).filter(Boolean))
   const rows = rawRows.filter((r) => isVoice(cls.get(r.species_name)))
   const anthroRows = rawRows.filter((r) => cls.get(r.species_name) === 'anthropophony')
   const human_activity = aggregateAnthro(anthroRows)
 
-  const { bySpecies, hourCounts, total } = aggregate(rows)
+  const { bySpecies, hourCounts, total } = aggregate(rows, tz)
   const species = [...bySpecies.values()].sort((a, b) => b.count - a.count)
   const newFlags = await Promise.all(species.map((s) => hasPriorDetection(nodeId, s.species_name, window.start)))
   const new_species = species.filter((_, i) => !newFlags[i]).map((s) => ({ species_name: s.species_name, first_seen: s.first_seen }))
-  return { node, lat, lon, rows, bySpecies, species, hourCounts, total, pulses, new_species, human_activity }
+  return { node, lat, lon, tz, rows, bySpecies, species, hourCounts, total, pulses, new_species, human_activity }
 }
 
 // Common node identity + activity + coverage assembly, shared across cadences.
-function assemble({ nodeId, window, node, lat, lon, species, total, new_species, pulses, soundscape, phenology, aciSampleCount, human_activity }) {
+function assemble({ nodeId, window, observed, node, lat, lon, tz, species, total, new_species, pulses, soundscape, phenology, aciSampleCount, human_activity, tenure }) {
   return {
     node_id: nodeId,
     cadence: window.cadence,
     period_key: window.period_key,
     window,
+    observed: observed || { start: window.start, end: window.end, clipped: false, partial: false },
+    tenure: tenure || null,
     generated_at: new Date().toISOString(),
     node: {
       id: node?.id ?? nodeId,
       name: node?.name ?? null,
       place_label: node?.name ?? null,
+      location: node?.location ?? null,
       elevation_m: node?.elevation_m ?? null,
       elevation_unit: node?.elevation_unit ?? null,
       lat,
       lon,
     },
+    time_zone: tz ?? null,
     activity: {
       total_detections: total,
       distinct_species: species.length,
@@ -454,9 +513,21 @@ function assemble({ nodeId, window, node, lat, lon, species, total, new_species,
  * @returns {Promise<ReportPayload>}
  */
 export async function buildDailyReport(nodeId, date) {
-  const window = resolveDailyWindow(date)
-  const dayStart = new Date(window.start)
-  const baselineStart = new Date(dayStart.getTime() - PULSE_CONFIG.aciBaselineDays * 86400000).toISOString()
+  const { node } = await nodeCoords(nodeId)
+  const tz = nodeTimeZone(node)
+  const window = resolveDailyWindow(date, tz)
+  const tenure = await nodeTenure(nodeId)
+  // The query window stays the full node-local day: midnight-stored pulses and pre-heartbeat
+  // observations are kept. Tenure is reported separately as `observed` — the span the node was
+  // actually listening — used only for span/tenure narration, never to filter the window.
+  //
+  // Pre-heartbeat detections are intentionally INCLUDED (M2, confirmed 2026-11-05): the Pi buffers
+  // audio before its first aci_logs heartbeat, so those detections are real observations of the
+  // day. The narration's `observed` span states when listening formally began; the aggregation
+  // keeps everything the node captured that local day.
+  const observed = observedSpan(window, tenure)
+  const dayStart = new Date(window.start) // local midnight (the day's anchor; DST-safe via tz)
+  const baselineStart = new Date(new Date(window.start).getTime() - PULSE_CONFIG.aciBaselineDays * 86400000).toISOString()
 
   const common = await gatherCommon(nodeId, window)
   const [windowAci, baselineAci] = await Promise.all([
@@ -472,20 +543,22 @@ export async function buildDailyReport(nodeId, date) {
   const lastDates = common.species.map((s) => s.last_seen).filter(Boolean).sort()
 
   return assemble({
-    nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
+    nodeId, window, observed, node: common.node, lat: common.lat, lon: common.lon, tz: common.tz,
     species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
     aciSampleCount: windowAci.sampleCount,
     human_activity: common.human_activity,
+    tenure,
     soundscape: {
       mean_aci: windowAci.mean,
       baseline_mean_aci: baselineAci.mean,
-      delta, trend,
+      delta,
+      trend,
       sample_count: windowAci.sampleCount,
-      peak_window: peakBand(common.hourCounts, dayStart),
+      peak_window: peakBand(common.hourCounts, dayStart, tz),
     },
     phenology: {
       period_key: window.period_key,
-      week_of_year: isoWeek(dayStart),
+      week_of_year: isoWeekOfDate(window.period_key),
       first_detection_date: firstDates[0] ?? null,
       last_detection_date: lastDates[lastDates.length - 1] ?? null,
       new_species_count: common.new_species.length,
@@ -504,6 +577,10 @@ export async function buildDailyReport(nodeId, date) {
 export async function buildSeasonalReport(nodeId, dateOrKey) {
   const { lat: latPeek } = await nodeCoords(nodeId)
   const window = resolveSeasonalWindow(dateOrKey, latPeek)
+  const tenure = await nodeTenure(nodeId)
+  // A node that began mid-season reports the span it actually witnessed — as `observed`, without
+  // narrowing the query window (which keeps the season's midnight-stored pulses and full trend).
+  const observed = observedSpan(window, tenure)
   const common = await gatherCommon(nodeId, window)
   const soundscape = await edgeTrend(nodeId, window, 14)
 
@@ -536,11 +613,15 @@ export async function buildSeasonalReport(nodeId, dateOrKey) {
   const [year, name] = window.period_key.split('-')
 
   return assemble({
-    nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
+    nodeId, window, observed, node: common.node, lat: common.lat, lon: common.lon, tz: common.tz,
     species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
     aciSampleCount: soundscape.sample_count,
     human_activity: common.human_activity,
-    soundscape: { ...soundscape, peak_window: peakBand(common.hourCounts, null) },
+    tenure,
+    soundscape: {
+      ...soundscape,
+      peak_window: peakBand(common.hourCounts, null),
+    },
     phenology: {
       period_key: window.period_key,
       season: name,
@@ -566,6 +647,10 @@ export async function buildSeasonalReport(nodeId, dateOrKey) {
  */
 export async function buildAnnualReport(nodeId, dateOrKey) {
   const window = resolveAnnualWindow(dateOrKey)
+  const tenure = await nodeTenure(nodeId)
+  // A node that began mid-year reports the span it actually witnessed — as `observed`, without
+  // narrowing the query window (which keeps the year's midnight-stored pulses and full trend).
+  const observed = observedSpan(window, tenure)
   const common = await gatherCommon(nodeId, window)
   const [soundscape, priorSpecies] = await Promise.all([
     edgeTrend(nodeId, window, 30),
@@ -598,11 +683,15 @@ export async function buildAnnualReport(nodeId, dateOrKey) {
   const lastDates = common.species.map((s) => s.last_seen).filter(Boolean).sort()
 
   return assemble({
-    nodeId, window, node: common.node, lat: common.lat, lon: common.lon,
+    nodeId, window, observed, node: common.node, lat: common.lat, lon: common.lon, tz: common.tz,
     species: common.species, total: common.total, new_species: common.new_species, pulses: common.pulses,
     aciSampleCount: soundscape.sample_count,
     human_activity: common.human_activity,
-    soundscape: { ...soundscape, peak_window: peakBand(common.hourCounts, null) },
+    tenure,
+    soundscape: {
+      ...soundscape,
+      peak_window: peakBand(common.hourCounts, null),
+    },
     phenology: {
       period_key: window.period_key,
       year: Number(window.period_key),

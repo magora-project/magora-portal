@@ -32,7 +32,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { report, error } = await generateReportForNode(nodeId, cadence, req.body?.date, voice)
+    const { report, error, eligibilityError } = await generateReportForNode(nodeId, cadence, req.body?.date, voice)
+    if (eligibilityError) return res.status(422).json({ error: eligibilityError, eligibilityError })
     if (error) {
       console.error('report generation error:', error)
       return res.status(502).json({ error: 'report generation failed' })

@@ -79,6 +79,7 @@ export default function NodePage() {
   const [node, setNode] = useState(null)
   const [detections, setDetections] = useState([])
   const [aciLogs, setAciLogs] = useState([])
+  const [firstHeartbeatAt, setFirstHeartbeatAt] = useState(null)
   const [loading, setLoading] = useState(true)
   const [wikiData, setWikiData] = useState({})
   const [insights, setInsights] = useState({})
@@ -95,7 +96,9 @@ export default function NodePage() {
   const pulseNarr = usePulseNarrative(id)
   const [reportOpen, setReportOpen] = useState(false) // "Today at this place" report card (Report v1)
   const [reportLinkCopied, setReportLinkCopied] = useState(false)
-  const nodeReport = useNodeReport(id)
+  // Report cadence gating uses the same first-heartbeat tenure the server derives
+  // (api/_lib/nodeTime.js nodeTenure), never the 24-row recent-ACI window.
+  const nodeReport = useNodeReport(id, { first_heard_at: firstHeartbeatAt })
   const [technicalOpen, setTechnicalOpen] = useState(false) // operator drawer, collapsed by default
   const [bannerBusy, setBannerBusy] = useState(false)
   const [bannerError, setBannerError] = useState(null)
@@ -108,7 +111,13 @@ export default function NodePage() {
   const { user, openSignIn, listener, promptHandleClaim } = useAuth()
 
   async function fetchData() {
-    const [{ data: nodeData }, { data: dData }, { data: aciData }] = await Promise.all([
+    const [
+      { data: nodeData },
+      { data: dData },
+      { data: aciData },
+      { data: firstHeartbeatRows },
+      { data: firstDetectionRows },
+    ] = await Promise.all([
       supabase.from('nodes').select('*').eq('id', id).single(),
       supabase.from('detections')
         .select('*, species(guild, migratory_status, indicator_status, sensitivity_flag)')
@@ -124,10 +133,24 @@ export default function NodePage() {
         .eq('node_id', id)
         .order('recorded_at', { ascending: false })
         .limit(24),
+      supabase.from('aci_logs')
+        .select('recorded_at')
+        .eq('node_id', id)
+        .order('recorded_at', { ascending: true })
+        .limit(1),
+      supabase.from('detections')
+        .select('detected_at')
+        .eq('node_id', id)
+        // No range filter here: this is the tenure fallback, and the server (nodeTenure) defines
+        // first_heard_at from the earliest detection regardless of range_status. The selector
+        // thresholds must match the server's gate or it offers a cadence the server then 422s.
+        .order('detected_at', { ascending: true })
+        .limit(1),
     ])
     setNode(nodeData)
     setDetections(dData || [])
     setAciLogs(aciData || [])
+    setFirstHeartbeatAt(firstHeartbeatRows?.[0]?.recorded_at || firstDetectionRows?.[0]?.detected_at || null)
     setLoading(false)
   }
 

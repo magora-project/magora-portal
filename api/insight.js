@@ -1,3 +1,5 @@
+import { nodeTimeZone, toNodeLocal, nodeTenure, minutesFromSunriseAt, locationCoordinates } from './_lib/nodeTime.js'
+
 // Model for ecosystem-insight generation. Kept in one place (Task F) so the
 // high-volume insight path and any future low-volume report path can use
 // different tiers with a single edit. Haiku 4.5 for insights: the July 2026
@@ -30,36 +32,92 @@ export async function generateInsight(prompt, model = INSIGHT_MODEL) {
   return { text: text.replace(/\s*—\s*/g, ', ') }
 }
 
+// Tenure framing for the prompt. The began-listening date is rendered NODE-LOCAL (a UTC render
+// can name the wrong calendar day), and the age is relative to `now`. Pure; exported for tests.
+export function tenureDescription(tenure, tz, now = Date.now()) {
+  if (!tenure?.first_heard_at) return null
+  const first = new Date(tenure.first_heard_at)
+  const hours = Math.max(0, Math.round((new Date(now) - first.getTime()) / 3600000))
+  const age = hours < 24
+    ? `${hours} hour${hours === 1 ? '' : 's'} ago`
+    : `${Math.floor(hours / 24)} day${Math.floor(hours / 24) === 1 ? '' : 's'} ago`
+  return `This node began listening on ${first.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz || 'UTC' })}, about ${age}.`
+}
+
+// The observation-window line. A node under 3 days old has no pattern history, so the prompt must
+// not label its first hours as a window for "node patterns" (that would invite the season/pattern
+// narration the earlyNode rule forbids). Pure; exported for tests.
+export function observationWindowLine(earlyNode, recentDays, unknownTenure = false) {
+  if (unknownTenure) return 'Observation window: no listening history is available for this request, so there is no pattern history to draw on.'
+  if (earlyNode) return 'Observation window: this node has only just begun listening — there is no pattern history at this place yet.'
+  const days = Number.isInteger(recentDays) ? recentDays.toFixed(0) : recentDays.toFixed(1)
+  return `Observation window used for node patterns: approximately the most recent ${days} days.`
+}
+
+// The behavior-inference bullet. For an early node the seasonal inference is dropped alongside the
+// earlyNode rule (no patterns/trends/seasons at this node). Pure; exported for tests.
+// Tenure framing state (Codex @f764465). `null` tenure means it is UNKNOWN: a node-less fallback
+// request (species_name + location, no detection) or a failed tenure lookup. Unknown tenure must
+// not default to a mature 14-day node, so it takes the first-impression path (no patterns, trends
+// or seasons), worded without claiming the node "just began listening". Pure; exported for tests.
+export function tenureFraming(tenure) {
+  if (!tenure) return { unknownTenure: true, earlyNode: true, recentDays: null }
+  const days = Number.isFinite(tenure.days_listening) ? tenure.days_listening : 0
+  return { unknownTenure: false, earlyNode: days < 3, recentDays: Math.min(14, days) }
+}
+
+// The closing framing bullet: one thread of node history for a mature node; a first impression
+// otherwise. Pure; exported for tests.
+export function framingBullet(earlyNode, unknownTenure = false) {
+  if (unknownTenure) return '- Treat this as a single moment: no listening history is available here, so do not describe patterns, trends, or seasons at this place'
+  return earlyNode
+    ? '- Treat this as a first impression of a place that has only just begun listening; do not describe patterns, trends, or seasons at this node'
+    : '- Weave in one thread from the pattern being built at this node over time'
+}
+
+export function behaviorInferenceBullet(earlyNode) {
+  return `- Infer what this animal is most likely doing RIGHT NOW based on its guild, the time of day${earlyNode ? '' : ', and the season'} — be specific and behavioral, not general`
+}
+
 // Vercel serverless function (Node runtime).
-// Derive time-of-day description from UTC timestamp + Mountain Time offset.
-// Never relies on the Pi's stored time_category which can be wrong due to
-// UTC/local mismatch in the astral calculation.
-function localTimeContext(utcString, minutesFromSunrise) {
-  // If we have precise solar timing from the Pi, use it
+// Time-of-day from the node's coordinates (IANA zone via api/_lib/nodeTime.js). The Pi's
+// minutes_from_sunrise is trusted only when it agrees (~30 min) with the server-side NOAA
+// sunrise calc for the node's coordinates; otherwise it is ignored and logged once per call.
+// Never relies on the Pi's stored time_category, which can be wrong when its location config
+// is unverified (the Villa Magora failure mode).
+export function localTimeContext(utcString, node, minutesFromSunrise) {
+  const tz = nodeTimeZone(node)
+  if (!tz) return { label: null, trusted: false }
+  const local = toNodeLocal(utcString, tz)
+  const clockDesc = labelForHour(local.hour + local.minute / 60)
+
   if (minutesFromSunrise != null) {
-    if (minutesFromSunrise < -60)  return 'well before sunrise'
-    if (minutesFromSunrise < -30)  return 'pre-dawn'
-    if (minutesFromSunrise < 0)    return 'just before sunrise'
-    if (minutesFromSunrise < 30)   return 'at sunrise'
-    if (minutesFromSunrise < 120)  return 'early morning, within the dawn chorus window'
-    if (minutesFromSunrise < 240)  return 'mid-morning'
-    if (minutesFromSunrise < 360)  return 'late morning'
-    if (minutesFromSunrise < 480)  return 'midday'
-    if (minutesFromSunrise < 600)  return 'afternoon'
-    if (minutesFromSunrise < 720)  return 'early evening'
-    return 'dusk or night'
+    // node.location is an EWKB hex string from PostgREST (GeoJSON only in other paths), so read
+    // coordinates through the shared parser — `.coordinates` is undefined on the EWKB form.
+    const c = locationCoordinates(node?.location)
+    const serverMinutes = c ? minutesFromSunriseAt(c.lat, c.lon, utcString) : null
+    if (serverMinutes != null && Math.abs(minutesFromSunrise - serverMinutes) <= 30) {
+      // Verified against the server-side sunrise calc: use the Pi's precise solar buckets. Only a
+      // verified solar reading may carry the device's dawn-chorus flag into the prompt.
+      const label =
+        minutesFromSunrise < -60 ? 'well before sunrise'
+        : minutesFromSunrise < -30 ? 'pre-dawn'
+        : minutesFromSunrise < 0 ? 'just before sunrise'
+        : minutesFromSunrise < 30 ? 'at sunrise'
+        : minutesFromSunrise < 120 ? 'early morning, within the dawn chorus window'
+        : minutesFromSunrise < 240 ? 'mid-morning'
+        : minutesFromSunrise < 360 ? 'late morning'
+        : minutesFromSunrise < 480 ? 'midday'
+        : minutesFromSunrise < 600 ? 'afternoon'
+        : minutesFromSunrise < 720 ? 'early evening'
+        : 'dusk or night'
+      return { label, trusted: true }
+    }
+    console.warn('Ignoring unverified node minutes_from_sunrise:', minutesFromSunrise)
   }
-  // Fallback: use Mountain Time (UTC-6) hour
-  const localHour = new Date(new Date(utcString).getTime() - 6 * 60 * 60 * 1000).getUTCHours()
-  if (localHour >= 21 || localHour < 4) return 'night'
-  if (localHour < 6)  return 'pre-dawn'
-  if (localHour < 8)  return 'early morning'
-  if (localHour < 10) return 'mid-morning'
-  if (localHour < 12) return 'late morning'
-  if (localHour < 14) return 'midday'
-  if (localHour < 17) return 'afternoon'
-  if (localHour < 19) return 'early evening'
-  return 'dusk'
+  // Unverified / absent solar telemetry: the device's dawn flag is dropped along with its
+  // minutes_from_sunrise — no derived replacement, so a mislocated Pi cannot claim dawn at midday.
+  return { label: clockDesc, trusted: false }
 }
 
 async function dbFetch(supabaseUrl, apiKey, path, asArray = false) {
@@ -277,6 +335,20 @@ export async function buildNodeInsightPrompt(body) {
       : null,
   ])
 
+  // Node tenure is derived from heartbeat history (min aci_logs.recorded_at, fallback first
+  // detection), never from nodes.created_at. It bounds the longitudinal window below.
+  // A failed lookup (nodeTenure throws rather than reporting zero tenure) degrades to UNKNOWN
+  // tenure, which takes the first-impression framing, instead of failing the whole insight.
+  let tenure = null
+  if (nodeId) {
+    try { tenure = await nodeTenure(nodeId) } catch (error) {
+      console.warn('insight: tenure lookup failed; framing as unknown tenure:', error?.message || error)
+    }
+  }
+  const windowStart = tenure?.first_heard_at && new Date(tenure.first_heard_at) > new Date(Date.now() - 14 * 86400000)
+    ? tenure.first_heard_at
+    : new Date(Date.now() - 14 * 86400000).toISOString()
+
   const [habitat, coOccurring, longitudinal, recentWindow] = await Promise.all([
     // Habitat context
     nodeId
@@ -294,17 +366,16 @@ export async function buildNodeInsightPrompt(body) {
       return [...new Set(rows.map(r => r.species_name).filter(Boolean))]
     })() : Promise.resolve([]),
 
-    // Longitudinal: this species at this node in last 14 days + first ever detection
+    // Longitudinal: this species at this node in the window min(14 days, tenure) + first ever
     speciesName && nodeId ? (async () => {
-      const twoWeeks = new Date(Date.now() - 14 * 86400000).toISOString()
       const [recent, first, allRecent] = await Promise.all([
         dbFetch(supabaseUrl, apiKey,
-          `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&detected_at=gte.${twoWeeks}&${RANGE_OK}&select=detected_at&limit=200`,
+          `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&detected_at=gte.${windowStart}&${RANGE_OK}&select=detected_at&limit=200`,
           true),
         dbFetch(supabaseUrl, apiKey,
           `detections?node_id=eq.${nodeId}&species_name=eq.${encodeURIComponent(speciesName)}&${RANGE_OK}&select=detected_at&order=detected_at.asc&limit=1`),
         dbFetch(supabaseUrl, apiKey,
-          `detections?node_id=eq.${nodeId}&detected_at=gte.${twoWeeks}&${RANGE_OK}&select=species_name&limit=500`,
+          `detections?node_id=eq.${nodeId}&detected_at=gte.${windowStart}&${RANGE_OK}&select=species_name&limit=500`,
           true),
       ])
       const uniqueSpecies = new Set(allRecent.map(d => d.species_name).filter(Boolean)).size
@@ -326,9 +397,9 @@ export async function buildNodeInsightPrompt(body) {
 
   // eBird (non-blocking, runs in parallel with everything above via the same Promise.all would be ideal
   // but depends on node coords — fetch after node is available)
-  const coords = node?.location?.coordinates
-  const ebird = (ebirdKey && coords)
-    ? await getEbirdContext(coords[1], coords[0], ebirdKey, speciesName)
+  const c2 = locationCoordinates(node?.location)
+  const ebird = (ebirdKey && c2)
+    ? await getEbirdContext(c2.lat, c2.lon, ebirdKey, speciesName)
     : null
 
   // --- Resolve values ---
@@ -343,19 +414,26 @@ export async function buildNodeInsightPrompt(body) {
   if (!locationLabel) return { error: 'node location context required', status: 400 }
 
   // --- Build prompt ---
-  const timingDesc = localTimeContext(detection?.detected_at || new Date().toISOString(), minutesFromSun)
-    + (isDawn ? ' (dawn chorus active)' : '')
+  const timeCtx = localTimeContext(detection?.detected_at || new Date().toISOString(), node, minutesFromSun)
+  // The dawn-chorus flag rides only on a VERIFIED solar reading: if minutes_from_sunrise was
+  // rejected (untrusted device), the flag is dropped with it — no derived replacement.
+  const timingDesc = (timeCtx.label ?? '') + (timeCtx.trusted && isDawn ? ' (dawn chorus active)' : '') || null
 
-  const seasonDesc = season && phenoWeek
+  const nodeTz = nodeTimeZone(node)
+  const tenureDesc = tenureDescription(tenure, nodeTz)
+  const { unknownTenure, earlyNode, recentDays } = tenureFraming(tenure)
+
+  const seasonDesc = earlyNode ? null : (season && phenoWeek
     ? `${season.replace(/_/g, ' ')} (phenological week ${phenoWeek})`
-    : null
+    : null)
 
-  const longitudinalDesc = longitudinal ? [
+  // Tenure < 3 days → first impression: no patterns/trends/seasons at this node (TaskDef T2).
+  const longitudinalDesc = longitudinal && !earlyNode ? [
     longitudinal.recentCount > 0
-      ? `This species has been detected ${longitudinal.recentCount} time${longitudinal.recentCount !== 1 ? 's' : ''} at this node in the past 14 days.`
+      ? `This species has been detected ${longitudinal.recentCount} time${longitudinal.recentCount !== 1 ? 's' : ''} at this node within the observation window fact supplied above.`
       : `This appears to be a rare or first detection of this species at this node recently.`,
     longitudinal.firstDate ? `First recorded here on ${longitudinal.firstDate}.` : null,
-    `${longitudinal.uniqueSpecies} unique species detected at this node in the past 14 days.`,
+    `${longitudinal.uniqueSpecies} unique species detected at this node in the observation window fact supplied above.`,
   ].filter(Boolean).join(' ') : null
 
   const habitatDesc = [
@@ -379,7 +457,8 @@ export async function buildNodeInsightPrompt(body) {
   const soundscapeDesc = [
     aciScore != null && `ACI ${aciScore} (${aciScore > 0.65 ? 'high' : aciScore > 0.5 ? 'moderate' : 'low'} soundscape complexity)`,
     coOccurring.length > 0 && `Co-detected in same window: ${coOccurring.join(', ')}`,
-    isDawn && `Dawn chorus active`,
+    // Same trust gate as the timing line: an unverified device dawn flag is dropped, not repeated.
+    timeCtx.trusted && isDawn && `Dawn chorus active`,
   ].filter(Boolean).join('; ')
 
   const ebirdDesc = ebird ? [
@@ -390,7 +469,10 @@ export async function buildNodeInsightPrompt(body) {
     ebird.nearby.length > 0 && `Also recently reported nearby: ${ebird.nearby.join(', ')}`,
   ].filter(Boolean).join('. ') : null
 
-  const prompt = `You are a field ecologist working with the Magora network — a long-term acoustic biodiversity monitoring initiative based at a node in ${locationLabel}. You've been watching what lives here across seasons. You write for people who are genuinely curious about the natural world but aren't biologists. Your job is to interpret a specific ecological moment, not describe a species in general terms. Think out loud. Be specific. Be curious. Never be generic. Write in plain prose using commas and periods; never use em-dashes.
+  const prompt = `You are a field ecologist working with the Magora network at a listening post in ${locationLabel}. You write for people who are genuinely curious about the natural world but aren't biologists. Your job is to interpret a specific ecological moment, not describe a species in general terms. Think out loud. Be specific. Be curious. Never be generic. Write in plain prose using commas and periods; never use em-dashes.
+
+NODE CONTEXT
+${tenureDesc ? `${tenureDesc}\n` : ''}${timingDesc ? `Time of day: ${timingDesc}\n` : ''}${observationWindowLine(earlyNode, recentDays, unknownTenure)}
 
 DETECTION
 Species: ${speciesName}${sciName ? ` (${sciName})` : ''}
@@ -407,10 +489,10 @@ ${ebirdDesc ? `REGIONAL PICTURE (eBird · 25km · last 7 days)\n${ebirdDesc}` : 
 ${longitudinalDesc ? `PATTERN AT THIS NODE\n${longitudinalDesc}` : ''}
 
 Write 3–4 sentences that synthesize these layers into a genuine ecological story about this specific moment. Your response must:
-- Infer what this animal is most likely doing RIGHT NOW based on its guild, the time, and the season — be specific and behavioral, not general
+${behaviorInferenceBullet(earlyNode)}
 - Connect it to at least one concrete plant, insect, soil, or structural habitat relationship relevant to this location
 - Assess whether this detection is expected, surprising, or ecologically significant — and briefly say why
-- Weave in one thread from the pattern being built at this node over time
+${framingBullet(earlyNode, unknownTenure)}
 - Stay grounded in the data given, do not editorialize or make claims you cannot support from it
 - Sound like genuine curiosity and field observation, never a field guide entry
 - Never open with the species name or "This detection"`

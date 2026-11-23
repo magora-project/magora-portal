@@ -10,6 +10,7 @@ import { nodeCoords } from '../_pulse/sources.js'
 import { buildReport, resolvePeriodKey } from './payload.js'
 import { narrateReport } from './narrate-report.js'
 import { fetchCachedReport, sbRpcService } from './db.js'
+import { nodeTenure, nodeTimeZone, toNodeLocal } from '../_lib/nodeTime.js'
 
 /**
  * Resolve the period, check the cache, and generate+cache on miss.
@@ -21,17 +22,28 @@ import { fetchCachedReport, sbRpcService } from './db.js'
  *   report=null => quiet period, nothing to author (not cached). error set => generation failed.
  */
 export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 'node') {
-  // Latitude is needed only to NAME the season by hemisphere; daily/annual don't need it.
-  const lat = cadence === 'seasonal' ? (await nodeCoords(nodeId)).lat : null
-  const periodKey = resolvePeriodKey(cadence, dateOrKey, lat)
+  const { node, lat } = await nodeCoords(nodeId)
+  const tz = nodeTimeZone(node)
+  // Daily keys are the node's LOCAL date: without an explicit key, "today" is today where the
+  // node is, not today in UTC (they diverge between local and UTC midnight).
+  const effectiveDate = dateOrKey ?? (cadence === 'daily' && tz ? toNodeLocal(new Date(), tz).date : undefined)
+  const periodKey = resolvePeriodKey(cadence, effectiveDate, lat)
+  const tenure = await nodeTenure(nodeId)
+  const cadenceGate = cadenceTenureGate(cadence, periodKey, tenure, lat)
+  if (cadenceGate) return { periodKey, report: null, eligibilityError: cadenceGate }
 
   // Cache-first: a fresh cached row (narrated at or after its payload was built) short-circuits.
+  // Cache invalidation (M1): pre-deployment daily rows were built under UTC windows but sit under
+  // the same YYYY-MM-DD key. Payloads built with node-local semantics carry `observed`; a row
+  // without it predates the window fix. For an ACTIVE node such a row is rebuilt rather than
+  // served. For an INACTIVE node the stale row is still served — the node cannot rebuild (the
+  // is_active gate below stops it authoring anything new), and a retained historical record is
+  // better than hiding it.
   const cached = await fetchCachedReport(pgFetch, nodeId, cadence, periodKey)
-  if (
-    cached?.narrative &&
-    cached.narrated_at &&
+  const cachedFresh = cached?.narrative && cached.narrated_at &&
     new Date(cached.narrated_at).getTime() >= new Date(cached.generated_at).getTime()
-  ) {
+  const cachedLocalSemantics = !!cached?.payload?.observed
+  if (cachedFresh && (cachedLocalSemantics || node?.is_active === false)) {
     return {
       periodKey,
       cached: true,
@@ -51,7 +63,6 @@ export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 
   //
   // Returns the same quiet `report: null` a genuinely uneventful period returns, so every caller
   // already handles it — the cron counts it as `quiet`, the UI shows its calm empty state.
-  const { node } = await nodeCoords(nodeId)
   if (node && node.is_active === false) {
     return { periodKey, report: null }
   }
@@ -74,4 +85,34 @@ export async function generateReportForNode(nodeId, cadence, dateOrKey, voice = 
   }).catch((e) => console.warn('set_node_report failed:', e.message))
 
   return { periodKey, cached: false, report: { payload, narrative: out.text, voice: out.voice, model: out.model, cached: false } }
+}
+
+export function cadenceTenureGate(cadence, periodKey, tenure, lat = 0, now = new Date()) {
+  if (cadence === 'daily') return null
+  // A missing first_heard_at counts as ZERO tenure, not a bypass: a node with no heartbeat or
+  // detection history has listened zero days in every period, so seasonal/annual are gated
+  // (422 on-demand; the cron names the skip in its [report ops] digest).
+  const first = tenure?.first_heard_at ? new Date(tenure.first_heard_at).getTime() : null
+  let start, end
+  if (cadence === 'annual' && /^\d{4}$/.test(periodKey)) {
+    const year = Number(periodKey)
+    start = Date.UTC(year, 0, 1)
+    end = Date.UTC(year + 1, 0, 1)
+  } else if (cadence === 'seasonal') {
+    const match = /^(\d{4})-(winter|spring|summer|autumn)$/.exec(periodKey)
+    if (!match) return null
+    const y = Number(match[1])
+    const south = lat < 0
+    const blocks = south
+      ? { summer: [y - 1, 11], autumn: [y, 2], winter: [y, 5], spring: [y, 8] }
+      : { winter: [y - 1, 11], spring: [y, 2], summer: [y, 5], autumn: [y, 8] }
+    const offsets = blocks[match[2]]
+    if (!offsets) return null
+    start = Date.UTC(offsets[0], offsets[1], 1)
+    end = Date.UTC(offsets[1] === 11 ? offsets[0] + 1 : offsets[0], offsets[1] === 11 ? 2 : offsets[1] + 3, 1)
+  } else return null
+  const endOfTenureWindow = Math.min(now.getTime(), end)
+  const listenedDays = first == null ? 0 : Math.max(0, (endOfTenureWindow - Math.max(first, start)) / 86400000)
+  const threshold = cadence === 'seasonal' ? 14 : 60
+  return listenedDays >= threshold ? null : `${cadence} report requires ${threshold} days of listening in this ${cadence === 'seasonal' ? 'season' : 'year'}`
 }

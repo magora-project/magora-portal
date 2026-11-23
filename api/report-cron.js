@@ -23,6 +23,7 @@ import { pgFetch } from './_pulse/db.js'
 import { pulseBatch } from './_pulse/core.js'
 import { resolveDailyWindow } from './_report/payload.js'
 import { generateReportForNode } from './_report/generate.js'
+import { nodeTimeZone, toNodeLocal } from './_lib/nodeTime.js'
 
 // Reference to the JUST-COMPLETED period for the given cadence (the cron fires AFTER the period
 // ends). daily → yesterday; seasonal → a date safely inside the season that just closed; annual →
@@ -81,14 +82,14 @@ export default async function handler(req, res) {
   // The skip is reported in the summary AND the ops digest on purpose: the failure mode of gating
   // on a flag is a LIVE node wrongly marked inactive going quietly unreported. Naming the skipped
   // nodes every run makes that visible instead of silent.
-  const allNodes = await pgFetch('nodes?select=id,name,is_active&limit=1000', true)
+  const allNodes = await pgFetch('nodes?select=id,name,is_active,location&limit=1000', true)
   const nodes = allNodes.filter((n) => n.is_active)
   const skipped = allNodes.filter((n) => !n.is_active)
   const summary = {
     cadence, ref,
     nodes: nodes.length,
     skippedInactive: skipped.map((n) => n.name || n.id),
-    generated: 0, cached: 0, quiet: 0, errors: 0, periodKeys: new Set(),
+    generated: 0, cached: 0, quiet: 0, errors: 0, cadenceSkipped: [], periodKeys: new Set(),
   }
 
   for (const node of nodes) {
@@ -96,14 +97,27 @@ export default async function handler(req, res) {
       // Daily cron: refresh the day's pulses first (suppressed alert), then build the report over
       // them. Seasonal/annual: READ the accumulated daily pulses — never run pulseBatch on a long
       // window.
-      if (cadence === 'daily') {
-        const w = resolveDailyWindow(ref)
+      //
+      // The daily window is the node's LOCAL day. The cron fires at 10:00 UTC; for the US nodes
+      // (UTC-4…UTC-10) that is 02:00–06:00 local, so the local day being reported closed a few
+      // hours earlier. We resolve "yesterday" in the node's own zone, not UTC's.
+      const tz = nodeTimeZone(node)
+      let nodeRef = ref
+      if (cadence === 'daily' && tz) {
+        const localToday = toNodeLocal(new Date(), tz).date
+        const [y, m, d] = localToday.split('-').map(Number)
+        nodeRef = new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10)
+        const w = resolveDailyWindow(nodeRef, tz)
+        await pulseBatch(node.id, { start: w.start, end: w.end }, 'daily', { suppressAlert: true })
+      } else if (cadence === 'daily') {
+        const w = resolveDailyWindow(nodeRef)
         await pulseBatch(node.id, { start: w.start, end: w.end }, 'daily', { suppressAlert: true })
       }
 
-      const { report, error, periodKey, cached } = await generateReportForNode(node.id, cadence, ref)
+      const { report, error, periodKey, cached, eligibilityError } = await generateReportForNode(node.id, cadence, nodeRef)
       summary.periodKeys.add(periodKey)
-      if (error) summary.errors += 1
+      if (eligibilityError) summary.cadenceSkipped.push(`${node.name || node.id}: ${eligibilityError}`)
+      else if (error) summary.errors += 1
       else if (!report) summary.quiet += 1
       else if (cached) summary.cached += 1
       else summary.generated += 1
@@ -117,7 +131,8 @@ export default async function handler(req, res) {
   const digest =
     `${cadence} ${periodKeys.join(',') || ref}: ${summary.nodes} nodes, ` +
     `${summary.generated} generated, ${summary.cached} cached, ${summary.quiet} quiet, ${summary.errors} errors` +
-    (skipped.length ? ` · skipped ${skipped.length} inactive (${summary.skippedInactive.join(', ')})` : '')
+    (skipped.length ? ` · skipped ${skipped.length} inactive (${summary.skippedInactive.join(', ')})` : '') +
+    (summary.cadenceSkipped.length ? ` · cadence skipped ${summary.cadenceSkipped.join('; ')}` : '')
   await postReportOps(digest) // exactly one digest per run
 
   return res.status(200).json({ ...summary, periodKeys, digest })
