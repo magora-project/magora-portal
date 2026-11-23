@@ -1,0 +1,102 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "d6b25bee14ac2c2325f4f1b5618f224781b713db",
+    "mergeBase": "576897580f9e8c045e76bb50f24d60deda42ba88",
+    "head": "1737c56d46b1f003f1d491664b3578027a79c90c"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "conformance--ca8d4dc87954--1#D29",
+      "severity": "P2",
+      "summary": "D29: T12 requires rejecting service_role inside any string literal, but stringLiterals recognizes only single quotes, so a dollar-quoted literal such as SELECT $$service_role$$ passes without a corresponding test.",
+      "file": "scripts/db/baseline-secrets.test.mjs",
+      "line": 12,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--d6b25bee14ac--1"
+      }
+    },
+    {
+      "id": "conformance--ca8d4dc87954--1#conformance--257ef5de265b--1#D12",
+      "severity": "P1",
+      "summary": "D12: T10 promises coverage of every public table and function, but the catalog queries exclude extension members, so changes to public PostGIS function permissions or definitions escape comparison because extension keys record only installation metadata.",
+      "file": "scripts/db/schema-snapshot.mjs",
+      "line": 211,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "see Deviations"
+      }
+    },
+    {
+      "id": "conformance--ca8d4dc87954--1#conformance--257ef5de265b--1#D15",
+      "severity": "P3",
+      "summary": "D15: T8 specifies wrapping each file in its own transaction, but files matching transaction-control text run without the wrapper, a documented accommodation for existing migrations.",
+      "file": "scripts/db/apply-migrations.mjs",
+      "line": 39,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "see Deviations"
+      }
+    },
+    {
+      "id": "conformance--ca8d4dc87954--1#conformance--257ef5de265b--1#D17",
+      "severity": "P3",
+      "summary": "D17: T10 specifies sabotaging default privileges with a grant to anon, but the integration test grants to itest_reader instead, testing the same catalog property with a different grantee.",
+      "file": "scripts/db/schema-snapshot.itest.mjs",
+      "line": 63,
+      "disposition": {
+        "kind": "justified-deviation",
+        "reason": "see Deviations"
+      }
+    }
+  ],
+  "supersedes": "conformance--d6b25bee14ac--3",
+  "conformance": {
+    "tasks": [
+      "T8",
+      "T9",
+      "T10",
+      "T11",
+      "T12"
+    ],
+    "deviations": [
+      "conformance--ca8d4dc87954--1#conformance--257ef5de265b--1#D12",
+      "conformance--ca8d4dc87954--1#conformance--257ef5de265b--1#D15",
+      "conformance--ca8d4dc87954--1#conformance--257ef5de265b--1#D17"
+    ],
+    "commands": [
+      {
+        "cmd": "node scripts/db/baseline-secrets.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "node scripts/db/baseline-proof.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "node scripts/db/schema-snapshot.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "npm run check:migrations",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "blob": "54f96f1852bdcbe16e3b1b35fdda30ce75af0d61"
+    }
+  },
+  "createdAt": "2026-11-21T23:19:17.752Z"
+}

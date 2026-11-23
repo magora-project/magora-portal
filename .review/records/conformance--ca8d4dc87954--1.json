@@ -1,0 +1,131 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "ca8d4dc879544ff704daab03c492280dda3396e3",
+    "mergeBase": "576897580f9e8c045e76bb50f24d60deda42ba88",
+    "head": "79e9fa53a7605b98c6c9e19ace420b6214955a40"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "D29",
+      "severity": "P2",
+      "summary": "D29: T12 requires rejecting service_role inside any string literal, but stringLiterals recognizes only single quotes, so a dollar-quoted literal such as SELECT $$service_role$$ passes without a corresponding test.",
+      "file": "scripts/db/baseline-secrets.test.mjs",
+      "line": 12
+    },
+    {
+      "id": "conformance--257ef5de265b--1#D11",
+      "severity": "P1",
+      "summary": "D11: T10 requires the allowlist to reject public objects, but schemaOfKey returns null for schema:public, allowing public-schema ACL and ownership differences to be suppressed; no test covers this key.",
+      "file": "scripts/db/schema-snapshot.mjs",
+      "line": 144,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--ca8d4dc87954--1"
+      }
+    },
+    {
+      "id": "conformance--257ef5de265b--1#D12",
+      "severity": "P1",
+      "summary": "D12: T10 promises coverage of every public table and function, but the catalog queries exclude extension members, so changes to public PostGIS function permissions or definitions escape comparison because extension keys record only installation metadata.",
+      "file": "scripts/db/schema-snapshot.mjs",
+      "line": 211
+    },
+    {
+      "id": "conformance--257ef5de265b--1#D13",
+      "severity": "P3",
+      "summary": "D13: T12 specifies exactly 32 migrations through 20260727, but the proof defaults to 33 through 20261106 and adds an overridable cutoff, an explicitly documented adjustment to match newer production.",
+      "file": "scripts/db/baseline-proof.mjs",
+      "line": 26,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--ca8d4dc87954--1"
+      }
+    },
+    {
+      "id": "conformance--257ef5de265b--1#D14",
+      "severity": "P3",
+      "summary": "D14: T10 specifies pg_get_functiondef coverage, but the diff normalizes CRLF and body-edge whitespace, intentionally hiding CRLF changes inside string literals as acknowledged and approved in the commit message.",
+      "file": "scripts/db/schema-snapshot.mjs",
+      "line": 105,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--ca8d4dc87954--1"
+      }
+    },
+    {
+      "id": "conformance--257ef5de265b--1#D15",
+      "severity": "P3",
+      "summary": "D15: T8 specifies wrapping each file in its own transaction, but files matching transaction-control text run without the wrapper, a documented accommodation for existing migrations.",
+      "file": "scripts/db/apply-migrations.mjs",
+      "line": 39
+    },
+    {
+      "id": "conformance--257ef5de265b--1#D16",
+      "severity": "P3",
+      "summary": "D16: T12 specifies a comment-only rollback, but the rollback executes SELECT 1, preserving its no-op effect while departing from the requested form.",
+      "file": "supabase/migrations/rollbacks/20260625_baseline_prehistory.rollback.sql",
+      "line": 7,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--ca8d4dc87954--1"
+      }
+    },
+    {
+      "id": "conformance--257ef5de265b--1#D17",
+      "severity": "P3",
+      "summary": "D17: T10 specifies sabotaging default privileges with a grant to anon, but the integration test grants to itest_reader instead, testing the same catalog property with a different grantee.",
+      "file": "scripts/db/schema-snapshot.itest.mjs",
+      "line": 63
+    }
+  ],
+  "supersedes": "conformance--257ef5de265b--1",
+  "conformance": {
+    "tasks": [
+      "T8",
+      "T9",
+      "T10",
+      "T11",
+      "T12"
+    ],
+    "deviations": [
+      "D29",
+      "conformance--257ef5de265b--1#D12",
+      "conformance--257ef5de265b--1#D15",
+      "conformance--257ef5de265b--1#D17"
+    ],
+    "commands": [
+      {
+        "cmd": "node scripts/db/baseline-secrets.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "node scripts/db/baseline-proof.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "node scripts/db/schema-snapshot.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "npm run check:migrations",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-10-28-staging-and-secrets.md",
+      "blob": "54f96f1852bdcbe16e3b1b35fdda30ce75af0d61"
+    }
+  },
+  "createdAt": "2026-11-21T23:15:52.124Z"
+}

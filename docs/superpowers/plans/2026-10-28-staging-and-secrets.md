@@ -48,7 +48,7 @@ These facts were read while planning. Each one settles an item the spec told the
 
 ### Decision R2 (decided by David, 2026-10-28: option 1)
 
-David also accepted Task 15b's exception (2026-10-28), and chose the full endpoint fixtures for the exposure check (Task 22b).
+David also accepted Task 27's exception (2026-10-28), and chose the full endpoint fixtures for the exposure check (Task 28).
 
 The spec asks for a "write-only R2 credential" (§5.1, §5.10). Cloudflare offers no such token. Options:
 
@@ -90,11 +90,11 @@ These are inputs the spec implies but its own tests would not meet, most likely 
 | `scripts/db/schema-snapshot.mjs` (+ test, + itest), `supabase/migrations/checks/schema-allowlist.txt` | 10 | Catalog snapshot, diff, allowlist |
 | `scripts/db/privilege-check.mjs` (+ test, + itest), `supabase/migrations/checks/refresh-execute-allowlist.txt` | 11 | Success criterion 7 |
 | `scripts/db/apply-setup.mjs` (+ test) | 13 | Operator setup: the only script that writes production or scratch |
-| `supabase/migrations/20261029_refresh_login_grants.sql` (+ rollback) | 15b | The refresh login's grants |
+| `supabase/migrations/20261122_refresh_login_grants.sql` (+ rollback) | 27 | The refresh login's grants |
 | `scripts/staging/clients.mjs` | 2 | Guarded Supabase clients; `validateTargets` |
 | `scripts/staging/lease.mjs` (+ test) | 20 | Staging lease admission, claim, release |
 | `supabase/setup/rehearsal-fixture.sql`, `env/maintainer.env` | 26, 14 | Rehearsal source fixture; personal Supabase token reference |
-| `supabase/staging/exposure-manifest.json`, `scripts/staging/exposure/*.mjs` (+ test, + itest) | 22b | Exposure check: every anon endpoint classified and checked |
+| `supabase/staging/exposure-manifest.json`, `scripts/staging/exposure/*.mjs` (+ test, + itest) | 28 | Exposure check: every anon endpoint classified and checked |
 | `supabase/migrations/20260625_baseline_prehistory.sql`, `supabase/migrations/rollbacks/20260625_baseline_prehistory.rollback.sql`, `scripts/db/baseline-proof.mjs`, `scripts/db/baseline-secrets.test.mjs` | 12 | The reconstructed baseline and its proof |
 | `supabase/setup/staging-ops.sql`, `supabase/setup/public-schema-defaults.sql` | 13, 16 | Staging-only `ops` schema; `public` default grants |
 | `scripts/staging/deploy-functions.mjs` (+ test) | 14 | Edge Functions to staging; record the SHA |
@@ -115,12 +115,14 @@ These are inputs the spec implies but its own tests would not meet, most likely 
 | A: node contract, target guard, secrets inventory, `op` rule | 1, 2, 6 | `subtle-correctness` (AGENTS.md, `package.json`) |
 | B: storage backup and restore runbook | 4, 5 | `subtle-correctness` (workflow) |
 | C: database tooling and baseline | 8–12 | `subtle-correctness` (migration) |
-| D: staging setup, grants migration, refresh, simulated node | 13–15b, 16–20 | `subtle-correctness` (migration, workflow) |
-| E: staging deploy, smoke, exposure check | 21, 22, 22b | `subtle-correctness` (workflow) |
+| D: staging setup, grants migration, refresh, simulated node | 13–20, 27 | `subtle-correctness` (migration, workflow) |
+| E: staging deploy, smoke, exposure check | 21, 22, 28 | `subtle-correctness` (workflow) |
 | F: previews and local dev | 23 | `subtle-correctness` (`package.json`, `vite.config.js`) |
 | G: interim migration runbook | 26 | `subtle-correctness` (AGENTS.md) |
 
 Tasks 3, 7, 24 and 25 are operator work and open no PR in this repo. Task 7's fixes go through the advisory's private fork.
+
+Task 27 was Task 15b and Task 28 was Task 22b; each keeps its place in the order below. They were renumbered on 2026-11-21 because the plan reference check and `--tasks` read only whole task numbers (David). Issue #47 and older review records use the old names.
 
 ---
 
@@ -277,7 +279,7 @@ Implements Decision R2, option 1.
 - [ ] **Step 7:** Run `node scripts/secrets/inventory-check.mjs` with `op` signed in and the four CLIs logged in. Expected: `0 problems`. This is criterion 4's first half. It is re-run after Tasks 20, 21, 23 and 25, because each adds names.
 - [ ] **Step 8: Commit** (PR A).
 
-### Task 7 (operator, private): Close the write paths behind criterion 8
+### Task 7 (operator): Close the write paths behind criterion 8 (private)
 
 - [ ] **Step 1 (David's approval):** file a private security advisory per `SECURITY.md` that lists every production write path reachable without a production credential, as of 2026-10-28. The handoff note for this session names where to start. Nothing about the paths goes in this repo's public files.
 - [ ] **Step 2:** fix each path in the advisory's temporary private fork, with a test, reviewed per AGENTS.md (`subtle-correctness`).
@@ -291,12 +293,17 @@ Implements Decision R2, option 1.
 ### Task 8: Connections and ordered apply
 
 **Files:**
-- Create: `scripts/db/pg.mjs`, `scripts/db/apply-migrations.mjs`, `scripts/db/apply-migrations.test.mjs`
-- Modify: `package.json` (devDependencies `pg@^8.23`, `pg-copy-streams@^7.0`; script `"test:db": "node scripts/run-tests.mjs --pattern itest"`, or a small `scripts/db/run-itests.mjs` if `run-tests.mjs` cannot take a pattern without changing its control-file contract. Prefer the separate runner.)
+- create: `scripts/db/pg.mjs`
+- create: `scripts/db/apply-migrations.mjs`
+- create: `scripts/db/apply-migrations.test.mjs`
+- create: `scripts/db/run-itests.mjs` (the separate itest runner, so `run-tests.mjs` keeps its control-file contract)
+- create: `scripts/db/local-stack.mjs` (the throwaway local stack the itests and Task 12's proof start)
+- modify: `package.json` (devDependencies `pg@^8.23`, `pg-copy-streams@^7.0`; script `"test:db": "node scripts/db/run-itests.mjs"`)
+- modify: `package-lock.json`
 
 **Interfaces:**
 - Produces:
-  - `connect(envName: string, {readOnly?: boolean, writeTarget?: 'staging' | 'local'}) -> Promise<pg.Client>`. It reads the URL from `process.env[envName]`. With `writeTarget: 'staging'` it calls `assertStaging` first. With `writeTarget: 'local'` it accepts only `localhost`/`127.0.0.1`. With `readOnly` it runs `SET default_transaction_read_only = on`. A connection error is rethrown as `Error('connect failed: <ref or "local">: <pg error code>')`, with no URL.
+  - `connect(envName: string, {readOnly?: boolean, writeTarget?: 'staging' | 'local', localPorts?: number[]}) -> Promise<pg.Client>`. It reads the URL from `process.env[envName]`. With `writeTarget: 'staging'` it calls `assertStaging` first. With `writeTarget: 'local'` it accepts only `localhost`/`127.0.0.1` on a port in `localPorts` (the ports the caller's own stack printed; no default) and refuses a URL carrying query parameters, which libpq lets override the host or port. With `readOnly` it runs `SET default_transaction_read_only = on`. A connection error is rethrown as `Error('connect failed: <ref or "local">: <pg error code>')`, with no URL.
   - `listMigrationFiles(dir) -> string[]`: top-level `*.sql`, byte-order sorted, `rollbacks/` and `checks/` excluded.
   - `applyFiles(client, paths, {onEach?}) -> Promise<void>`: each file in its own transaction. It stops at the first error and reports the file name and the Postgres error position.
 
@@ -309,12 +316,12 @@ Implements Decision R2, option 1.
 ### Task 9: The refresh login role
 
 **Files:**
-- Create: `supabase/setup/roles.sql`
+- create: `supabase/setup/roles.sql`
 
 **Interfaces:**
 - Produces: role `magora_refresh`, created by `postgres` as `LOGIN NOINHERIT BYPASSRLS` with no password. The password is set per database by an operator through `op run`, never in a file. The script is idempotent (`DO $$ … IF NOT EXISTS … $$`) and runs `ALTER ROLE magora_refresh SET default_transaction_read_only = on`.
   - It grants nothing on tables, so applying it changes no table ACL, and the baseline proof (Task 12) still matches a production snapshot taken before the role existed.
-  - Read access arrives in Task 15b's grants migration.
+  - Read access arrives in Task 27's grants migration.
   - Privileges the role holds only through `PUBLIC` (the default `EXECUTE` on functions, `USAGE` and `CREATE` on schemas, `CONNECT` and `TEMP` on the database) cannot be revoked from one role. Task 11 inventories them, and each is either allowlisted with its reason or, if it lets this login write, reported privately per `SECURITY.md`.
 
 - [ ] **Step 1: Write the file.**
@@ -325,7 +332,10 @@ Implements Decision R2, option 1.
 ### Task 10: Schema snapshot, diff, allowlist
 
 **Files:**
-- Create: `scripts/db/schema-snapshot.mjs`, `scripts/db/schema-snapshot.test.mjs`, `scripts/db/schema-snapshot.itest.mjs`, `supabase/migrations/checks/schema-allowlist.txt`
+- create: `scripts/db/schema-snapshot.mjs`
+- create: `scripts/db/schema-snapshot.test.mjs`
+- create: `scripts/db/schema-snapshot.itest.mjs`
+- create: `supabase/migrations/checks/schema-allowlist.txt` (its header; Task 12 adds the lines)
 
 The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on copied tables only) can take one. That is why the plan writes its own tool instead of using `pg_dump --schema-only`: `pg_dump` locks every table it dumps and so needs `SELECT` on each one.
 
@@ -335,7 +345,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
     - in `public`, for tables:
       - every table column (`attnum` order, type, default, not-null, identity) and column ACL (`attacl`)
       - constraint (`pg_get_constraintdef`), index (`pg_get_indexdef`), view (`pg_get_viewdef`), trigger (`pg_get_triggerdef`), policy (the `pg_policies` row)
-      - 🔴 **OPEN before Task 10 is implemented** (Codex on the spec branch, 2026-10-29): a view's `reloptions` (`security_invoker`, `security_barrier`, `check_option`) are not in the list above, so a change to `security_invoker` alone, which changes whose permissions and RLS apply, would snapshot as identical. Add normalized view `reloptions` to the snapshot and a sabotage step that flips `security_invoker` without changing the query.
+      - a view's `reloptions` (`security_invoker`, `security_barrier`, `check_option`), normalized so an option set to its default equals the option being absent. A change to `security_invoker` alone changes whose permissions and RLS apply without changing the query (raised by Codex on the spec branch, 2026-10-29; #47 item 5).
       - sequence, enum and composite type
       - table ACL (`relacl`, grantees sorted), owner, `relrowsecurity`, `relforcerowsecurity`
     - in `public`, for functions: `pg_get_functiondef`, `proacl`, owner, `prosecdef`, and `proconfig` (search_path)
@@ -345,7 +355,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
     - publication membership (`pg_publication_tables`)
     - `pgmq` queues, read as the catalog presence of the `pgmq.q_<name>` table, so no data read is needed
     - installed extensions (name and schema; version is a separate key)
-    - rows of `storage.buckets` (`id, public, file_size_limit, allowed_mime_types`). This is the one item that is data, not catalog: it needs `SELECT` on `storage.buckets`, granted in Task 15b's grants migration. If `postgres` cannot grant that (the table is owned by `supabase_storage_admin`), the snapshot records `buckets:unreadable`, and that key is allowlisted with that reason, after David agrees.
+    - rows of `storage.buckets` (`id, public, file_size_limit, allowed_mime_types`). This is the one item that is data, not catalog: it needs `SELECT` on `storage.buckets`, granted in Task 27's grants migration. If `postgres` cannot grant that (the table is owned by `supabase_storage_admin`), the snapshot records `buckets:unreadable`, and that key is allowlisted with that reason, after David agrees.
   - `diffSnapshots(a, b) -> {key: string, a?: string, b?: string}[]`
   - `parseAllowlist(text) -> {keys: Set<string>, errors: string[]}`. Each line is `<key>  # <reason>`. A line without a reason is an error, and **a key whose qualified name is in schema `public` is an error** (criterion 9).
   - CLI: `node scripts/db/schema-snapshot.mjs snapshot --db-url-env NAME --out FILE` and `… compare A.json B.json --allowlist supabase/migrations/checks/schema-allowlist.txt`. Compare exits 0 only with no difference outside the allowlist. It prints keys, and prints definitions only for objects in `public`, `storage` and `auth`.
@@ -359,7 +369,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 - [ ] **Step 2: Run it.** Expected: FAIL.
 - [ ] **Step 3: Implement** the pure functions, then the catalog queries.
 - [ ] **Step 4: Run the unit test.** Expected: PASS.
-- [ ] **Step 5: Write the itest, which sabotages each property.** On a local stack with `roles.sql` applied, connected as `postgres`, take a snapshot. (Task 15b proves that a snapshot taken as `magora_refresh` equals one taken as `postgres`, once the grants exist.) Then make one change at a time, snapshot again, assert that the diff is exactly the expected key, and undo the change:
+- [ ] **Step 5: Write the itest, which sabotages each property.** On a local stack with `roles.sql` applied, connected as `postgres`, take a snapshot. (Task 27 proves that a snapshot taken as `magora_refresh` equals one taken as `postgres`, once the grants exist.) Then make one change at a time, snapshot again, assert that the diff is exactly the expected key, and undo the change:
   - add a policy
   - `GRANT UPDATE (col)` to `anon`
   - `ALTER FUNCTION … SECURITY DEFINER`
@@ -370,27 +380,31 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - `ALTER DEFAULT PRIVILEGES … GRANT SELECT ON TABLES TO anon`
   - add a table to `supabase_realtime`
   - add a trigger on `auth.users`
+  - `ALTER VIEW … SET (security_invoker = true)` on a view whose query is unchanged, and the same for `security_barrier`
 
-  After each undo, the diff is empty.
+  After each undo, the diff is empty. Setting `security_invoker = false` explicitly gives no diff.
 - [ ] **Step 6: Run `npm run test:db`.** Expected: PASS.
 - [ ] **Step 7: Commit.**
 
 ### Task 11: Privilege check (criterion 7)
 
 **Files:**
-- Create: `scripts/db/privilege-check.mjs`, `scripts/db/privilege-check.test.mjs`, `scripts/db/privilege-check.itest.mjs`, `supabase/migrations/checks/refresh-execute-allowlist.txt` (Step 3)
+- create: `scripts/db/privilege-check.mjs`
+- create: `scripts/db/privilege-check.test.mjs`
+- create: `scripts/db/privilege-check.itest.mjs`
+- create: `supabase/migrations/checks/refresh-execute-allowlist.txt` (Step 3)
 
 **Interfaces:**
 - Produces:
   - `collectPrivileges(client) -> Promise<Facts>`, run while connected **as `magora_refresh`**.
   - `judge(facts, {executeAllowlist: string[], copiedTables: string[]}) -> string[]`: the violations.
-  - `positiveCheck(client, copiedTables, expectedCounts) -> string[]`
-  - CLI: `--db-url-env NAME [--counts FILE]`. It exits non-zero on any violation.
+  - `positiveCheck(client, copiedTables, expectedCounts?) -> string[]`. It first runs `SET row_security = off` (a refusal is one violation, and no table is read), then counts each copied table; a refused read is a violation. With `expectedCounts` (the first run) each count must also equal the maintainer's; without it (every refresh) no count is compared (spec §5.10, David, 2026-11-21).
+  - CLI: `--db-url-env NAME [--counts FILE | --tables FILE]`: `--counts` is `{"schema.table": n}` for the first run, `--tables` is `["schema.table"]` for a refresh; both at once is refused. It exits non-zero on any violation.
 
   Facts come from `has_table_privilege`, `has_column_privilege`, `has_sequence_privilege`, `has_function_privilege`, `has_schema_privilege` and `has_database_privilege`, evaluated for `current_user` across every schema; plus `pg_roles` attributes, `pg_auth_members`, and ownership in `pg_class`, `pg_proc`, `pg_namespace` and `pg_type`.
 
   `judge` reports, exactly per §5.10:
-  - any INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES or TRIGGER on any table, at table or column level
+  - any INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES or TRIGGER on any table, at table or column level. The one exception is table-level `UPDATE` on `pg_catalog.pg_settings` (David, 2026-11-07). PostgreSQL grants it to `PUBLIC` on every database, and `postgres` cannot revoke it. An `UPDATE` there only calls `set_config`, a session setting that writes no data and that `SET` already allows.
   - UPDATE or USAGE on any sequence
   - EXECUTE on any function outside `executeAllowlist`
   - CREATE on any schema or on the database
@@ -401,7 +415,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 - [ ] **Step 1: Write the failing unit test.** One case per violation class above, each built as a minimal `Facts` and asserted to produce exactly one violation that names the object. A clean `Facts` gives `[]`.
 - [ ] **Step 2: Run it.** Expected: FAIL.
 - [ ] **Step 3: Implement.** The `executeAllowlist` lives in `supabase/migrations/checks/refresh-execute-allowlist.txt`, a reviewed file where every line is `<schema>.<function>(<args>)  # <reason>`, or `<schema>.*  # <reason>` for `pg_catalog` and `information_schema` only.
-  The allowlist's real contents are derived in Task 15b Step 4, once the full schema and grants exist. Here it holds only the `pg_catalog.*` and `information_schema.*` lines.
+  The allowlist's real contents are derived in Task 27 Step 4, once the full schema and grants exist. Here it holds only the `pg_catalog.*` and `information_schema.*` lines.
   - A wildcard does not cover functions that write without any table privilege. `judge` keeps a fixed list, `WRITES_WITHOUT_TABLE_PRIVILEGE`, and reports `EXECUTE` on any of them **whatever the allowlist says**, so no allowlist line, wildcard or derived, can admit one. It starts with the large-object writers: `lo_create`, `lo_creat`, `lo_from_bytea`, `lo_import` (both forms), `lo_open`, `lowrite`, `lo_put`, `lo_truncate`, `lo_truncate64` and `lo_unlink`; `lo_export`, which writes server files (not callable through `PUBLIC` by default, but a later grant must not pass the wildcard); and both overloads of `pg_logical_emit_message`, which writes caller-supplied content to WAL. Any of them lets a "read-only" login write in production, and `default_transaction_read_only` is a session default the login can switch off, not a boundary.
   - Unit cases, one per function **signature** in the list, enumerated in the test independently of `judge`'s own constant: a `Facts` with `EXECUTE` on that signature gives exactly one violation naming it, once under an allowlist holding `pg_catalog.*` and once under an allowlist naming that exact signature. Functions not callable by default (such as `lo_export`) are exercised the same way, as a synthetic `Facts`. Removing any entry from `judge`'s list must fail a case.
 - [ ] **Step 4: Run it.** Expected: PASS.
@@ -409,29 +423,38 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   The fixture is self-contained, so this task does not wait for the baseline:
   - Start a bare local stack, apply `roles.sql`, then run `create table public.t(id int primary key, owner uuid)` and `grant select on public.t to magora_refresh`.
   - Run the check once. Its `EXECUTE` violations on this bare stack (extension functions callable through `PUBLIC`) become the fixture's allowlist, except `WRITES_WITHOUT_TABLE_PRIVILEGE` functions, which no allowlist can hold: they stay in a recorded baseline of violations instead. Every further step must add **exactly one** new violation beyond that baseline.
-  - Record whether that first run reports any `WRITES_WITHOUT_TABLE_PRIVILEGE` function (stock PostgreSQL grants `EXECUTE` on most large-object functions to `PUBLIC`; whether Supabase revokes them is not yet observed). Then, as `magora_refresh`, run `select lo_create(0)`: if it succeeds, the check must have reported `lo_create`; if it is refused, record the error. Either way, the bare-stack allowlist must not have absorbed it.
+  - Record whether that first run reports any `WRITES_WITHOUT_TABLE_PRIVILEGE` function (stock PostgreSQL grants `EXECUTE` on most large-object functions to `PUBLIC`; whether Supabase revokes them is not yet observed).
+    - **Observed, 2026-11-07** (local stack, PostgreSQL 17.6, Supabase CLI 2.118.0): Supabase does not revoke them. 11 signatures are callable through `PUBLIC`: `lo_creat(integer)`, `lo_create(oid)`, `lo_from_bytea(oid, bytea)`, `lo_open(oid, integer)`, `lo_put(oid, bigint, bytea)`, `lo_truncate(integer, integer)`, `lo_truncate64(integer, bigint)`, `lo_unlink(oid)`, `lowrite(integer, bytea)`, and both `pg_logical_emit_message(boolean, text, text|bytea, boolean)` overloads. `lo_export` and both `lo_import` forms are `supabase_admin` only. As `magora_refresh`, `lo_create(0)` succeeded in a read-write transaction (rolled back), and the check reported it. Then, as `magora_refresh`, run `select lo_create(0)`: if it succeeds, the check must have reported `lo_create`; if it is refused, record the error. Either way, the bare-stack allowlist must not have absorbed it.
   - `GRANT INSERT ON public.t TO magora_refresh`: it fails naming that grant. Revoke it.
   - `GRANT UPDATE (one column) …`: it fails. Revoke it.
   - `GRANT authenticated TO magora_refresh`: it fails on membership. Revoke it.
+  - Positive part: insert rows into `public.t`, enable RLS with a `using (false)` select policy. With `BYPASSRLS` the positive part passes, with and without the matching counts. `ALTER ROLE magora_refresh NOBYPASSRLS`: it reports exactly one violation, the refused read of `public.t`, rather than reading zero rows. Restore `BYPASSRLS`.
 - [ ] **Step 6: Run `npm run test:db`.** Expected: PASS. Every sabotage is caught.
 - [ ] **Step 7: Commit.**
 
 ### Task 12: The baseline and its proof
 
 **Files:**
-- Create:
-  - `supabase/migrations/20260625_baseline_prehistory.sql`
-  - `supabase/migrations/rollbacks/20260625_baseline_prehistory.rollback.sql`: a comment-only no-op, which says rolling back the baseline means dropping the database (§5.2)
-  - `scripts/db/baseline-proof.mjs`
-  - `scripts/db/baseline-secrets.test.mjs`
+- create: `supabase/migrations/20260625_baseline_prehistory.sql`
+- create: `supabase/migrations/rollbacks/20260625_baseline_prehistory.rollback.sql`: a comment-only no-op, which says rolling back the baseline means dropping the database (§5.2)
+- create: `scripts/db/baseline-proof.mjs`
+- create: `scripts/db/baseline-proof.test.mjs`
+- create: `scripts/db/baseline-secrets.test.mjs`
+- modify: `supabase/migrations/checks/schema-allowlist.txt` (the lines Step 4 needs, each with its reason)
+- modify: `scripts/db/schema-snapshot.mjs` (function-text normalization, Step 4)
+- modify: `scripts/db/schema-snapshot.test.mjs`
+- command: `node scripts/db/baseline-secrets.test.mjs`
+- command: `node scripts/db/baseline-proof.test.mjs`
+- command: `node scripts/db/schema-snapshot.test.mjs`
+- command: `npm run check:migrations`
 
 **Interfaces:**
 - Consumes: `listMigrationFiles` and `applyFiles` (Task 8), `snapshotSchema`/`compare` (Task 10), `supabase/setup/roles.sql` (Task 9).
-- Produces: `baseline-proof.mjs --prod-snapshot FILE`. It:
+- Produces: `baseline-proof.mjs --prod-snapshot FILE [--through STEM]`. It:
   1. makes a temp workspace with `supabase/config.toml` (copied) and an **empty** `supabase/migrations/`
   2. runs `supabase start` there
-  3. applies `roles.sql`, then the baseline, then **exactly the 32 files dated up to `20260727`**, via `applyFiles`, with `connect(…, {writeTarget: 'local'})`. Later migrations, the grants migration included, are excluded so the result matches the production snapshot taken in Step 1.
-  4. snapshots the result and compares it with `FILE` under the allowlist
+  3. applies `roles.sql`, then the baseline, then **every file up to and including the last migration production had when `FILE` was taken**, via `applyFiles`, with `connect(…, {writeTarget: 'local'})`. That is `--through`, defaulting to `LAST_ON_PRODUCTION` in the script: `20261106_claim_node_insights_skip_quarantined` for the 2026-11-21 snapshot, so 33 files, not the 32 up to `20260727` this plan first assumed (production had applied `20261106` by then). Files that sort after `--through` are excluded so the result matches the production snapshot taken in Step 1. The grants migration is among them only because its stem is dated after `LAST_ON_PRODUCTION` (Task 27): a stem dated earlier would sort inside the cutoff and be replayed, against a snapshot that lacks it. A `--through` naming no file is refused.
+  4. snapshots the result on a fresh connection (a file's session settings, such as the dump's empty `search_path`, must not shape how the catalog prints) and compares it with `FILE` under the allowlist
   5. runs `supabase stop --no-backup`
 
   It prints the comparison and exits with its code.
@@ -446,10 +469,11 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   It runs against the real file once it exists. Before that it fails on "file not found". Expected now: FAIL.
 - [ ] **Step 3: Derive the baseline** per §5.2.
   - Start from production's schema-only dump: David runs `pg_dump --schema-only --schema=public` through `op run` and hands over the path.
-  - Remove every object the 32 migrations create.
+  - Remove every object the later migrations create.
   - Restore what they alter or drop to its earlier form. For example, `public.users` and its policies under their 2026-07-25 names, which `20260725` alters and `20260726` drops. Read each migration for what it expects.
-  - The baseline grants **nothing** to `magora_refresh`. It must reproduce production's history, and production's history has no such grants. The grants come in Task 15b's grants migration, which sorts after every existing file.
-- [ ] **Step 4: Run the proof** with `node scripts/db/baseline-proof.mjs --prod-snapshot <path>`. Iterate on the baseline until it exits 0. The only allowlist lines allowed are Supabase-owned objects, and the parser rejects `public` ones (criterion 9). Expected final output: `0 differences outside allowlist (N allowlisted)`.
+  - The baseline grants **nothing** to `magora_refresh`. It must reproduce production's history, and production's history has no such grants. The grants come in Task 27's grants migration, which sorts after every existing file.
+- [ ] **Step 4: Run the proof** with `node scripts/db/baseline-proof.mjs --prod-snapshot <path>`. Iterate on the baseline until it exits 0. The only allowlist lines allowed are Supabase-owned objects, and the parser rejects `public` ones (criterion 9).
+  - **Function text (David, 2026-11-21).** Production holds some function bodies saved with CRLF line endings, or with the body on one line, while the repo's migrations replay them with LF; three such functions are created by later migrations, so no baseline can match them. `normalizeFunctionDef` in `schema-snapshot.mjs` turns CRLF into LF and trims the blank space just inside the body's dollar quotes, in the snapshot and, through `normalizeSnapshot`, on both sides of `compareFiles`, so a snapshot taken before the change compares the same. Blank space anywhere else in a body still counts. Accepted cost: a change that only adds or removes a CR inside a string literal is not seen. Expected final output: `0 differences outside allowlist (N allowlisted)`.
 - [ ] **Step 5: Run the secrets test.** Expected: PASS.
 - [ ] **Step 6: Run `npm run check:migrations`.** Expected: PASS. The baseline has its rollback, and it is not added to the grandfather list.
 - [ ] **Step 7: Run the Task 7 ordering check** on the baseline text. Record "no unfixed advisory entry disclosed" privately in the advisory, not in the PR.
@@ -459,7 +483,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 
 ## Phase 3: Rollout step 3 (the staging project and its first refresh)
 
-### Task 13 (operator, with scripts): Setup entry point; staging and production setup
+### Task 13 (operator): Setup entry point; staging and production setup (with scripts)
 
 **Files:**
 - Create:
@@ -473,7 +497,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - `apply-setup.mjs --target staging|production|scratch [--ref <ref>] --file <name>`, the operator-setup class (Global Constraints).
     - **Allowed pairs**, from a fixed table. `--file` is a name in that table, never a path.
       - staging: `roles.sql`, `staging-ops.sql`
-      - production: `roles.sql`, `20261029_refresh_login_grants.sql`, and, on Task 15b's route A only, `<date>_revoke_public_writer_functions.sql` (its name, once Task 15b fixes the date)
+      - production: `roles.sql`, `20261122_refresh_login_grants.sql`, and, on Task 27's route A only, `<date>_revoke_public_writer_functions.sql` (its name, once Task 27 fixes the date)
       - scratch: `roles.sql`, `rehearsal-fixture.sql`, and each file `listMigrationFiles` returns in the current checkout, the baseline included (Task 26's rehearsal source)
     - **URL variable per target:** `STAGING_DB_URL`, `PROD_SETUP_DB_URL` or `SCRATCH_SETUP_DB_URL`.
     - **Ref checks:** the ref read from the URL must equal the target's ref. For scratch, it must equal `--ref`, which must be neither production's nor staging's.
@@ -482,7 +506,7 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 
 - [ ] **Step 1: Write the files.** Then write `apply-setup.test.mjs`:
   - (`staging-ops.sql`, production) is refused.
-  - On Task 15b's route A: the revoke migration on production is allowed, and on staging is refused (the rebuild applies it there).
+  - On Task 27's route A: the revoke migration on production is allowed, and on staging is refused (the rebuild applies it there).
   - A `--file ../x.sql` is refused.
   - A production URL with `--target staging` is refused before connecting.
   - A wrong typed-back ref aborts.
@@ -495,8 +519,8 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
   - (b) Supabase support enabling the attribute
   - (c) a SECURITY DEFINER export function owned by `postgres`, which the privilege check's `executeAllowlist` would then have to name
 - [ ] **Step 3 (operator, David approves each of the three production writes):**
-  - Run `apply-setup.mjs --target production --file roles.sql`, then `--file 20261029_refresh_login_grants.sql`, then `--file <date>_revoke_public_writer_functions.sql`, from the production vault, after PR D merges. Before the second, David has approved Task 15b's exception and confirmed that day's daily backup; before the third, David has approved the revoke (Task 15b Step 4).
-  - The third write exists only on Task 15b's route A. On route B there is no revoke migration, and the privilege check below stays red until Supabase support has revoked on production.
+  - Run `apply-setup.mjs --target production --file roles.sql`, then `--file 20261122_refresh_login_grants.sql`, then `--file <date>_revoke_public_writer_functions.sql`, from the production vault, after PR D merges. Before the second, David has approved Task 27's exception and confirmed that day's daily backup; before the third, David has approved the revoke (Task 27 Step 4).
+  - The third write exists only on Task 27's route A. On route B there is no revoke migration, and the privilege check below stays red until Supabase support has revoked on production.
   - Set the login's password with `op run` from a new "Magora Project" item `supabase-refresh-login`.
   - Run `privilege-check.mjs` as that login against production. Expected: 0 violations. Run the positive part with counts David took as `postgres` the same hour. This is criterion 7. It must pass before Task 20 hands the login to the workflow.
 - [ ] **Step 4 (operator):** `apply-setup.mjs --target staging --file staging-ops.sql`. The refresh's rebuild applies the grants migration to staging along with every other migration.
@@ -564,13 +588,13 @@ The snapshot reads catalogs only, so the refresh login (which holds `SELECT` on 
 - [ ] **Step 4: Run it.** Expected: PASS.
 - [ ] **Step 5: Commit.**
 
-### Task 15b: The refresh login's grants migration
+### Task 27: The refresh login's grants migration
 
 This is a spec exception, for David to approve. The migration changes production ACLs before staging can test it: the first refresh needs the grants, so §5.5's staging step cannot run first. That is §5.11 step 2's bootstrap argument, but this migration, unlike the baseline, does write production. The plan's mitigations are a local forward, rollback and forward cycle, the privilege check, and backup confirmation before applying. **David approves this exception before Step 5.**
 
 **Files:**
 - Create:
-  - `supabase/migrations/20261029_refresh_login_grants.sql`, `supabase/migrations/rollbacks/20261029_refresh_login_grants.rollback.sql`
+  - `supabase/migrations/20261122_refresh_login_grants.sql`, `supabase/migrations/rollbacks/20261122_refresh_login_grants.rollback.sql`. The stem must sort after `LAST_ON_PRODUCTION` (Task 12, `20261106_…`), or Task 12's proof would replay it against a production snapshot without it; a later date for the stem is fine, an earlier one is not.
   - On Step 4's route A only: `supabase/migrations/<date>_revoke_public_writer_functions.sql`, `supabase/migrations/rollbacks/<date>_revoke_public_writer_functions.rollback.sql` and `scripts/db/revoke-writers.test.mjs`
 - Modify:
   - `supabase/migrations/checks/refresh-execute-allowlist.txt`
@@ -697,7 +721,7 @@ This is a spec exception, for David to approve. The migration changes production
     6. load
     7. seed
     8. check integrity
-    8b. the exposure check (Task 22b; wired in PR E, once the staging site exists)
+    8b. the exposure check (Task 28; wired in PR E, once the staging site exists)
     9. run the smoke (Task 22) unless `--no-smoke`
 
     Before step 1, it calls `validateTargets(process.env)` (Task 2), and every Supabase client comes from `stagingAdmin`, so a wrong target fails before any side effect. Step 5 is, in order: `createNodeLogins`, `createStewards`, `createSmokeSteward`. The smoke steward is created with `email_confirm: true`, and its `listeners` profile is part of step 7's seed.
@@ -769,7 +793,7 @@ This is a spec exception, for David to approve. The migration changes production
   - `STAGING_DB_URL`: the staging owner via the pooler
   - `STAGING_SUPABASE_URL`, `STAGING_SERVICE_ROLE_KEY`, `STAGING_ANON_KEY`, `STAGING_PROVISION_SECRET`
   - `STAGING_SLACK_WEBHOOK_URL`, `STAGING_MAINTAINER_EMAILS`, `STAGING_SMOKE_STEWARD_PASSWORD`
-  - `PROD_SUPABASE_URL`, `PROD_ANON_KEY`. Both are public values, stored as environment variables rather than secrets, and used for the exposure check's source-side anon reads (Task 22b).
+  - `PROD_SUPABASE_URL`, `PROD_ANON_KEY`. Both are public values, stored as environment variables rather than secrets, and used for the exposure check's source-side anon reads (Task 28).
 
   The refresh and the exposure check take their source as three inputs: `--source-db-url-env`, `--source-api-url-env` and `--source-anon-key-env` (defaults `PROD_REFRESH_DB_URL`, `PROD_SUPABASE_URL`, `PROD_ANON_KEY`). Before any read, `index.mjs` checks that the database ref and the API ref name the same project, and that it is not staging.
   - `VERCEL_AUTOMATION_BYPASS_SECRET`
@@ -849,7 +873,7 @@ This is a spec exception, for David to approve. The migration changes production
     - runs the edge-deploy SHA check
     - runs every `ROUTES` entry against `https://staging.themagoraportal.org` with header `x-vercel-protection-bypass`
     - checks the served bundle: `GET /`, then find the JS asset and search it. It must contain `mujiqtvwtsbaakfcsjkp` and not `wqxmmuwrfltpaxnuddwk`.
-  - The exposure check is Task 22b. It runs as refresh step 8b, after integrity and before the smoke, so no smoke rows exist when it reads.
+  - The exposure check is Task 28. It runs as refresh step 8b, after integrity and before the smoke, so no smoke rows exist when it reads.
 
 - [ ] **Step 1: Write the failing test.**
   - `edgeDeployIsCurrent` is false when `functions/` changed after the recorded SHA, and true when equal or later.
@@ -859,10 +883,10 @@ This is a spec exception, for David to approve. The migration changes production
 - [ ] **Step 3: Implement**, and wire `smoke` into `index.mjs` step 9. Remove `--no-smoke` from the workflow.
 - [ ] **Step 4: Run it.** Expected: PASS.
 - [ ] **Step 5 (operator, after merge):**
-  - Run the full refresh. Expected: steps 1–9 pass, including 8b (Task 22b). This completes rollout step 4.
+  - Run the full refresh. Expected: steps 1–9 pass, including 8b (Task 28). This completes rollout step 4.
   - Also `curl` production's served bundle for production's ref, to complete criterion 2's last clause.
 
-### Task 22b: Exposure check (§5.3), with full endpoint fixtures
+### Task 28: Exposure check (§5.3), with full endpoint fixtures
 
 The check answers one question: **can an anonymous caller see anything on staging that they could not see on production?** It covers every endpoint anon can read, and it reads production as anon only, plus one lookup through the read-only refresh login. It never calls an anon-executable function that writes. Whether such functions should be anon-callable is the private advisory's question (Task 7), not this check's.
 
@@ -1079,11 +1103,11 @@ No change to `magora-acoustic-biodiversity` is needed (see the verified facts ab
 The source check confirms that all three name the scratch ref. Only the cleanup in step 4 omits the three `--source-*` flags.
 
   1. **Make the scratch source.**
-     - Create `magora-rehearsal-scratch` (on Task 15b's route B it already exists, created early for the support request; reuse it) and claim the lease.
+     - Create `magora-rehearsal-scratch` (on Task 27's route B it already exists, created early for the support request; reuse it) and claim the lease.
      - With `apply-setup.mjs --target scratch --ref <scratch-ref>`, apply `roles.sql`, then each file `listMigrationFiles` returns on `main`, once each, in order. That list starts with the baseline and includes the grants migration. Every scratch command in this step passes `--ref <scratch-ref>`.
      - Set the scratch login's password.
      - Apply `supabase/setup/rehearsal-fixture.sql` the same way. It is a fixed file (written in this task) that inserts one auth user, the steward, and two nodes, so the refresh has something to copy and remap. The simulated node is not used against scratch, because it refuses every ref but staging's.
-     - On Task 15b's route B, this is the scratch project David created when the deciding test picked route B and named in that one support request. Before this check, confirm support's revoke landed on it; the refresh's own privilege gate (Task 18) accepts no violation. If it has not landed, the rehearsal waits.
+     - On Task 27's route B, this is the scratch project David created when the deciding test picked route B and named in that one support request. Before this check, confirm support's revoke landed on it; the refresh's own privilege gate (Task 18) accepts no violation. If it has not landed, the rehearsal waits.
      - Run the privilege check against `SCRATCH_DB_URL`. Expected: pass.
   2. **Pre-merge state.**
      - On a local branch `rehearsal/probe` (never pushed), add `create table public.rehearsal_probe(id int)`, its rollback, and a manifest entry `"rehearsal_probe": {"class": "excluded", "reason": "rehearsal"}`. An excluded table needs no grant.
@@ -1106,7 +1130,7 @@ The source check confirms that all three name the scratch ref. Only the cleanup 
 | # | Proven by |
 |---|---|
 | 1 | Task 3 Step 2, Task 5 Step 2 |
-| 2 | Task 23 Steps 5–6, Task 21 Step 5, Task 22 Step 5, Task 22b Step 7 |
+| 2 | Task 23 Steps 5–6, Task 21 Step 5, Task 22 Step 5, Task 28 Step 7 |
 | 3 | Task 26 Step 4 |
 | 4 | Task 6 Steps 6–7 |
 | 5 | Task 19 Step 5 |
