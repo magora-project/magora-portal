@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "88bcdbb40433086630084443bc7b2a102d2d4ffe",
+    "mergeBase": "70911dcd5ab25e57c20877c016781693d8768173",
+    "head": "62d1d4cdc0d03e66c75be0eedea2d010d5d0370c"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P3",
+      "summary": "The date David confirmed the licence is recorded as 2026-11-23, but the spec says 2026-11-21.",
+      "file": "public/fonts/v4/SOURCES.md",
+      "line": 10
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-23T16:35:55.358Z"
+}
