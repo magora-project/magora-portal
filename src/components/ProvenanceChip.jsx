@@ -8,7 +8,7 @@ import { PROVENANCE, BACKABLE } from '../lib/provenance'
 // ship a correlation or community-observation claim before the substrate and consent model exist.
 
 const C = {
-  bg: '#0d2818', border: '#1f5230', accent: '#1D9E75', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', border: 'var(--c-forest-border)', accent: 'var(--c-forest-accent)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 /**

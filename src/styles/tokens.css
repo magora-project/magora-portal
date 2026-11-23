@@ -1,0 +1,114 @@
+/*
+ * Design tokens (portal v4 spec §4.2, plan Task 2). The one file under src/ that may hold literal colours
+ * (scripts/ci/no-hex-literals.test.mjs).
+ *
+ * Naming: colour roles are --c-<surface>-<role>, for example --c-forest-bg for the map and card palette
+ * (`C` in MapPage.jsx and DetectionCard.jsx), --c-amber-* for AMBER in src/lib/listen.js, and
+ * --c-paper-* for ShareSheet's PAPER, INK, FOREST and ACCENT. Fonts are --font-display, --font-label and
+ * --font-body.
+ *
+ * Tokens are per ROLE, not per value: two uses of one literal get two tokens when they play different
+ * roles, so the v4 block (PR 2) can map them apart. In :root each value is the current literal, byte for
+ * byte, so PR 1 changes no pixel.
+ *
+ * Use var(--…) everywhere. Only a sink that cannot resolve var() reads a value through token() in
+ * src/lib/tokens.js, at render or event time.
+ */
+:root {
+  --font-display: 'Big Shoulders Display', sans-serif;
+  --font-label: 'Jost', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+
+  /* Forest: the site-wide dark palette (`C` in MapPage.jsx and DetectionCard.jsx, src/App.css, src/index.css). */
+  --c-forest-bg: #0d2818;
+  --c-forest-card: #163d22;
+  --c-forest-border: #1f5230;
+  --c-forest-accent: #1D9E75;
+  --c-forest-accent-light: #5DCAA5;
+  --c-forest-text: #f0ede8;
+  --c-forest-text-sub: #c8e6d0;
+  --c-forest-text-muted: #7aad8a;
+  --c-forest-placeholder: #4a7a58;
+  --c-forest-code-bg: #0a1f12;
+  --c-forest-input-bg: #0f2918;
+  --c-forest-insight-bg: #0f3020;
+  --c-forest-photo-placeholder: #1a4a28;
+  --c-forest-button-busy: #1a3a28;
+  --c-forest-text-disabled: #4a7a58;
+  --c-forest-conf-low: #d9a441;
+  --c-forest-error: #fb7a6a;
+  --c-forest-error-bg: #3e1f16;
+  --c-forest-danger: #c0392b;
+  --c-forest-text-footnote: #7a9b88;
+  --c-forest-avatar-bg: #162e20;
+  --c-forest-notice-bg: #1f3326;
+  --c-forest-notice-border: #3a6247;
+  --c-forest-queued-bg: #1f3326;
+  --c-forest-alert-text: #ffb4a2;
+  --c-forest-alert-bg: #3d1f1a;
+  --c-forest-alert-border: #6b2f24;
+  --c-forest-button-done: #0f3020;
+  --c-forest-selected-bg: #1a4a28;
+  --c-forest-form-error: #f87171;
+
+  /* Amber: the phone-listen palette (AMBER in src/lib/listen.js). */
+  --c-amber-base: #d9952b;
+  --c-amber-light: #f0c14b;
+  --c-amber-dark: #b87a1e;
+  --c-amber-ink: #3a2c0e;
+
+  /* Map: Leaflet markers and popups (MapPage.jsx, JournalPage.jsx, SpeciesPage.jsx). Markers read these
+     through token(), because pathOptions become SVG attributes. */
+  --c-map-node-active-fill: #1D9E75;
+  --c-map-node-active-stroke: #0F6E56;
+  --c-map-node-offline: #7aad8a;
+  --c-map-journal-fill: #1D9E75;
+  --c-map-journal-stroke: #5DCAA5;
+  --c-map-species-fill: #c0392b;
+  --c-map-popup-text: #0f2718;
+
+  /* Status: the live heartbeat and node-active dots. */
+  --c-status-live: #22c55e;
+
+  /* Badges and the warning chip on detection cards (DetectionCard.jsx). */
+  --c-badge-count-bg: #1a3a28;
+  --c-badge-count-border: #22c55e;
+  --c-badge-count-text: #86efac;
+  --c-badge-dawn-bg: #1a3a4a;
+  --c-badge-dawn-border: #0ea5e9;
+  --c-badge-dawn-text: #7dd3fc;
+  --c-badge-guild-bg: #1a3a28;
+  --c-warn-bg: #2a1a0a;
+  --c-warn-border: #f97316;
+  --c-warn-text: #fb923c;
+  --c-warn-heading: #f97316;
+
+  /* Editorial: the light paper sections (EcologicalCommons.jsx, EcologicalPipeline.jsx). */
+  --c-editorial-bg: #f0ebe0;
+  --c-editorial-ink: #1a1a1a;
+  --c-editorial-rule: #b8b0a0;
+  --c-editorial-rule-light: #ccc7b8;
+  --c-editorial-text: #4a4440;
+  --c-editorial-text-sub: #5a5248;
+  --c-editorial-text-muted: #9a9080;
+  --c-editorial-strip-bg: #e8e2d5;
+  --c-editorial-stat-label: #7a7060;
+
+  /* Paper: the exported share card (ShareSheet.jsx PAPER, INK, FOREST, ACCENT). */
+  --c-paper-bg: #f0ebe0;
+  --c-paper-ink: #1a1a1a;
+  --c-paper-forest: #0d2818;
+  --c-paper-forest-light: #163d22;
+  --c-paper-accent: #c0392b;
+  --c-paper-text: #3a352f;
+  --c-paper-text-sub: #7a7060;
+  --c-paper-text-muted: #6b6157;
+  --c-paper-rule: #cdc6b6;
+
+  /* Google: the sign-in button and its logo (AuthModal.jsx). Third-party marks; not rebranded. */
+  --c-google-button-text: #1a1a1a;
+  --c-google-yellow: #FFC107;
+  --c-google-red: #FF3D00;
+  --c-google-green: #4CAF50;
+  --c-google-blue: #1976D2;
+}

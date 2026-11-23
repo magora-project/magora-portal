@@ -5,8 +5,8 @@ import { isHiddenSpecies } from '../lib/hiddenSpecies'
 import { AMBER } from '../lib/listen'
 
 const C = {
-  card: '#163d22', border: '#1f5230',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 function relativeTime(iso) {

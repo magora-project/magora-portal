@@ -4,12 +4,12 @@ const btnBase = {
   display: 'inline-block',
   marginTop: '24px',
   padding: '13px 26px',
-  background: '#1a1a1a',
-  color: '#f0ebe0',
+  background: 'var(--c-editorial-ink)',
+  color: 'var(--c-editorial-bg)',
   border: 'none',
   borderRadius: '3px',
   textDecoration: 'none',
-  fontFamily: "'Big Shoulders Display', sans-serif",
+  fontFamily: 'var(--font-display)',
   fontSize: '0.95rem',
   fontWeight: 700,
   letterSpacing: '0.07em',
@@ -19,12 +19,12 @@ const btnBase = {
 
 function CommonsCard({ title, text, cta, to, href }) {
   return (
-    <div style={{ border: '1px solid #b8b0a0', padding: '40px 36px' }}>
+    <div style={{ border: '1px solid var(--c-editorial-rule)', padding: '40px 36px' }}>
       <h3 style={{
-        fontFamily: "'Big Shoulders Display', sans-serif",
+        fontFamily: 'var(--font-display)',
         fontWeight: 900,
         fontSize: 'clamp(1.25rem, 2.5vw, 1.65rem)',
-        color: '#1a1a1a',
+        color: 'var(--c-editorial-ink)',
         textTransform: 'uppercase',
         letterSpacing: '-0.01em',
         lineHeight: 1.15,
@@ -32,7 +32,7 @@ function CommonsCard({ title, text, cta, to, href }) {
       }}>
         {title}
       </h3>
-      <p style={{ fontSize: '14px', color: '#4a4440', lineHeight: 1.75 }}>
+      <p style={{ fontSize: '14px', color: 'var(--c-editorial-text)', lineHeight: 1.75 }}>
         {text}
       </p>
       {to ? (
@@ -48,14 +48,14 @@ export default function EcologicalCommons() {
   return (
     <section
       className="section-full-bleed"
-      style={{ background: '#f0ebe0', padding: '72px 20px 80px', borderTop: '1px solid #b8b0a0' }}
+      style={{ background: 'var(--c-editorial-bg)', padding: '72px 20px 80px', borderTop: '1px solid var(--c-editorial-rule)' }}
     >
       <div style={{ maxWidth: '960px', margin: '0 auto' }}>
         <h2 style={{
-          fontFamily: "'Big Shoulders Display', sans-serif",
+          fontFamily: 'var(--font-display)',
           fontWeight: 900,
           fontSize: 'clamp(1.8rem, 3vw, 2.5rem)',
-          color: '#1a1a1a',
+          color: 'var(--c-editorial-ink)',
           textTransform: 'uppercase',
           letterSpacing: '-0.01em',
           marginBottom: '40px',

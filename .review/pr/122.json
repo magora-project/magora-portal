@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "pr": 122,
+  "slots": [
+    {
+      "bot": "coderabbit",
+      "status": "covered",
+      "by": "check:137445148961"
+    },
+    {
+      "bot": "codex",
+      "status": "covered",
+      "by": "codex-comment:7081751432@0f41ccfe0461"
+    },
+    {
+      "bot": "gemini",
+      "status": "covered",
+      "by": "gemini-comment:7089820790"
+    }
+  ],
+  "findings": [
+    {
+      "id": "thread:PRRT_kwDOSsky0866leTi",
+      "source": "codex",
+      "severity": "P2",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "bfbb2fa14d9d1bb6e741f418b5d23f55334dac2b"
+      }
+    },
+    {
+      "id": "gemini:7081779976:3",
+      "source": "gemini",
+      "severity": "P1",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "81b6fef0d7ee935d1e2b8d799aa187022b031eed"
+      }
+    },
+    {
+      "id": "gemini:7088671099:1",
+      "source": "gemini",
+      "severity": "P1",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "0b04fc2e219f0351d06c5e55f58f20bfb33d0064"
+      }
+    }
+  ],
+  "reclassified": [
+    {
+      "id": "thread:PRRT_kwDOSsky0866rHuO",
+      "reason": "Windows npm launch in the local visual harness: it runs on macOS only, CI never runs it, and a fix cannot be verified here; deferred to issue #123."
+    },
+    {
+      "id": "gemini:7081779976:1",
+      "reason": "False positive: Gemini does not read the PR description, whose Control files section names eslint.config.js."
+    },
+    {
+      "id": "gemini:7081779976:2",
+      "reason": "The guard matches spec §6 (#[0-9a-fA-F]{6}); the overclaim was the PR body wording, corrected to six- and eight-digit hexes, and the guard comment was fixed in 0b04fc2."
+    },
+    {
+      "id": "gemini:7086054783:1",
+      "reason": "AGENTS.md \"no env vars\" says the build needs none, not that none may be set; fixtureEnv overrides the Supabase URL and key, the output stays in gitignored .visual/, and an unanswered request fails the capture."
+    }
+  ],
+  "writtenAt": "2026-11-23T02:45:40.645Z"
+}

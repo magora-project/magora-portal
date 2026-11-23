@@ -36,7 +36,7 @@ html, body, #root {
   display: inline-block;
   width: 8px;
   height: 8px;
-  background: #22c55e;
+  background: var(--c-status-live);
   border-radius: 50%;
   animation: heartbeat-pulse 1.5s ease-in-out infinite;
   flex-shrink: 0;
@@ -63,29 +63,29 @@ html, body, #root {
    build time). The markup is generated, so it carries no classes — everything
    here is element-scoped under .build-doc. */
 .build-doc {
-  color: #c8e6d0;
+  color: var(--c-forest-text-sub);
   font-size: 16px;
   line-height: 1.7;
 }
 .build-doc h1 { display: none; }               /* the page supplies its own headline */
 .build-doc h2 {
-  color: #f0ede8;
+  color: var(--c-forest-text);
   font-size: 26px;
   font-weight: 800;
   line-height: 1.2;
   margin: 48px 0 14px;
   padding-top: 28px;
-  border-top: 1px solid #1f5230;
+  border-top: 1px solid var(--c-forest-border);
 }
 .build-doc h3 {
-  color: #f0ede8;
+  color: var(--c-forest-text);
   font-size: 18px;
   font-weight: 700;
   margin: 32px 0 10px;
 }
 .build-doc p { margin: 0 0 16px; }
-.build-doc a { color: #5DCAA5; }
-.build-doc strong { color: #f0ede8; }
+.build-doc a { color: var(--c-forest-accent-light); }
+.build-doc strong { color: var(--c-forest-text); }
 .build-doc ul, .build-doc ol { margin: 0 0 16px; padding-left: 22px; }
 .build-doc li { margin-bottom: 8px; }
 .build-doc hr { display: none; }               /* h2 borders already separate sections */
@@ -93,17 +93,17 @@ html, body, #root {
 .build-doc blockquote {
   margin: 0 0 20px;
   padding: 14px 18px;
-  background: #163d22;
-  border-left: 3px solid #1D9E75;
+  background: var(--c-forest-card);
+  border-left: 3px solid var(--c-forest-accent);
   border-radius: 0 12px 12px 0;
-  color: #7aad8a;
+  color: var(--c-forest-text-muted);
   font-size: 15px;
 }
 .build-doc blockquote p:last-child { margin-bottom: 0; }
 
 .build-doc pre {
-  background: #0a1f12;
-  border: 1px solid #1f5230;
+  background: var(--c-forest-code-bg);
+  border: 1px solid var(--c-forest-border);
   border-radius: 12px;
   padding: 14px 16px;
   overflow-x: auto;                            /* long commands scroll, page never does */
@@ -114,20 +114,20 @@ html, body, #root {
   font-size: 13.5px;
 }
 .build-doc :not(pre) > code {
-  background: #0a1f12;
-  border: 1px solid #1f5230;
+  background: var(--c-forest-code-bg);
+  border: 1px solid var(--c-forest-border);
   border-radius: 6px;
   padding: 1px 6px;
-  color: #5DCAA5;
+  color: var(--c-forest-accent-light);
 }
 
 /* The shopping list is a wide table — it scrolls inside its own wrapper. */
 .build-doc .table-scroll { overflow-x: auto; margin: 0 0 20px; }
 .build-doc table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
 .build-doc th, .build-doc td {
-  border: 1px solid #1f5230;
+  border: 1px solid var(--c-forest-border);
   padding: 9px 12px;
   text-align: left;
   vertical-align: top;
 }
-.build-doc th { background: #163d22; color: #f0ede8; font-weight: 700; white-space: nowrap; }
+.build-doc th { background: var(--c-forest-card); color: var(--c-forest-text); font-weight: 700; white-space: nowrap; }

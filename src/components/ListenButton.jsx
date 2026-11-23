@@ -64,7 +64,7 @@ const heroStyle = {
   color: AMBER.ink,
   border: 'none',
   borderRadius: '3px',
-  fontFamily: "'Big Shoulders Display', sans-serif",
+  fontFamily: 'var(--font-display)',
   fontSize: '1rem',
   fontWeight: 700,
   letterSpacing: '0.07em',

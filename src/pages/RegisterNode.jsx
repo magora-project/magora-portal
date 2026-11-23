@@ -18,9 +18,9 @@ const HABITAT_OPTIONS = [
 ]
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  accent: '#1D9E75', accentLight: '#5DCAA5',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  accent: 'var(--c-forest-accent)', accentLight: 'var(--c-forest-accent-light)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 const IMAGE_URL = 'https://github.com/magora-project/magora-acoustic-biodiversity/releases/latest/download/magora-node.img.xz'
@@ -213,7 +213,7 @@ export default function RegisterNode() {
         <button onClick={openSignIn} style={{
           background: C.accent, color: '#fff', border: 'none', borderRadius: '10px',
           padding: '12px 24px', fontSize: '15px', fontWeight: 700, cursor: 'pointer',
-          fontFamily: "'DM Sans', sans-serif",
+          fontFamily: 'var(--font-body)',
         }}>
           Sign in
         </button>
@@ -238,11 +238,11 @@ export default function RegisterNode() {
                 fontSize: '13px', fontWeight: '700',
                 background: done ? C.accent : active ? C.card : C.bg,
                 border: `1.5px solid ${done ? C.accent : active ? C.accentLight : C.border}`,
-                color: done ? '#fff' : active ? C.accentLight : '#4a7a58',
+                color: done ? '#fff' : active ? C.accentLight : 'var(--c-forest-text-disabled)',
               }}>
                 {done ? '✓' : i + 1}
               </div>
-              <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: active ? C.accentLight : '#4a7a58' }}>{s}</div>
+              <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.06em', color: active ? C.accentLight : 'var(--c-forest-text-disabled)' }}>{s}</div>
             </div>
           )
         })}
@@ -257,7 +257,7 @@ export default function RegisterNode() {
             {HARDWARE_OPTIONS.map(hw => (
               <div key={hw.id} onClick={() => setHardware(hw.id)} style={{
                 border: `1.5px solid ${hardware === hw.id ? C.accent : C.border}`,
-                background: hardware === hw.id ? '#1a4a28' : C.bg,
+                background: hardware === hw.id ? 'var(--c-forest-selected-bg)' : C.bg,
                 borderRadius: '12px', padding: '12px', cursor: 'pointer', textAlign: 'center',
               }}>
                 <div style={{ fontSize: '22px', marginBottom: '6px' }}>🖥️</div>
@@ -314,7 +314,7 @@ export default function RegisterNode() {
           )}
           {ebirdStatus === 'ready' && whitelist && (
             <div style={{ fontSize: '12px', color: C.accentLight, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ background: '#1a4a28', border: `1px solid ${C.accent}`, borderRadius: '20px', padding: '2px 10px', fontWeight: '700' }}>
+              <span style={{ background: 'var(--c-forest-selected-bg)', border: `1px solid ${C.accent}`, borderRadius: '20px', padding: '2px 10px', fontWeight: '700' }}>
                 {whitelist.length} species in your area · eBird
               </span>
               <span style={{ color: C.textMuted }}>Whitelist filters out species that can't occur here</span>
@@ -323,7 +323,7 @@ export default function RegisterNode() {
           {ebirdStatus === 'error' && (
             <div style={{ fontSize: '12px', color: C.textMuted, marginBottom: '10px' }}>Couldn't load regional species, so the node will run without filtering</div>
           )}
-          {error && <div style={{ color: '#f87171', fontSize: '13px', marginBottom: '10px' }}>{error}</div>}
+          {error && <div style={{ color: 'var(--c-forest-form-error)', fontSize: '13px', marginBottom: '10px' }}>{error}</div>}
           <button
             style={{ ...btn, opacity: (form.lat && form.lon && form.wifi_ssid && form.wifi_password) ? 1 : 0.5 }}
             onClick={registerNode}
@@ -397,7 +397,7 @@ export default function RegisterNode() {
                 Download your config file and copy it there. That's it.
               </div>
               <button
-                style={{ ...btn, marginTop: 0, background: configDownloaded ? '#1a4a28' : C.accent }}
+                style={{ ...btn, marginTop: 0, background: configDownloaded ? 'var(--c-forest-selected-bg)' : C.accent }}
                 onClick={downloadConfig}
               >
                 {configDownloaded ? '✓ magora-config.json downloaded' : 'Download magora-config.json'}
@@ -439,7 +439,7 @@ export default function RegisterNode() {
                 Still waiting for {form.nodeName}
               </div>
               <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px', textAlign: 'left', marginBottom: '16px' }}>
-                <div style={{ fontSize: '12px', fontWeight: '700', color: '#f97316', marginBottom: '8px' }}>Troubleshooting checklist</div>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--c-warn-heading)', marginBottom: '8px' }}>Troubleshooting checklist</div>
                 {[
                   'SD card is fully seated in the Pi',
                   'magora-config.json is on the bootfs drive (not inside a folder)',

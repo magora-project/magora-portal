@@ -2,10 +2,10 @@
 
 // Amber/gold — visually distinct from the green node actions.
 export const AMBER = {
-  base: '#d9952b',
-  light: '#f0c14b',
-  dark: '#b87a1e',
-  ink: '#3a2c0e',
+  base: 'var(--c-amber-base)',
+  light: 'var(--c-amber-light)',
+  dark: 'var(--c-amber-dark)',
+  ink: 'var(--c-amber-ink)',
 }
 
 export const BUCKET = 'temp-audio'

@@ -1,17 +1,19 @@
 import { useRef, useState } from 'react'
 import html2canvas from 'html2canvas'
+import { token } from '../lib/tokens'
 
-const PAPER = '#f0ebe0'
-const INK = '#1a1a1a'
-const FOREST = '#0d2818'
-const ACCENT = '#c0392b'
+const PAPER = 'var(--c-paper-bg)'
+const INK = 'var(--c-paper-ink)'
+const FOREST = 'var(--c-paper-forest)'
+const ACCENT = 'var(--c-paper-accent)'
 
 function fmtDate(s) {
   if (!s) return ''
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function Waveform({ color = INK }) {
+// stroke is an SVG presentation attribute, which cannot resolve var(), so the default is read at render.
+function Waveform({ color = token('c-paper-ink') }) {
   return (
     <svg width="56" height="16" viewBox="0 0 56 16" fill="none" aria-hidden="true">
       <path d="M1 8 C6 1 11 15 16 8 S26 1 31 8 S41 15 46 8 S54 4 55 8"
@@ -49,7 +51,8 @@ export default function ShareSheet({ d, node, photo, moment, onClose }) {
   async function render() {
     if (document.fonts?.ready) { try { await document.fonts.ready } catch { /* ignore */ } }
     const canvas = await html2canvas(cardRef.current, {
-      useCORS: true, backgroundColor: PAPER, scale, logging: false,
+      // backgroundColor is an html2canvas option, not CSS, so it cannot take var().
+      useCORS: true, backgroundColor: token('c-paper-bg'), scale, logging: false,
     })
     return new Promise(res => canvas.toBlob(res, 'image/png', 0.95))
   }
@@ -119,7 +122,7 @@ export default function ShareSheet({ d, node, photo, moment, onClose }) {
     <div onClick={onClose} style={S.overlay}>
       <div onClick={e => e.stopPropagation()} style={S.sheet}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <div style={{ fontSize: '16px', fontWeight: 700, color: '#f0ede8' }}>Share this detection</div>
+          <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--c-forest-text)' }}>Share this detection</div>
           <button onClick={onClose} style={S.close}>✕</button>
         </div>
 
@@ -132,9 +135,9 @@ export default function ShareSheet({ d, node, photo, moment, onClose }) {
 
         {/* Preview = capture target */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '18px' }}>
-          <div ref={cardRef} style={{ width: W, height: H, background: PAPER, position: 'relative', overflow: 'hidden', fontFamily: "'DM Sans', sans-serif" }}>
+          <div ref={cardRef} style={{ width: W, height: H, background: PAPER, position: 'relative', overflow: 'hidden', fontFamily: 'var(--font-body)' }}>
             {/* Photo */}
-            <div style={{ height: photoH, width: '100%', position: 'relative', background: `linear-gradient(135deg, ${FOREST}, #163d22)` }}>
+            <div style={{ height: photoH, width: '100%', position: 'relative', background: `linear-gradient(135deg, ${FOREST}, var(--c-paper-forest-light))` }}>
               {photo
                 ? <img src={photo} crossOrigin="anonymous" alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 : <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '64px' }}>🐦</div>}
@@ -143,28 +146,28 @@ export default function ShareSheet({ d, node, photo, moment, onClose }) {
 
             {/* Content */}
             <div style={{ position: 'absolute', top: photoH, left: 0, right: 0, bottom: 0, padding: '18px 18px 0', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, textTransform: 'uppercase', color: INK, lineHeight: 1.02, letterSpacing: '-0.01em', fontSize: format === 'story' ? '30px' : '26px' }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 900, textTransform: 'uppercase', color: INK, lineHeight: 1.02, letterSpacing: '-0.01em', fontSize: format === 'story' ? '30px' : '26px' }}>
                 {species}
               </div>
-              {sci && <div style={{ fontStyle: 'italic', color: '#6b6157', fontSize: '13px', marginTop: '3px' }}>{sci}</div>}
-              <div style={{ color: '#3a352f', fontSize: '13px', lineHeight: 1.5, marginTop: '10px' }}>
+              {sci && <div style={{ fontStyle: 'italic', color: 'var(--c-paper-text-muted)', fontSize: '13px', marginTop: '3px' }}>{sci}</div>}
+              <div style={{ color: 'var(--c-paper-text)', fontSize: '13px', lineHeight: 1.5, marginTop: '10px' }}>
                 Recorded {moment}{fromNode}
               </div>
               {(habitat || date) && (
-                <div style={{ color: '#7a7060', fontSize: '12px', marginTop: '2px' }}>
+                <div style={{ color: 'var(--c-paper-text-sub)', fontSize: '12px', marginTop: '2px' }}>
                   {[habitat, date].filter(Boolean).join(' · ')}
                 </div>
               )}
 
               {/* Footer */}
               <div style={{ marginTop: 'auto', paddingBottom: '16px' }}>
-                <div style={{ height: '1px', background: '#cdc6b6', marginBottom: '10px' }} />
+                <div style={{ height: '1px', background: 'var(--c-paper-rule)', marginBottom: '10px' }} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Waveform />
-                    <span style={{ fontFamily: "'Big Shoulders Display', sans-serif", fontWeight: 900, color: INK, letterSpacing: '0.06em', fontSize: '16px' }}>MAGORA</span>
+                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 900, color: INK, letterSpacing: '0.06em', fontSize: '16px' }}>MAGORA</span>
                   </div>
-                  <span style={{ fontStyle: 'italic', color: '#6b6157', fontSize: '11px' }}>Every place is speaking.</span>
+                  <span style={{ fontStyle: 'italic', color: 'var(--c-paper-text-muted)', fontSize: '11px' }}>Every place is speaking.</span>
                 </div>
               </div>
             </div>
@@ -180,7 +183,7 @@ export default function ShareSheet({ d, node, photo, moment, onClose }) {
             <button onClick={handleDownload} disabled={busy} style={S.secondary}>⬇ Download</button>
             <button onClick={copyCaption} style={S.secondary}>{copied ? '✓ Caption copied' : '⧉ Copy caption'}</button>
           </div>
-          <div style={{ fontSize: '11px', color: '#7aad8a', textAlign: 'center', marginTop: '4px', lineHeight: 1.5 }}>
+          <div style={{ fontSize: '11px', color: 'var(--c-forest-text-muted)', textAlign: 'center', marginTop: '4px', lineHeight: 1.5 }}>
             {note || 'Instagram accepts images only, so share or download the card, then paste the caption.'}
           </div>
         </div>
@@ -196,27 +199,27 @@ const S = {
     overflowY: 'auto',
   },
   sheet: {
-    background: '#0d2818', border: '1px solid #1f5230', borderRadius: '18px',
+    background: 'var(--c-forest-bg)', border: '1px solid var(--c-forest-border)', borderRadius: '18px',
     padding: '18px', width: '100%', maxWidth: '380px', maxHeight: '92vh', overflowY: 'auto',
   },
   close: {
-    background: 'none', border: 'none', color: '#7aad8a', fontSize: '16px', cursor: 'pointer', padding: '4px 8px',
+    background: 'none', border: 'none', color: 'var(--c-forest-text-muted)', fontSize: '16px', cursor: 'pointer', padding: '4px 8px',
   },
   toggle: (active) => ({
     flex: 1, padding: '8px', borderRadius: '9px', cursor: 'pointer',
-    fontSize: '12px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
-    background: active ? '#1D9E75' : '#163d22',
-    border: `1px solid ${active ? '#1D9E75' : '#1f5230'}`,
-    color: active ? '#fff' : '#c8e6d0',
+    fontSize: '12px', fontWeight: 700, fontFamily: 'var(--font-body)',
+    background: active ? 'var(--c-forest-accent)' : 'var(--c-forest-card)',
+    border: `1px solid ${active ? 'var(--c-forest-accent)' : 'var(--c-forest-border)'}`,
+    color: active ? '#fff' : 'var(--c-forest-text-sub)',
   }),
   primary: (busy) => ({
     width: '100%', padding: '13px', borderRadius: '11px', cursor: busy ? 'default' : 'pointer',
-    fontSize: '15px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
-    background: busy ? '#1f5230' : '#1D9E75', border: 'none', color: '#fff',
+    fontSize: '15px', fontWeight: 700, fontFamily: 'var(--font-body)',
+    background: busy ? 'var(--c-forest-border)' : 'var(--c-forest-accent)', border: 'none', color: '#fff',
   }),
   secondary: {
     flex: 1, padding: '11px', borderRadius: '11px', cursor: 'pointer',
-    fontSize: '13px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
-    background: '#163d22', border: '1px solid #1f5230', color: '#c8e6d0',
+    fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-body)',
+    background: 'var(--c-forest-card)', border: '1px solid var(--c-forest-border)', color: 'var(--c-forest-text-sub)',
   },
 }
