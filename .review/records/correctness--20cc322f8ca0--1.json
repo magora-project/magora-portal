@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "correctness",
+  "input": {
+    "kind": "pr",
+    "identity": "20cc322f8ca0944a2bfb666f8e3a7effb0ebfa97",
+    "mergeBase": "576897580f9e8c045e76bb50f24d60deda42ba88",
+    "head": "4dfd018a505556e43ba473c30bde5730ddb3293b"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "Failed captures still write valid meta.json and retain successful screenshots, so two runs that fail on the same routes can subsequently pass diff because it checks only matching PNG lists, falsely reporting zero pixel change with coverage missing.",
+      "file": "scripts/visual/compare.mjs"
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-22T01:10:02.127Z"
+}

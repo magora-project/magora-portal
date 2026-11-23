@@ -30,9 +30,9 @@ export function recordingMoment(d) {
 }
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  accent: '#1D9E75', accentLight: '#5DCAA5',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  accent: 'var(--c-forest-accent)', accentLight: 'var(--c-forest-accent-light)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 const HABITAT_EMOJI = {
@@ -148,7 +148,7 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
   const wiki = wikiData[d.species_name] || {}
   const sci  = d.raw_label?.split('_')[1] || ''
   const moment = recordingMoment(d)
-  const confColor = conf == null ? C.border : conf >= 75 ? C.accent : conf >= 55 ? C.accentLight : '#d9a441'
+  const confColor = conf == null ? C.border : conf >= 75 ? C.accent : conf >= 55 ? C.accentLight : 'var(--c-forest-conf-low)'
 
   function Btn({ id, style, children }) {
     const active = activeBadge === id
@@ -158,7 +158,7 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
         style={{
           borderRadius: '20px', padding: '3px 9px', fontSize: '12px',
           fontWeight: '600', border: 'none', cursor: 'pointer',
-          fontFamily: "'DM Sans', sans-serif",
+          fontFamily: 'var(--font-body)',
           outline: active ? '2px solid #fff' : 'none',
           outlineOffset: '1px',
           ...style,
@@ -201,11 +201,11 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
       disabled={callState === 'loading' || callState === 'error'}
       style={{
         flex: '0 0 auto', padding: '10px 14px',
-        background: callState === 'error' ? '#2a1a0a' : C.border,
-        border: callState === 'error' ? '1px solid #f97316' : `1px solid ${C.border}`,
-        borderRadius: '10px', color: callState === 'error' ? '#fb923c' : C.textMuted,
+        background: callState === 'error' ? 'var(--c-warn-bg)' : C.border,
+        border: callState === 'error' ? '1px solid var(--c-warn-border)' : `1px solid ${C.border}`,
+        borderRadius: '10px', color: callState === 'error' ? 'var(--c-warn-text)' : C.textMuted,
         fontSize: '13px', fontWeight: '700', cursor: callState === 'loading' || callState === 'error' ? 'default' : 'pointer',
-        fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+        fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
       }}
     >
       {callLabel}
@@ -223,7 +223,7 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {node.is_active && <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />}
+              {node.is_active && <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--c-status-live)', flexShrink: 0 }} />}
               <span style={{ fontSize: '14px', fontWeight: '700', color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{node.name}</span>
             </div>
             {node.habitat_type && (
@@ -239,7 +239,7 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
       {/* Image */}
       {wiki.img
         ? <img src={wiki.img} alt={d.species_name} style={{ width: '100%', height: '260px', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
-        : <div style={{ width: '100%', height: '260px', background: 'linear-gradient(135deg, #1a4a28, #0d2818)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '60px' }}>🐦</div>
+        : <div style={{ width: '100%', height: '260px', background: 'linear-gradient(135deg, var(--c-forest-photo-placeholder), var(--c-forest-bg))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '60px' }}>🐦</div>
       }
 
       <div className="feed-card-body" style={{ padding: '14px 16px 16px' }}>
@@ -270,12 +270,12 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
 
         {/* Context chips */}
         <div className="feed-card-badges" style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '12px' }}>
-          <Btn id="count" style={{ background: '#1a3a28', border: '1px solid #22c55e', color: '#86efac' }}>{count == null ? '— today' : `×${count} today`}</Btn>
-          {d.is_dawn_chorus && <Btn id="dawn" style={{ background: '#1a3a4a', border: '1px solid #0ea5e9', color: '#7dd3fc' }}>🌅 Dawn chorus</Btn>}
+          <Btn id="count" style={{ background: 'var(--c-badge-count-bg)', border: '1px solid var(--c-badge-count-border)', color: 'var(--c-badge-count-text)' }}>{count == null ? '— today' : `×${count} today`}</Btn>
+          {d.is_dawn_chorus && <Btn id="dawn" style={{ background: 'var(--c-badge-dawn-bg)', border: '1px solid var(--c-badge-dawn-border)', color: 'var(--c-badge-dawn-text)' }}>🌅 Dawn chorus</Btn>}
           {d.season && <Btn id="season" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>{SEASON_EMOJI[d.season]} {d.season.replace(/_/g, ' ')}</Btn>}
           {d.minutes_from_sunrise != null && <Btn id="sunrise" style={{ background: C.bg, border: `1px solid ${C.border}`, color: C.textMuted }}>☀️ {d.minutes_from_sunrise < 0 ? `${Math.abs(d.minutes_from_sunrise)}m pre-dawn` : `+${d.minutes_from_sunrise}m`}</Btn>}
           {d.species?.guild && (
-            <Btn id="guild" style={{ background: '#1a3a28', border: `1px solid ${C.accent}`, color: C.accentLight }}>
+            <Btn id="guild" style={{ background: 'var(--c-badge-guild-bg)', border: `1px solid ${C.accent}`, color: C.accentLight }}>
               {GUILD[d.species.guild]?.emoji} {GUILD[d.species.guild]?.label || d.species.guild.replace(/_/g, ' ')}
             </Btn>
           )}
@@ -285,13 +285,13 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
             </Btn>
           )}
           {d.species?.sensitivity_flag && (
-            <Btn id="sensitive" style={{ background: '#2a1a0a', border: '1px solid #f97316', color: '#fb923c' }}>⚠️ sensitive</Btn>
+            <Btn id="sensitive" style={{ background: 'var(--c-warn-bg)', border: '1px solid var(--c-warn-border)', color: 'var(--c-warn-text)' }}>⚠️ sensitive</Btn>
           )}
         </div>
 
         {/* Badge explanation strip */}
         {activeBadge && (
-          <div style={{ padding: '10px 12px', fontSize: '13px', color: C.textSub, lineHeight: 1.6, background: '#0f3020', borderRadius: '10px', borderLeft: `3px solid ${C.accentLight}`, marginBottom: '12px' }}>
+          <div style={{ padding: '10px 12px', fontSize: '13px', color: C.textSub, lineHeight: 1.6, background: 'var(--c-forest-insight-bg)', borderRadius: '10px', borderLeft: `3px solid ${C.accentLight}`, marginBottom: '12px' }}>
             {activeBadge === 'confidence' && BADGE_EXPLAIN.confidence(conf)}
             {activeBadge === 'count'      && BADGE_EXPLAIN.count(count)}
             {activeBadge === 'dawn'       && BADGE_EXPLAIN.dawn()}
@@ -330,10 +330,10 @@ function DetectionCard({ d, node, showNode = false, wikiData, count, insight, on
             flex: 1, padding: '10px',
             background: insight?.loading ? C.border : C.accent,
             border: 'none', borderRadius: '10px',
-            color: insight?.loading ? '#4a7a58' : '#fff',
+            color: insight?.loading ? 'var(--c-forest-text-disabled)' : '#fff',
             fontSize: '14px', fontWeight: '700',
             cursor: insight?.loading ? 'default' : 'pointer',
-            fontFamily: "'DM Sans', sans-serif",
+            fontFamily: 'var(--font-body)',
             display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px',
           }}>
             {insight?.loading ? '🔍 Generating...' : "What's the ecosystem saying?"}

@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "dd5d65267959c58d709cfad5a4d5cf7a3269f22a",
+    "path": "docs/superpowers/specs/2026-11-21-portal-v4-foundation-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [],
+  "supersedes": "spec--a2bb1fc0e0ad--1",
+  "createdAt": "2026-11-21T21:58:39.815Z"
+}

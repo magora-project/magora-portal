@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "997c66d046d0d52c4404286e6564063796efac3e",
+    "path": "docs/superpowers/specs/2026-11-21-portal-v4-foundation-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P1",
+      "summary": "Unconditionally persisting the default 'current' value gives every existing visitor a year-long override, so changing the default to v4 at launch leaves those visitors on the old site unless launch also migrates or invalidates these cookies.",
+      "file": "docs/superpowers/specs/2026-11-21-portal-v4-foundation-design.md",
+      "line": 67
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "Referencing Prodiga only in v4 CSS cannot guarantee current visitors never download it because vite.config.js precaches all built .woff2 assets; meeting this promise requires a precache exclusion despite service-worker changes being deferred until launch.",
+      "file": "docs/superpowers/specs/2026-11-21-portal-v4-foundation-design.md",
+      "line": 94
+    },
+    {
+      "id": "F3",
+      "severity": "P1",
+      "summary": "Deleting the current pages during cleanup removes the only implementations of About, Add Node, Register, Donate and Report, which §7 explicitly leaves as tokenised current pages without v4 replacements.",
+      "file": "docs/superpowers/specs/2026-11-21-portal-v4-foundation-design.md",
+      "line": 154
+    }
+  ],
+  "supersedes": null,
+  "createdAt": "2026-11-21T19:44:16.067Z"
+}

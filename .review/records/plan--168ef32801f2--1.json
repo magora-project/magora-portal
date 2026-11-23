@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "type": "plan",
+  "slot": "plan",
+  "input": {
+    "kind": "blob",
+    "identity": "168ef32801f2baf4b307eae5917c8e46aea32948",
+    "path": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "The font grep cannot return no files after Tasks 3–5 because it includes tokens.css, where Task 2 explicitly requires the three literal font-family names; exclude the token definitions from this acceptance check.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 176
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "The unrestricted hex grep includes tokens.test.mjs and existing SVG assets, which intentionally retain hex literals, so its expected tokens.css-only result is impossible without matching Task 6's extension exclusions.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 201
+    },
+    {
+      "id": "F3",
+      "severity": "P2",
+      "summary": "The manual share-export check cannot run as prescribed because vite preview serves neither the Playwright network fixtures nor the invalid fixture Supabase host, and Task 4 also precedes creation of the v4 brand; provide an interactive fixture mode and schedule both-brand export verification after the brand exists.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 175
+    },
+    {
+      "id": "plan--c0f6c3ce6b05--1#F1",
+      "severity": "P2",
+      "summary": "The reference scan includes tokens.test.mjs itself, so it finds the deliberately undefined token('nope') and c-forest-bg before Task 3 defines it, making Task 2's expected PASS impossible unless test fixtures are excluded.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 129,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--168ef32801f2--1"
+      }
+    },
+    {
+      "id": "plan--c0f6c3ce6b05--1#F2",
+      "severity": "P2",
+      "summary": "The prescribed tests embed six-digit hex literals in src/lib/tokens.test.mjs, with more added in Task 8, so Task 6's repository-wide no-hex guard necessarily fails unless these fixtures move outside src or avoid literal hex strings.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 127,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--168ef32801f2--1"
+      }
+    },
+    {
+      "id": "plan--c0f6c3ce6b05--1#F3",
+      "severity": "P2",
+      "summary": "Requiring every v4 declaration value to belong to the hex-only V4_PALETTE rejects the three required font-family declarations, so this test must restrict validation to colour properties.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 248,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--168ef32801f2--1"
+      }
+    },
+    {
+      "id": "plan--c0f6c3ce6b05--1#F4",
+      "severity": "P2",
+      "summary": "Task 4 omits src/components/ListenButton.jsx, whose heroStyle hard-codes Big Shoulders Display, leaving the About page's Listen action outside the font tokens and breaking the promised v4 font coverage.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 161,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--168ef32801f2--1"
+      }
+    },
+    {
+      "id": "plan--c0f6c3ce6b05--1#F5",
+      "severity": "P1",
+      "summary": "ShareSheet also passes PAPER directly as html2canvas's backgroundColor option, which requires a resolved colour rather than var(), so following this instruction breaks image export while the prescribed open-sheet screenshot never exercises that path.",
+      "file": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "line": 173,
+      "disposition": {
+        "kind": "fixed",
+        "by": "plan--168ef32801f2--1"
+      }
+    }
+  ],
+  "supersedes": "plan--c0f6c3ce6b05--1",
+  "rev": "576897580f9e8c045e76bb50f24d60deda42ba88",
+  "tasks": [
+    "T1",
+    "T2",
+    "T3",
+    "T4",
+    "T5",
+    "T6",
+    "T7",
+    "T8",
+    "T9",
+    "T10",
+    "T11",
+    "T12",
+    "T13",
+    "T14",
+    "T15"
+  ],
+  "createdAt": "2026-11-21T21:24:03.404Z"
+}

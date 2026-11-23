@@ -29,7 +29,7 @@ export default function DonatePrompt() {
     >
       <div
         style={{
-          background: '#163d22', border: '1px solid #1f5230',
+          background: 'var(--c-forest-card)', border: '1px solid var(--c-forest-border)',
           borderRadius: '20px', padding: '28px 24px',
           width: '100%', maxWidth: '420px',
           margin: '0 16px',
@@ -38,15 +38,15 @@ export default function DonatePrompt() {
       >
         <div style={{ fontSize: '32px', textAlign: 'center', marginBottom: '12px' }}>🌿</div>
         <div style={{
-          fontFamily: "'Jost', sans-serif",
+          fontFamily: 'var(--font-label)',
           fontSize: '18px', fontWeight: '700',
-          color: '#f0ede8', textAlign: 'center',
+          color: 'var(--c-forest-text)', textAlign: 'center',
           marginBottom: '10px', letterSpacing: '0.02em',
         }}>
           Finding this valuable?
         </div>
         <div style={{
-          fontSize: '14px', color: '#c8e6d0',
+          fontSize: '14px', color: 'var(--c-forest-text-sub)',
           lineHeight: 1.6, textAlign: 'center', marginBottom: '24px',
         }}>
           Magora runs on donated time and hardware.
@@ -57,7 +57,7 @@ export default function DonatePrompt() {
           to="/donate"
           style={{
             display: 'block', width: '100%', padding: '14px',
-            background: '#1D9E75', border: 'none', borderRadius: '10px',
+            background: 'var(--c-forest-accent)', border: 'none', borderRadius: '10px',
             color: '#fff', fontSize: '15px', fontWeight: '700',
             textAlign: 'center', textDecoration: 'none',
             marginBottom: '10px',
@@ -71,10 +71,10 @@ export default function DonatePrompt() {
           onClick={() => setVisible(false)}
           style={{
             display: 'block', width: '100%', padding: '12px',
-            background: 'transparent', border: '1px solid #1f5230',
-            borderRadius: '10px', color: '#7aad8a',
+            background: 'transparent', border: '1px solid var(--c-forest-border)',
+            borderRadius: '10px', color: 'var(--c-forest-text-muted)',
             fontSize: '14px', fontWeight: '600', cursor: 'pointer',
-            fontFamily: "'DM Sans', sans-serif",
+            fontFamily: 'var(--font-body)',
           }}
         >
           Maybe later

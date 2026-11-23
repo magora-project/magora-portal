@@ -10,7 +10,7 @@ export default defineConfig([
   // yields hundreds of phantom errors the moment anyone runs that command locally.
   // `.claude/worktrees` holds agent worktrees: whole second checkouts that would double every count.
   // The rest of `.claude` (hooks) is committed and linted.
-  globalIgnores(['dist', '.vercel', '.claude/worktrees']),
+  globalIgnores(['dist', '.vercel', '.claude/worktrees', '.visual']),
   {
     files: ['**/*.{js,jsx,mjs}'],
     extends: [

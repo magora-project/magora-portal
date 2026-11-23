@@ -17,6 +17,7 @@ import { AMBER } from '../lib/listen'
 import { OPENSTREETMAP_ATTRIBUTION, OPENSTREETMAP_TILE_URL } from '../lib/mapTiles'
 import { createMapSectionLoader, nextNodes, nodeCountForTabs, nodeInsightRequest, showFeedTabs } from '../lib/mapSections'
 import { countSpecies, speciesKey } from '../lib/speciesKey'
+import { token } from '../lib/tokens'
 
 function MapController({ points }) {
   const map = useMap()
@@ -32,9 +33,9 @@ function MapController({ points }) {
 }
 
 const C = {
-  bg: '#0d2818', card: '#163d22', border: '#1f5230',
-  accent: '#1D9E75', accentLight: '#5DCAA5',
-  text: '#f0ede8', textSub: '#c8e6d0', textMuted: '#7aad8a',
+  bg: 'var(--c-forest-bg)', card: 'var(--c-forest-card)', border: 'var(--c-forest-border)',
+  accent: 'var(--c-forest-accent)', accentLight: 'var(--c-forest-accent-light)',
+  text: 'var(--c-forest-text)', textSub: 'var(--c-forest-text-sub)', textMuted: 'var(--c-forest-text-muted)',
 }
 
 export default function MapPage() {
@@ -337,9 +338,9 @@ export default function MapPage() {
       <section
         className="section-full-bleed"
         style={{
-          background: '#e8e2d5',
-          borderTop: '1px solid #ccc7b8',
-          borderBottom: '1px solid #ccc7b8',
+          background: 'var(--c-editorial-strip-bg)',
+          borderTop: '1px solid var(--c-editorial-rule-light)',
+          borderBottom: '1px solid var(--c-editorial-rule-light)',
           padding: '22px 20px',
         }}
       >
@@ -347,33 +348,33 @@ export default function MapPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingRight: '32px' }}>
             <span className="heartbeat-dot" />
             <div>
-              <div style={{ fontSize: '10px', fontWeight: 700, color: '#7a7060', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--c-editorial-stat-label)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px' }}>
                 Listening posts active
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 900, color: '#1a1a1a', lineHeight: 1, fontFamily: "'Big Shoulders Display', sans-serif" }}>
+              <div style={{ fontSize: '24px', fontWeight: 900, color: 'var(--c-editorial-ink)', lineHeight: 1, fontFamily: 'var(--font-display)' }}>
                 {activeNodes.length > 0 ? activeNodes.length : '—'}
               </div>
             </div>
           </div>
 
-          <div style={{ width: '1px', height: '40px', background: '#ccc7b8', flexShrink: 0, marginRight: '32px' }} />
+          <div style={{ width: '1px', height: '40px', background: 'var(--c-editorial-rule-light)', flexShrink: 0, marginRight: '32px' }} />
 
           <div style={{ paddingRight: '32px' }}>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: '#7a7060', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--c-editorial-stat-label)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px' }}>
               Species recorded today
             </div>
-            <div style={{ fontSize: '24px', fontWeight: 900, color: '#1a1a1a', lineHeight: 1, fontFamily: "'Big Shoulders Display', sans-serif" }}>
+            <div style={{ fontSize: '24px', fontWeight: 900, color: 'var(--c-editorial-ink)', lineHeight: 1, fontFamily: 'var(--font-display)' }}>
               {todaySpecies?.unique ?? '—'}
             </div>
           </div>
 
-          <div style={{ width: '1px', height: '40px', background: '#ccc7b8', flexShrink: 0, marginRight: '32px' }} />
+          <div style={{ width: '1px', height: '40px', background: 'var(--c-editorial-rule-light)', flexShrink: 0, marginRight: '32px' }} />
 
           <div>
-            <div style={{ fontSize: '10px', fontWeight: 700, color: '#7a7060', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px' }}>
+            <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--c-editorial-stat-label)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px' }}>
               Current soundscape health
             </div>
-            <div style={{ fontSize: '24px', fontWeight: 900, color: '#1a1a1a', lineHeight: 1, fontFamily: "'Big Shoulders Display', sans-serif" }}>
+            <div style={{ fontSize: '24px', fontWeight: 900, color: 'var(--c-editorial-ink)', lineHeight: 1, fontFamily: 'var(--font-display)' }}>
               {latestAci != null ? latestAci.toFixed(2) : '—'}
             </div>
           </div>
@@ -403,8 +404,8 @@ export default function MapPage() {
                   // Offline places stay on the map, drawn hollow and grey: present, clearly not
                   // listening, still one tap from their record. Only a live node pulses.
                   pathOptions={node.is_active
-                    ? { fillColor: '#1D9E75', color: '#0F6E56', weight: 2, fillOpacity: 0.85 }
-                    : { fillColor: '#7aad8a', color: '#7aad8a', weight: 2, fillOpacity: 0.15, dashArray: '3 3' }}
+                    ? { fillColor: token('c-map-node-active-fill'), color: token('c-map-node-active-stroke'), weight: 2, fillOpacity: 0.85 }
+                    : { fillColor: token('c-map-node-offline'), color: token('c-map-node-offline'), weight: 2, fillOpacity: 0.15, dashArray: '3 3' }}
                   className={node.is_active && isRecentNode(node) ? 'node-pulse' : ''}
                   eventHandlers={{ click: () => navigate(`/node/${node.id}`) }}
                 >
@@ -423,7 +424,7 @@ export default function MapPage() {
                   key={`mob-${m.id}`}
                   center={[m.lat, m.lon]}
                   radius={7}
-                  pathOptions={{ fillColor: AMBER.base, color: AMBER.dark, weight: 2, fillOpacity: 0.8 }}
+                  pathOptions={{ fillColor: token('c-amber-base'), color: token('c-amber-dark'), weight: 2, fillOpacity: 0.8 }}
                   className="node-pulse"
                   eventHandlers={m.listener_handle ? { click: () => navigate(`/journal/${m.listener_handle}`) } : undefined}
                 >
@@ -433,7 +434,7 @@ export default function MapPage() {
                       {m.species?.find(s => s.confidence >= MIN_CONFIDENCE)?.common_name || 'A field recording'}
                     </span>
                     {m.listener_handle && (
-                      <><br /><span style={{ fontSize: '11px', color: '#1D9E75', fontWeight: 700 }}>Tap to view @{m.listener_handle}’s journal</span></>
+                      <><br /><span style={{ fontSize: '11px', color: 'var(--c-forest-accent)', fontWeight: 700 }}>Tap to view @{m.listener_handle}’s journal</span></>
                     )}
                   </Tooltip>
                 </CircleMarker>
@@ -462,7 +463,7 @@ export default function MapPage() {
                     onClick={() => { if (key === 'following' && !user) { openSignIn(); return } setTab(key) }}
                     style={{
                       padding: '7px 16px', borderRadius: '20px', cursor: 'pointer',
-                      fontSize: '13px', fontWeight: '700', fontFamily: "'DM Sans', sans-serif",
+                      fontSize: '13px', fontWeight: '700', fontFamily: 'var(--font-body)',
                       background: active ? C.accent : C.card,
                       border: `1px solid ${active ? C.accent : C.border}`,
                       color: active ? '#fff' : C.textSub,
@@ -476,7 +477,7 @@ export default function MapPage() {
           )}
 
           {partialFeedError && (
-            <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', background: '#1f3326', border: '1px solid #3a6247', color: C.textSub, fontSize: '13px' }}>
+            <div style={{ marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', background: 'var(--c-forest-notice-bg)', border: '1px solid var(--c-forest-notice-border)', color: C.textSub, fontSize: '13px' }}>
               Some live-feed sources couldn't load. Showing what is available.
             </div>
           )}
@@ -497,7 +498,7 @@ export default function MapPage() {
                     insight={mobileInsight.insights[item.m.id]} onGenerate={() => mobileInsight.requestInsight(item.m)}
                   />
                 ) : item.type === 'queued' ? (
-                  <div key={item.key} style={{ background: '#1f3326', border: `1px solid ${C.border}`, borderLeft: `3px solid ${AMBER.base}`, borderRadius: '16px', padding: '16px', color: C.text }}>
+                  <div key={item.key} style={{ background: 'var(--c-forest-queued-bg)', border: `1px solid ${C.border}`, borderLeft: `3px solid ${AMBER.base}`, borderRadius: '16px', padding: '16px', color: C.text }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                       <strong style={{ fontSize: '14px' }}>〰 Listen</strong>
                       <span style={{ fontSize: '11px', color: C.textMuted }}>Syncing…</span>
@@ -531,7 +532,7 @@ export default function MapPage() {
                 style={{
                   padding: '9px 18px', background: C.accent, border: 'none', borderRadius: '10px',
                   color: '#fff', fontSize: '13px', fontWeight: '700', cursor: 'pointer',
-                  fontFamily: "'DM Sans', sans-serif",
+                  fontFamily: 'var(--font-body)',
                 }}
               >
                 Try again

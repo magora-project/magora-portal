@@ -11,14 +11,14 @@ export default function EcologicalPipeline() {
   return (
     <section
       className="section-full-bleed"
-      style={{ background: '#f0ebe0', padding: '72px 20px', borderTop: '1px solid #ccc7b8' }}
+      style={{ background: 'var(--c-editorial-bg)', padding: '72px 20px', borderTop: '1px solid var(--c-editorial-rule-light)' }}
     >
       <div style={{ maxWidth: '960px', margin: '0 auto' }}>
         <h2 style={{
-          fontFamily: "'Big Shoulders Display', sans-serif",
+          fontFamily: 'var(--font-display)',
           fontWeight: 900,
           fontSize: 'clamp(1.8rem, 3vw, 2.5rem)',
-          color: '#1a1a1a',
+          color: 'var(--c-editorial-ink)',
           textTransform: 'uppercase',
           letterSpacing: '-0.01em',
           marginBottom: '16px',
@@ -28,7 +28,7 @@ export default function EcologicalPipeline() {
 
         <p style={{
           fontSize: '0.95rem',
-          color: '#5a5248',
+          color: 'var(--c-editorial-text-sub)',
           lineHeight: 1.7,
           maxWidth: '640px',
           marginBottom: '40px',
@@ -41,31 +41,31 @@ export default function EcologicalPipeline() {
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
-          border: '1px solid #b8b0a0',
+          border: '1px solid var(--c-editorial-rule)',
         }}>
           {NODES.map((node, i) => (
             <div
               key={node.label}
               style={{
                 padding: '28px 24px',
-                borderRight: i % 3 < 2 ? '1px solid #b8b0a0' : 'none',
-                borderBottom: i < 3 ? '1px solid #b8b0a0' : 'none',
+                borderRight: i % 3 < 2 ? '1px solid var(--c-editorial-rule)' : 'none',
+                borderBottom: i < 3 ? '1px solid var(--c-editorial-rule)' : 'none',
               }}
             >
               <div style={{
                 fontSize: '10px',
                 fontWeight: 700,
-                color: '#9a9080',
+                color: 'var(--c-editorial-text-muted)',
                 letterSpacing: '0.14em',
                 marginBottom: '12px',
               }}>
                 {node.num}
               </div>
               <div style={{
-                fontFamily: "'Big Shoulders Display', sans-serif",
+                fontFamily: 'var(--font-display)',
                 fontWeight: 700,
                 fontSize: '1.05rem',
-                color: '#1a1a1a',
+                color: 'var(--c-editorial-ink)',
                 textTransform: 'uppercase',
                 letterSpacing: '0.04em',
                 marginBottom: '8px',
@@ -75,7 +75,7 @@ export default function EcologicalPipeline() {
               </div>
               <div style={{
                 fontSize: '13px',
-                color: '#5a5248',
+                color: 'var(--c-editorial-text-sub)',
                 lineHeight: 1.6,
               }}>
                 {node.detail}
