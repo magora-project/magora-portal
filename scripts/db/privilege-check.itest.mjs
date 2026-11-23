@@ -65,6 +65,22 @@ try {
   console.log(`  bare stack: ${executeSigs.length} EXECUTE violations, ${writers.length} write-capable:`)
   for (const s of writers) console.log(`    ${s}`)
   ok('the bare-stack allowlist absorbed no write-capable function', allowlist.every((s) => !WRITES_WITHOUT_TABLE_PRIVILEGE.includes(functionName(s))))
+  // Pinned independently of WRITES_WITHOUT_TABLE_PRIVILEGE, so a name dropped from that list fails
+  // here instead of moving its function into the allowlist (observed on CLI 2.118.0, Postgres 17).
+  const EXPECTED_WRITERS = [
+    'pg_catalog.lo_creat(integer)', 'pg_catalog.lo_create(oid)', 'pg_catalog.lo_from_bytea(oid, bytea)',
+    'pg_catalog.lo_open(oid, integer)', 'pg_catalog.lo_put(oid, bigint, bytea)', 'pg_catalog.lo_truncate(integer, integer)',
+    'pg_catalog.lo_truncate64(integer, bigint)', 'pg_catalog.lo_unlink(oid)', 'pg_catalog.lowrite(integer, bytea)',
+    'pg_catalog.pg_logical_emit_message(boolean, text, bytea, boolean)', 'pg_catalog.pg_logical_emit_message(boolean, text, text, boolean)',
+  ]
+  ok('the write-capable functions are exactly the pinned list', JSON.stringify([...writers].sort()) === JSON.stringify([...EXPECTED_WRITERS].sort()), JSON.stringify(writers))
+  // And a large-object or logical-message function the list does not name (a new Postgres release
+  // could add one) is not silently allowlisted: each such name must be reviewed into one list or the other.
+  const LO_OR_MESSAGE = /^(lo_|loread$|lowrite$|pg_logical_emit)/
+  const READS_ONLY = new Set(['lo_get', 'loread', 'lo_lseek', 'lo_lseek64', 'lo_tell', 'lo_tell64', 'lo_close'])
+  const bare = (s) => functionName(s).slice(functionName(s).lastIndexOf('.') + 1)
+  const unreviewed = allowlist.filter((s) => s.startsWith('pg_catalog.') && LO_OR_MESSAGE.test(bare(s)) && !READS_ONLY.has(bare(s)))
+  ok('no unreviewed large-object or logical-message function is allowlisted', unreviewed.length === 0, JSON.stringify(unreviewed))
   ok('baseline holds exactly the write-capable functions', baseline.length === writers.length && baseline.every((v) => v.includes('writes without table privilege')), JSON.stringify(baseline))
 
   // Can the login actually write a large object? default_transaction_read_only is only a default.

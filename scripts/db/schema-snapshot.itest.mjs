@@ -19,7 +19,15 @@ const SETUP = `
   -- ALTER ... OWNER TO needs the new owner to hold CREATE on the schema.
   grant create on schema public to itest_owner;
   create role itest_reader nologin;
-  create table public.itest_t (id int primary key, c text);
+  create schema itest_ca;
+  create schema itest_cb;
+  create collation itest_ca.sorting (locale = 'C');
+  create collation itest_cb.sorting (locale = 'POSIX');
+  create table public.itest_t (id int primary key, c text, c2 text collate itest_ca.sorting);
+  create table public.itest_u (k int);
+  insert into public.itest_u values (1), (2);
+  create unique index itest_u_k on public.itest_u (k);
+  create sequence public.itest_seq;
   create view public.itest_v as select id from public.itest_t;
   create function public.itest_f() returns int language sql as 'select 1';
   create function public.itest_trg() returns trigger language plpgsql as 'begin return new; end';
@@ -37,6 +45,10 @@ const TEARDOWN = `
   drop view if exists public.itest_v;
   drop table if exists public.itest_t;
   drop table if exists public.itest_pt;
+  drop table if exists public.itest_u;
+  drop sequence if exists public.itest_seq;
+  drop schema if exists itest_ca cascade;
+  drop schema if exists itest_cb cascade;
   drop aggregate if exists public.itest_agg(int);
   drop function if exists public.itest_f();
   drop function if exists public.itest_trg();
@@ -85,6 +97,10 @@ const CASES = [
     'alter table public.itest_pt detach partition public.itest_pt1; alter table public.itest_pt attach partition public.itest_pt1 for values from (0) to (10)',
     'table:public.itest_pt1'],
   // Only INITCOND changes: the aggregate returns different results.
+  ['SET UNLOGGED (table)', 'alter table public.itest_u set unlogged', 'alter table public.itest_u set logged', 'table:public.itest_u'],
+  ['SET UNLOGGED (sequence)', 'alter sequence public.itest_seq set unlogged', 'alter sequence public.itest_seq set logged', 'sequence:public.itest_seq'],
+  ['a same-named collation in another schema', 'alter table public.itest_t alter column c2 type text collate itest_cb.sorting',
+    'alter table public.itest_t alter column c2 type text collate itest_ca.sorting', 'column:public.itest_t.c2'],
   ['change an aggregate INITCOND', `create or replace aggregate public.itest_agg(int) (sfunc = int4pl, stype = int, initcond = '10')`,
     `create or replace aggregate public.itest_agg(int) (sfunc = int4pl, stype = int, initcond = '0')`, 'function:public.itest_agg(integer)'],
 ]
@@ -102,6 +118,10 @@ try {
     ok('partitioned table: key captured', pt.partition_key === 'RANGE (k)', JSON.stringify(pt))
     ok('partition: parent and bounds captured', pt1.partition_of === 'public.itest_pt' && pt1.partition_bound === 'FOR VALUES FROM (0) TO (10)', JSON.stringify(pt1))
     const t = JSON.parse(base['table:public.itest_t'] ?? '{}')
+    ok('plain table: permanent', t.persistence === 'p', JSON.stringify(t))
+    ok('column collation: schema-qualified', JSON.parse(base['column:public.itest_t.c2'] ?? '{}').collation === 'itest_ca.sorting', base['column:public.itest_t.c2'])
+    const ix = JSON.parse(base['index:public.itest_u_k'] ?? '{}')
+    ok('index: definition, valid and ready', /^CREATE UNIQUE INDEX itest_u_k ON public.itest_u/.test(ix.def) && ix.valid === true && ix.ready === true, JSON.stringify(ix))
     ok('plain table: replica identity default, no partition fields', t.replica_identity === 'd' && t.replica_identity_index === null && t.partition_key === null && t.partition_of === null, JSON.stringify(t))
     const agg = JSON.parse(base['function:public.itest_agg(integer)'] ?? '{}')
     ok('aggregate: definition captured from pg_aggregate', JSON.parse(agg.def ?? '{}').initcond === '0', JSON.stringify(agg))
@@ -115,6 +135,24 @@ try {
     await q(undo)
     const after = diffSnapshots(base, await snapshotSchema(client)).map((d) => d.key)
     ok(`${name}: empty after undo`, after.length === 0, JSON.stringify(after))
+  }
+
+  // A failed CREATE INDEX CONCURRENTLY leaves behind an index with the same definition that is not
+  // valid. Each statement runs on its own: CONCURRENTLY cannot run inside a transaction block.
+  {
+    await q('drop index public.itest_u_k')
+    await q('insert into public.itest_u values (1)')
+    let failed = false
+    try { await q('create unique index concurrently itest_u_k on public.itest_u (k)') } catch { failed = true }
+    ok('invalid index: the failed build leaves the index behind', failed)
+    const keys = diffSnapshots(base, await snapshotSchema(client)).map((d) => d.key)
+    ok('invalid index: diff is exactly index:public.itest_u_k', keys.length === 1 && keys[0] === 'index:public.itest_u_k', JSON.stringify(keys))
+    await q('drop index public.itest_u_k')
+    await q('delete from public.itest_u where k = 1')
+    await q('insert into public.itest_u values (1)')
+    await q('create unique index itest_u_k on public.itest_u (k)')
+    const after = diffSnapshots(base, await snapshotSchema(client)).map((d) => d.key)
+    ok('invalid index: empty after undo', after.length === 0, JSON.stringify(after))
   }
 
   // Setting an option to its default is not a change.

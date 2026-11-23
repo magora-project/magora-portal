@@ -3,7 +3,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { listMigrationFiles, applyFiles, managesOwnTransaction, lineColumn, parseArgs, OPEN_PROBE } from './apply-migrations.mjs'
+import { listMigrationFiles, applyFiles, managesOwnTransaction, transactionLayout, lineColumn, parseArgs, OPEN_PROBE } from './apply-migrations.mjs'
 import { connect, localProblem, targetLabel, withRootCert } from './pg.mjs'
 
 let pass = 0, fail = 0
@@ -31,6 +31,25 @@ try {
 // managesOwnTransaction / lineColumn
 ok('own transaction: begin; line', managesOwnTransaction('select 1;\nbegin;\nselect 2;\ncommit;\n'))
 ok('own transaction: not inside a function body word', !managesOwnTransaction('create function f() returns void language plpgsql as $$ begin perform 1; end $$;'))
+ok('own transaction: a plpgsql body whose `end;` starts a line is not control',
+  !managesOwnTransaction('create function f() returns void language plpgsql as $$\nbegin\n  perform 1;\nend;\n$$;\n'))
+ok('own transaction: `begin;` inside a string literal is not control', !managesOwnTransaction("comment on table t is '\nbegin;\n';"))
+ok('own transaction: text inside a quoted identifier is not control', !managesOwnTransaction('comment on column t."a--;\ncommit" is \'x\';'))
+
+// transactionLayout: an own-transaction file must be exactly one BEGIN ... COMMIT.
+const layout = (sql) => transactionLayout(sql).problem ?? 'ok'
+ok('layout: one BEGIN first and one COMMIT last is ok', layout('-- c\nbegin;\nselect 1;\ncommit;\n') === 'ok')
+ok('layout: START TRANSACTION ... END is ok', layout('start transaction;\nselect 1;\nend;') === 'ok')
+ok('layout: ROLLBACK TO a savepoint inside is ok', layout('begin;\nsavepoint s;\nselect 1;\nrollback to savepoint s;\ncommit;') === 'ok')
+ok('layout: a BEGIN ATOMIC body\'s END is not control',
+  layout('begin;\ncreate function f() returns int language sql begin atomic select 1; end;\ncommit;') === 'ok')
+ok('layout: a statement after COMMIT is refused (it would run after the commit)',
+  layout('BEGIN; CREATE TABLE public.atomic_probe(id int); COMMIT; SELECT 1/0;').startsWith('transaction control must be exactly one BEGIN'))
+ok('layout: a statement before BEGIN is refused', layout('select 1;\nbegin;\nselect 2;\ncommit;\n') !== 'ok')
+ok('layout: two transactions are refused', layout('begin;\nselect 1;\ncommit;\nbegin;\nselect 2;\ncommit;') !== 'ok')
+ok('layout: BEGIN without COMMIT is refused', layout('begin;\ncreate table t(id int);') !== 'ok')
+ok('layout: a ROLLBACK is refused', layout('begin;\nselect 1;\nrollback;') !== 'ok')
+ok('layout: a file with no control is wrapped', transactionLayout('create table t(id int);').own === false)
 ok('lineColumn', JSON.stringify(lineColumn('ab\ncd\nef', 5)) === JSON.stringify({ line: 2, column: 2 }))
 
 // applyFiles with a fake client
@@ -68,12 +87,22 @@ const fakeClient = (failOn, { openAfterOwn = false } = {}) => {
     JSON.stringify(c.log) === JSON.stringify(['begin;\nselect 1;\ncommit;\n', OPEN_PROBE]))
 }
 {
+  // The layout check passes, but the probe still finds a transaction open (a COMMIT that did not end
+  // the block): the probe is the second line of defence.
   const c = fakeClient(null, { openAfterOwn: true })
   const seen = []
-  const msg = await rejects(applyFiles(c, ['open.sql', 'next.sql'], { read: (p) => (p === 'open.sql' ? 'begin;\ncreate table public.commit_probe(id int);\n' : 'ok'), onEach: (p) => seen.push(p) }))
+  const msg = await rejects(applyFiles(c, ['open.sql', 'next.sql'], { read: (p) => (p === 'open.sql' ? 'begin;\ncreate table public.commit_probe(id int);\ncommit;\n' : 'ok'), onEach: (p) => seen.push(p) }))
   ok('a file that leaves a transaction open fails, naming the file', msg?.startsWith('open.sql: open-transaction: the file leaves a transaction open'))
   ok('the open transaction is rolled back, not reported, and the next file does not run',
     c.log.at(-1) === 'ROLLBACK' && seen.length === 0 && !c.log.includes('ok'))
+}
+{
+  const c = fakeClient()
+  const seen = []
+  const bad = 'BEGIN; CREATE TABLE public.atomic_probe(id int); COMMIT; SELECT 1/0;'
+  const msg = await rejects(applyFiles(c, ['split.sql', 'next.sql'], { read: (p) => (p === 'split.sql' ? bad : 'ok'), onEach: (p) => seen.push(p) }))
+  ok('a file whose layout could commit part of it is refused, naming the file', msg?.startsWith('split.sql: transaction-layout: transaction control must be exactly one BEGIN'))
+  ok('nothing of a refused file runs, and the next file does not run', !c.log.includes(bad) && !c.log.includes('ok') && seen.length === 0)
 }
 
 // parseArgs
@@ -111,6 +140,15 @@ ok('local: no ports given refused', localProblem('postgresql://postgres:pw@local
   ok('connect error names the ref and code only', msg === 'connect failed: mujiqtvwtsbaakfcsjkp: 28P01')
 }
 ok('missing env var', (await rejects(connect('NOPE', { readOnly: true, env: {} }))) === 'NOPE is required')
+{
+  const pooled = 'postgresql://postgres.wqxmmuwrfltpaxnuddwk:pw@aws-0-us-west-1.pooler.supabase.com:6543/postgres'
+  const before = built
+  const msg = await rejects(connect('U', { readOnly: true, env: { U: pooled }, Client: FakeClient }))
+  ok('a transaction-mode pooler (port 6543) is refused before any client is built', msg?.includes('transaction-mode pooler') && built === before)
+  ok('that refusal does not echo the URL', !msg?.includes('pw@') && !msg?.includes('pooler.supabase.com'))
+  const msg2 = await rejects(connect('U', { readOnly: true, env: { U: pooled.replace(':6543/', ':5432/') }, Client: FakeClient }))
+  ok('the session pooler (port 5432) is not refused for that reason', !msg2?.includes('transaction-mode pooler') && built === before + 1)
+}
 {
   const prod = 'postgresql://postgres.wqxmmuwrfltpaxnuddwk:pw@aws-0-us-west-1.pooler.supabase.com:5432/postgres?sslmode=verify-full'
   const out = withRootCert(prod, { PGSSLROOTCERT: '/abs/prod-ca.crt' })

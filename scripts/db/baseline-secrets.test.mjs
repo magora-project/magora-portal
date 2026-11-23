@@ -4,53 +4,27 @@
 // Run: node scripts/db/baseline-secrets.test.mjs
 import { readFileSync } from 'node:fs'
 import { PRODUCTION_REF, STAGING_REF } from '../lib/targets.mjs'
+import { sqlSegments } from './sql-lex.mjs'
 
 const BASELINE = new URL('../../supabase/migrations/20260625_baseline_prehistory.sql', import.meta.url)
 
-// Every string literal in sql, from one left-to-right scan, so a comment is skipped only where it really
-// is one: a line starting `--` inside a multi-line literal stays part of the literal, and an apostrophe
-// in a comment never opens one. Literals: '...' ('' is an escaped quote; after E, \ escapes the next
-// character) and dollar-quoted $$...$$ / $tag$...$tag$. A dollar-quoted string that follows AS or DO is
-// a function or DO body: code, not a value, so it is not itself a literal, but the literals inside it
-// are, at any depth. Comments: `--` to the end of the line, and /* ... */, which nests.
-const TAG = /\$([A-Za-z_][A-Za-z0-9_]*)?\$/y
-const skipBlockComment = (sql, i) => {
-  let depth = 0
-  while (i < sql.length) {
-    if (sql.startsWith('/*', i)) { depth++; i += 2 } else if (sql.startsWith('*/', i)) { depth--; i += 2; if (!depth) return i } else i++
-  }
-  return i
-}
+// Every string literal in sql, from the lexer in sql-lex.mjs, so a comment or quoted identifier is
+// skipped only where it really is one: a line starting `--` inside a multi-line literal stays part of
+// the literal, `--` inside "a--b" is part of the name, and an apostrophe in a comment never opens a
+// literal. A dollar-quoted string that follows AS or DO is a function or DO body: code, not a value,
+// so it is not itself a literal, but the literals inside it are, at any depth.
 export function stringLiterals(sql) {
   const out = []
-  let i = 0
-  while (i < sql.length) {
-    if (sql.startsWith('--', i)) { const nl = sql.indexOf('\n', i); i = nl < 0 ? sql.length : nl + 1; continue }
-    if (sql.startsWith('/*', i)) { i = skipBlockComment(sql, i); continue }
-    if (sql[i] === "'") {
-      const escapes = /[Ee]/.test(sql[i - 1] ?? '') && !/[A-Za-z0-9_$]/.test(sql[i - 2] ?? '')
-      let j = i + 1
-      while (j < sql.length) {
-        if (escapes && sql[j] === '\\') { j += 2; continue }
-        if (sql[j] === "'") { if (sql[j + 1] === "'") { j += 2; continue } break }
-        j++
-      }
-      out.push(sql.slice(i, j + 1))
-      i = j + 1
-      continue
+  let before = '' // the code just before the current segment (comments do not reset it)
+  for (const s of sqlSegments(sql)) {
+    if (s.kind === 'code') { before = s.text; continue }
+    if (s.kind === 'comment') continue
+    if (s.kind === 'string') out.push(s.text)
+    else if (s.kind === 'dollar') {
+      if (/\b(as|do)\s*$/i.test(before)) out.push(...stringLiterals(s.body))
+      else out.push(s.text)
     }
-    if (sql[i] === '$' && !/[A-Za-z0-9_]/.test(sql[i - 1] ?? '')) {
-      TAG.lastIndex = i
-      const m = TAG.exec(sql)
-      const end = m ? sql.indexOf(m[0], i + m[0].length) : -1
-      if (end >= 0) {
-        if (/\b(as|do)\s*$/i.test(sql.slice(Math.max(0, i - 20), i))) out.push(...stringLiterals(sql.slice(i + m[0].length, end)))
-        else out.push(sql.slice(i, end + m[0].length))
-        i = end + m[0].length
-        continue
-      }
-    }
-    i++
+    before = ''
   }
   return out
 }
@@ -88,6 +62,8 @@ flags('service_role in a dollar-quoted literal inside a DO block', 'do $$ begin 
 flags('service_role on a `--` line inside a multi-line dollar-quoted literal', 'select $q$\n-- service_role\n$q$', 'service_role inside a string literal')
 flags('service_role on a `--` line inside a multi-line quoted literal', "select 'a\n-- service_role\n'", 'service_role inside a string literal')
 flags('service_role after an E-string with an escaped quote', "select E'it\\'s', 'service_role'", 'service_role inside a string literal')
+flags('service_role after a quoted identifier holding `--`', 'comment on column public.t."x--y" is \'service_role\';', 'service_role inside a string literal')
+flags('service_role after a quoted identifier holding an escaped quote and an apostrophe', 'comment on column public.t."a""b\'c" is \'service_role\';', 'service_role inside a string literal')
 flags('production API URL', `select 'https://${PRODUCTION_REF}.supabase.co/rest/v1'`, 'a production ref inside a URL')
 flags('production pooler URL', `-- postgresql://postgres.${PRODUCTION_REF}@aws-0-us.pooler.supabase.com:5432/postgres`, 'a production ref inside a URL')
 flags('staging bare host', `select '${STAGING_REF}.supabase.co'`, 'a staging ref inside a URL')

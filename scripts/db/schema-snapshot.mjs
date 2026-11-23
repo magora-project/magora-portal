@@ -209,7 +209,7 @@ const Q = {
            coalesce(c.relacl, acldefault('r', c.relowner))::text[] as acl,
            c.relrowsecurity, c.relforcerowsecurity, c.reloptions,
            case when c.relkind in ('v', 'm') then pg_get_viewdef(c.oid) end as def,
-           c.relreplident::text as replident,
+           c.relpersistence::text as persistence, c.relreplident::text as replident,
            (select n.nspname || '.' || ri.relname from pg_index x join pg_class ri on ri.oid = x.indexrelid
              where x.indrelid = c.oid and x.indisreplident) as replident_index,
            case when c.relkind = 'p' then pg_get_partkeydef(c.oid) end as partition_key,
@@ -223,7 +223,7 @@ const Q = {
   columns: `
     select c.relname, a.attname, a.attnum, format_type(a.atttypid, a.atttypmod) as type,
            pg_get_expr(ad.adbin, ad.adrelid) as def, a.attnotnull, a.attidentity, a.attgenerated,
-           case when a.attcollation <> t.typcollation then coll.collname end as collation,
+           case when a.attcollation <> t.typcollation then quote_ident(cn.nspname) || '.' || quote_ident(coll.collname) end as collation,
            a.attacl::text[] as acl
       from pg_attribute a
       join pg_class c on c.oid = a.attrelid
@@ -231,6 +231,7 @@ const Q = {
       join pg_type t on t.oid = a.atttypid
       left join pg_attrdef ad on ad.adrelid = a.attrelid and ad.adnum = a.attnum
       left join pg_collation coll on coll.oid = a.attcollation
+      left join pg_namespace cn on cn.oid = coll.collnamespace
      where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')
        and a.attnum > 0 and not a.attisdropped
        and ${notExtensionMember('pg_class', 'c.oid')}
@@ -242,14 +243,14 @@ const Q = {
       join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and ${notExtensionMember('pg_class', 'c.oid')}`,
   indexes: `
-    select i.relname, pg_get_indexdef(i.oid) as def
+    select i.relname, pg_get_indexdef(i.oid) as def, x.indisvalid, x.indisready
       from pg_index x
       join pg_class i on i.oid = x.indexrelid
       join pg_class t on t.oid = x.indrelid
       join pg_namespace n on n.oid = i.relnamespace
      where n.nspname = 'public' and ${notExtensionMember('pg_class', 't.oid')}`,
   sequences: `
-    select c.relname, pg_get_userbyid(c.relowner) as owner,
+    select c.relname, pg_get_userbyid(c.relowner) as owner, c.relpersistence::text as persistence,
            coalesce(c.relacl, acldefault('s', c.relowner))::text[] as acl,
            format_type(s.seqtypid, null) as type, s.seqstart::text as start, s.seqincrement::text as increment,
            s.seqmin::text as min, s.seqmax::text as max, s.seqcache::text as cache, s.seqcycle as cycle,
@@ -354,11 +355,12 @@ export async function snapshotSchema(client) {
         rls: r.relrowsecurity, force_rls: r.relforcerowsecurity,
       })
     } else {
+      // persistence is p (permanent) or u (unlogged: emptied after a crash, not replicated).
       // replica_identity is d (default), n (nothing), f (full) or i (the index named next to it); it
       // decides what UPDATE and DELETE publish to Realtime. The partition fields are null on a table
       // that is neither partitioned nor a partition.
       put(`table:public.${r.relname}`, {
-        kind: r.relkind, owner: r.owner, acl: normalizeAcl(r.acl),
+        kind: r.relkind, persistence: r.persistence, owner: r.owner, acl: normalizeAcl(r.acl),
         rls: r.relrowsecurity, force_rls: r.relforcerowsecurity,
         options: normalizeTableOptions(r.reloptions),
         replica_identity: r.replident, replica_identity_index: r.replident_index,
@@ -377,10 +379,12 @@ export async function snapshotSchema(client) {
     })
   }
   for (const r of await rows(Q.constraints)) put(`constraint:public.${r.relname}.${r.conname}`, r.def)
-  for (const r of await rows(Q.indexes)) put(`index:public.${r.relname}`, r.def)
+  // An index left by a failed CREATE INDEX CONCURRENTLY has the same definition but is not valid (not
+  // used by the planner; a unique one does not guarantee uniqueness), or not even ready.
+  for (const r of await rows(Q.indexes)) put(`index:public.${r.relname}`, { def: r.def, valid: r.indisvalid, ready: r.indisready })
   for (const r of await rows(Q.sequences)) {
     put(`sequence:public.${r.relname}`, {
-      owner: r.owner, acl: normalizeAcl(r.acl), type: r.type, start: r.start, increment: r.increment,
+      owner: r.owner, persistence: r.persistence, acl: normalizeAcl(r.acl), type: r.type, start: r.start, increment: r.increment,
       min: r.min, max: r.max, cache: r.cache, cycle: r.cycle, owned_by: r.owned_by,
     })
   }

@@ -41,11 +41,15 @@ export function makeWorkspace({ projectId = 'magora-local' } = {}) {
 export function stackCleanup(work, { stop = () => run(['stop', '--workdir', work, '--no-backup']), proc = process } = {}) {
   let done = false
   const handlers = {}
+  // A failed stop() leaves everything in place (the workspace holds the stack's unique config, which
+  // `supabase stop --workdir` needs) and the handlers registered, so a later call can retry; only a
+  // successful stop marks cleanup done.
   const cleanup = () => {
     if (done) return
+    try { stop() } catch (e) { throw new Error(`could not stop the local stack; its workspace is kept at ${work}: ${e?.message ?? e}`, { cause: e }) }
     done = true
     for (const [event, h] of Object.entries(handlers)) proc.removeListener(event, h)
-    try { stop() } finally { rmSync(work, { recursive: true, force: true }) }
+    rmSync(work, { recursive: true, force: true })
   }
   for (const sig of ['SIGINT', 'SIGTERM']) {
     handlers[sig] = () => {

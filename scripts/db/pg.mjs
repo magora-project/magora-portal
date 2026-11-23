@@ -45,9 +45,19 @@ export function withRootCert(url, env) {
   return u.toString()
 }
 
+// Supabase's transaction-mode pooler (port 6543) hands each transaction to any server connection, so a
+// session setting made here (default_transaction_read_only, row_security) would not hold for the next
+// query, and would stay behind on a connection another client then uses. Only a direct connection or
+// the session-mode pooler (port 5432) is accepted.
+export const TRANSACTION_POOLER_PORT = '6543'
+function transactionPooler(url) {
+  try { return new URL(String(url)).port === TRANSACTION_POOLER_PORT } catch { return false }
+}
+
 export async function connect(envName, { readOnly = false, writeTarget, localPorts, env = process.env, Client = pg.Client } = {}) {
   const url = env[envName]
   if (typeof url !== 'string' || url === '') throw new Error(`${envName} is required`)
+  if (transactionPooler(url)) throw new Error(`refusing: ${envName} is a transaction-mode pooler (port ${TRANSACTION_POOLER_PORT}); session settings would not hold. Use a direct connection or the session pooler (port 5432)`)
   if (writeTarget === 'staging') assertStaging(url, 'db')
   else if (writeTarget === 'local') {
     const problem = localProblem(url, localPorts)

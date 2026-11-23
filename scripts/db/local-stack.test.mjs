@@ -51,6 +51,19 @@ try {
   proc.emit('SIGTERM')
   ok('a normal stop() unregisters the handlers; a later signal does not stop again', stops === 1 && proc.listenerCount('SIGTERM') === 0)
 }
+{
+  const proc = new EventEmitter()
+  proc.exit = () => {}
+  let calls = 0
+  const work = mkdtempSync(join(tmpdir(), 'magora-stack-test-'))
+  const cleanup = stackCleanup(work, { stop: () => { if (++calls === 1) throw new Error('docker busy') }, proc })
+  let msg = null
+  try { cleanup() } catch (e) { msg = e.message }
+  ok('a failed stop is reported, naming the kept workspace', msg?.includes('could not stop') && msg.includes(work) && msg.includes('docker busy'))
+  ok('after a failed stop the workspace and handlers stay', existsSync(work) && proc.listenerCount('SIGINT') === 1 && proc.listenerCount('exit') === 1)
+  cleanup()
+  ok('a retry stops the stack, removes the workspace and the handlers', calls === 2 && !existsSync(work) && proc.listenerCount('exit') === 0)
+}
 
 console.log(`local-stack: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
