@@ -1,0 +1,7 @@
+-- Rollback for 20260625_baseline_prehistory.sql: a deliberate no-op (spec §5.2). It holds only
+-- comments.
+--
+-- The baseline is the pre-history schema every later migration builds on. There is no state
+-- before it to return to: rolling it back means dropping the database (a local stack, a scratch
+-- project, or staging, which the refresh rebuilds). Production never applies the baseline, so this
+-- file has nothing to undo there either.

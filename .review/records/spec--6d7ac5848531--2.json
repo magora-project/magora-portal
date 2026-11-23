@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "6d7ac5848531f49bb7eca277667023fb9a651a12",
+    "path": "docs/superpowers/specs/2026-10-28-staging-and-secrets-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "fail",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P2",
+      "summary": "Seven days of independently scheduled database and Storage backups cannot guarantee a matching restore: an object overwritten or deleted between the database snapshot and the nightly copy may leave a backed-up row referencing bytes that no retained Storage backup contains.",
+      "file": "docs/superpowers/specs/2026-10-28-staging-and-secrets-design.md",
+      "line": 159,
+      "disposition": {
+        "kind": "pre-existing",
+        "reason": "Backup scheduling text and its implementation landed in PR B (#46), unchanged by this branch; not reachable from Tasks 8-12.",
+        "issue": "https://github.com/magora-project/magora-portal/issues/119"
+      }
+    },
+    {
+      "id": "F2",
+      "severity": "P2",
+      "summary": "Comparing copied-table counts with maintainer-taken counts at every refresh lacks a shared snapshot, so normal production ingestion can make the required privilege check fail despite correct read access and prevent nightly refreshes.",
+      "file": "docs/superpowers/specs/2026-10-28-staging-and-secrets-design.md",
+      "line": 435
+    }
+  ],
+  "supersedes": "spec--6d7ac5848531--1",
+  "createdAt": "2026-11-21T22:28:25.909Z"
+}

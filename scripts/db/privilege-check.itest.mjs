@@ -1,0 +1,163 @@
+// Integration test for scripts/db/privilege-check.mjs (Spec 2 plan Task 11 Step 5). Run by
+// `npm run test:db` against a throwaway local stack. Self-contained: it needs no baseline.
+//
+// 1. Applies roles.sql, creates public.t and grants SELECT on it to magora_refresh.
+// 2. Runs the check as magora_refresh. Its EXECUTE violations on this bare stack become the
+//    fixture's allowlist, except write-capable functions, which no allowlist may hold: they stay in
+//    a recorded baseline of violations.
+// 3. Tries lo_create as magora_refresh in a read-write transaction (rolled back). If it succeeds,
+//    the check must have reported lo_create.
+// 4. Each sabotage must add exactly one violation beyond the baseline, and its undo must remove it.
+// 5. The positive part reads an RLS table whose policy hides every row. With BYPASSRLS it reads all
+//    rows; with NOBYPASSRLS (sabotage) the read under row_security = off is refused and reported.
+import { randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { connect } from './pg.mjs'
+import { collectPrivileges, judge, positiveCheck, functionName, WRITES_WITHOUT_TABLE_PRIVILEGE, REFRESH_ROLE } from './privilege-check.mjs'
+
+let pass = 0, fail = 0
+const ok = (n, c, extra = '') => { if (c) { pass++ } else { fail++; console.log('  FAIL', n, extra) } }
+
+const port = Number(process.env.MAGORA_LOCAL_DB_PORT)
+const admin = await connect('MAGORA_LOCAL_DB_URL', { writeTarget: 'local', localPorts: [port] })
+const a = (sql) => admin.query(sql)
+
+const password = randomBytes(18).toString('hex')
+const refreshUrl = new URL(process.env.MAGORA_LOCAL_DB_URL)
+refreshUrl.username = REFRESH_ROLE
+refreshUrl.password = password
+const asRefresh = () => connect('R', { writeTarget: 'local', localPorts: [port], env: { R: refreshUrl.toString() } })
+
+const TEARDOWN = `
+  drop table if exists public.t;
+  drop sequence if exists public.itest_s;
+  do $$ begin
+    if exists (select 1 from pg_roles where rolname = 'magora_refresh') then
+      revoke create on schema public from magora_refresh;
+      execute format('revoke create on database %I from magora_refresh', current_database());
+      revoke authenticated from magora_refresh;
+      alter role magora_refresh password null;
+      alter role magora_refresh bypassrls;
+    end if;
+  end $$;
+`
+
+const check = async (opts) => {
+  const c = await asRefresh()
+  try { return judge(await collectPrivileges(c), opts) } finally { await c.end() }
+}
+
+try {
+  await a(TEARDOWN)
+  await a(readFileSync(new URL('../../supabase/setup/roles.sql', import.meta.url), 'utf8'))
+  await a(`alter role magora_refresh password '${password}'`)
+  await a('create table public.t (id int primary key, owner uuid)')
+  await a('grant select on public.t to magora_refresh')
+  await a('create sequence public.itest_s')
+
+  // First run with only the wildcards: derive the bare-stack allowlist and baseline.
+  const first = await check({ executeAllowlist: [], copiedTables: ['public.t'] })
+  const executeSigs = first.filter((v) => v.startsWith('EXECUTE on ')).map((v) => v.slice('EXECUTE on '.length, v.indexOf(': ')))
+  const writers = executeSigs.filter((s) => WRITES_WITHOUT_TABLE_PRIVILEGE.includes(functionName(s)))
+  const allowlist = executeSigs.filter((s) => !writers.includes(s))
+  const opts = { executeAllowlist: allowlist, copiedTables: ['public.t'] }
+  const baseline = await check(opts)
+  console.log(`  bare stack: ${executeSigs.length} EXECUTE violations, ${writers.length} write-capable:`)
+  for (const s of writers) console.log(`    ${s}`)
+  ok('the bare-stack allowlist absorbed no write-capable function', allowlist.every((s) => !WRITES_WITHOUT_TABLE_PRIVILEGE.includes(functionName(s))))
+  // Pinned independently of WRITES_WITHOUT_TABLE_PRIVILEGE, so a name dropped from that list fails
+  // here instead of moving its function into the allowlist (observed on CLI 2.118.0, Postgres 17).
+  const EXPECTED_WRITERS = [
+    'pg_catalog.lo_creat(integer)', 'pg_catalog.lo_create(oid)', 'pg_catalog.lo_from_bytea(oid, bytea)',
+    'pg_catalog.lo_open(oid, integer)', 'pg_catalog.lo_put(oid, bigint, bytea)', 'pg_catalog.lo_truncate(integer, integer)',
+    'pg_catalog.lo_truncate64(integer, bigint)', 'pg_catalog.lo_unlink(oid)', 'pg_catalog.lowrite(integer, bytea)',
+    'pg_catalog.pg_logical_emit_message(boolean, text, bytea, boolean)', 'pg_catalog.pg_logical_emit_message(boolean, text, text, boolean)',
+  ]
+  ok('the write-capable functions are exactly the pinned list', JSON.stringify([...writers].sort()) === JSON.stringify([...EXPECTED_WRITERS].sort()), JSON.stringify(writers))
+  // And a large-object or logical-message function the list does not name (a new Postgres release
+  // could add one) is not silently allowlisted: each such name must be reviewed into one list or the other.
+  const LO_OR_MESSAGE = /^(lo_|loread$|lowrite$|pg_logical_emit)/
+  const READS_ONLY = new Set(['lo_get', 'loread', 'lo_lseek', 'lo_lseek64', 'lo_tell', 'lo_tell64', 'lo_close'])
+  const bare = (s) => functionName(s).slice(functionName(s).lastIndexOf('.') + 1)
+  const unreviewed = allowlist.filter((s) => s.startsWith('pg_catalog.') && LO_OR_MESSAGE.test(bare(s)) && !READS_ONLY.has(bare(s)))
+  ok('no unreviewed large-object or logical-message function is allowlisted', unreviewed.length === 0, JSON.stringify(unreviewed))
+  ok('baseline holds exactly the write-capable functions', baseline.length === writers.length && baseline.every((v) => v.includes('writes without table privilege')), JSON.stringify(baseline))
+
+  // Can the login actually write a large object? default_transaction_read_only is only a default.
+  {
+    const c = await asRefresh()
+    try {
+      await c.query('begin; set transaction read write')
+      await c.query('select lo_create(0)')
+      console.log('  lo_create as magora_refresh: SUCCEEDED (rolled back)')
+      ok('lo_create succeeded, so the check reported it', baseline.some((v) => v.startsWith('EXECUTE on pg_catalog.lo_create(oid)')))
+    } catch (e) {
+      console.log(`  lo_create as magora_refresh: refused (${e.code}: ${e.message})`)
+      ok('lo_create refused', true)
+    } finally {
+      try { await c.query('rollback') } catch { /* already aborted */ }
+      await c.end()
+    }
+  }
+
+  const CASES = [
+    ['GRANT INSERT on the table', 'grant insert on public.t to magora_refresh', 'revoke insert on public.t from magora_refresh', 'table public.t: INSERT'],
+    ['GRANT UPDATE on one column', 'grant update (owner) on public.t to magora_refresh', 'revoke update (owner) on public.t from magora_refresh', 'column public.t.owner: UPDATE'],
+    ['GRANT authenticated (membership)', 'grant authenticated to magora_refresh', 'revoke authenticated from magora_refresh', 'member of authenticated'],
+    ['GRANT CREATE on schema public', 'grant create on schema public to magora_refresh', 'revoke create on schema public from magora_refresh', 'CREATE on schema public'],
+    ['GRANT USAGE on a sequence', 'grant usage on sequence public.itest_s to magora_refresh', 'revoke usage on sequence public.itest_s from magora_refresh', 'sequence public.itest_s: USAGE'],
+    ['REVOKE SELECT on a copied table', 'revoke select on public.t from magora_refresh', 'grant select on public.t to magora_refresh', 'copied table public.t: no SELECT'],
+  ]
+  for (const [name, sabotage, undo, needle] of CASES) {
+    await a(sabotage)
+    const added = (await check(opts)).filter((v) => !baseline.includes(v))
+    ok(`${name}: exactly one new violation naming it`, added.length === 1 && added[0].includes(needle), JSON.stringify(added))
+    await a(undo)
+    const after = (await check(opts)).filter((v) => !baseline.includes(v))
+    ok(`${name}: none after undo`, after.length === 0, JSON.stringify(after))
+  }
+
+  // An owned object outside the six catalogs read by name: a publication the login created while it
+  // briefly held CREATE on the database. Revoking CREATE afterwards leaves the ownership in place.
+  {
+    const asRefreshRw = async (sql) => {
+      const c = await asRefresh()
+      try { await c.query('begin; set transaction read write'); await c.query(sql); await c.query('commit') } finally { await c.end() }
+    }
+    await a(`do $$ begin execute format('grant create on database %I to magora_refresh', current_database()); end $$`)
+    await asRefreshRw('create publication itest_pub')
+    await a(`do $$ begin execute format('revoke create on database %I from magora_refresh', current_database()); end $$`)
+    const added = (await check(opts)).filter((v) => !baseline.includes(v))
+    ok('owned publication: exactly one new violation naming it', added.length === 1 && added[0] === 'owns object publication itest_pub', JSON.stringify(added))
+    await asRefreshRw('drop publication itest_pub')
+    const after = (await check(opts)).filter((v) => !baseline.includes(v))
+    ok('owned publication: none after undo', after.length === 0, JSON.stringify(after))
+  }
+
+  // Positive part: a policy that hides every row from every role that does not bypass RLS.
+  {
+    await a('insert into public.t (id) values (1), (2)')
+    await a('alter table public.t enable row level security')
+    await a('create policy itest_hide_all on public.t for select using (false)')
+    const positive = async (counts) => {
+      const c = await asRefresh()
+      try { return await positiveCheck(c, ['public.t'], counts) } finally { await c.end() }
+    }
+    const withBypass = await positive(undefined)
+    ok('positive: BYPASSRLS reads the hidden rows', withBypass.length === 0, JSON.stringify(withBypass))
+    const firstRun = await positive({ 'public.t': 2 })
+    ok('positive (first run): the maintainer count matches', firstRun.length === 0, JSON.stringify(firstRun))
+    await a('alter role magora_refresh nobypassrls')
+    const without = await positive(undefined)
+    ok('positive: NOBYPASSRLS (sabotage) is reported, not read as zero rows', without.length === 1 && without[0] === 'copied table public.t: count failed: 42501', JSON.stringify(without))
+    await a('alter role magora_refresh bypassrls')
+    const restored = await positive(undefined)
+    ok('positive: none after undo', restored.length === 0, JSON.stringify(restored))
+  }
+} finally {
+  try { await a(TEARDOWN) } catch (e) { fail++; console.log('  FAIL teardown', e.message) }
+  await admin.end()
+}
+
+console.log(`privilege-check itest: ${pass} passed, ${fail} failed`)
+process.exit(fail ? 1 : 0)

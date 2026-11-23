@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "type": "spec",
+  "slot": "spec",
+  "input": {
+    "kind": "blob",
+    "identity": "78c7980d1849f6a5b597e316c10df0a3d024c134",
+    "path": "docs/superpowers/specs/2026-10-28-staging-and-secrets-design.md"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "spec--6d7ac5848531--2#F2",
+      "severity": "P2",
+      "summary": "Comparing copied-table counts with maintainer-taken counts at every refresh lacks a shared snapshot, so normal production ingestion can make the required privilege check fail despite correct read access and prevent nightly refreshes.",
+      "file": "docs/superpowers/specs/2026-10-28-staging-and-secrets-design.md",
+      "line": 435,
+      "disposition": {
+        "kind": "fixed",
+        "by": "spec--78c7980d1849--1"
+      }
+    }
+  ],
+  "supersedes": "spec--6d7ac5848531--2",
+  "createdAt": "2026-11-21T22:28:42.208Z"
+}
