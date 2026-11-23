@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "pr": 121,
+  "slots": [
+    {
+      "bot": "coderabbit",
+      "status": "covered",
+      "by": "review:6019637599"
+    },
+    {
+      "bot": "codex",
+      "status": "covered",
+      "by": "codex-comment:7073545610@9a6efa722408"
+    },
+    {
+      "bot": "gemini",
+      "status": "covered",
+      "by": "gemini-comment:7097392374"
+    }
+  ],
+  "findings": [
+    {
+      "id": "thread:PRRT_kwDOSsky0866hJl1",
+      "source": "coderabbit",
+      "severity": "Major",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "9cfb04d4688957960830abb4762c743ca0c72dcc"
+      }
+    },
+    {
+      "id": "thread:PRRT_kwDOSsky0866tMWo",
+      "source": "coderabbit",
+      "severity": "Major",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "6b546b5d24d7141cdf7f491cf09146a0fe345ab4"
+      }
+    },
+    {
+      "id": "gemini:7092428617:1",
+      "source": "gemini",
+      "severity": "P1",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "6b546b5d24d7141cdf7f491cf09146a0fe345ab4"
+      }
+    },
+    {
+      "id": "gemini:7092428617:2",
+      "source": "gemini",
+      "severity": "P1",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "6b546b5d24d7141cdf7f491cf09146a0fe345ab4"
+      }
+    },
+    {
+      "id": "gemini:7092428617:3",
+      "source": "gemini",
+      "severity": "P1",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "6b546b5d24d7141cdf7f491cf09146a0fe345ab4"
+      }
+    },
+    {
+      "id": "gemini:7092428617:4",
+      "source": "gemini",
+      "severity": "P1",
+      "disposition": {
+        "kind": "fixed",
+        "commit": "6b546b5d24d7141cdf7f491cf09146a0fe345ab4"
+      }
+    }
+  ],
+  "reclassified": [],
+  "writtenAt": "2026-11-23T11:09:32.562Z"
+}
