@@ -105,3 +105,55 @@ test('the font tokens hold the current families', () => {
   // `/`-joined, as sourceFiles() does: on Windows relative() returns `\` separators.
   assert.match(relative(ROOT, join(ROOT, TOKENS_CSS_PATH)).split(sep).join('/'), /^src\/styles\/tokens\.css$/)
 })
+
+// v4 brand block (plan Task 8). DESIGN.md light values, the Rationale's named inks, the mandala inks and white.
+const V4 = ':root[data-brand="v4"]'
+const V4_PALETTE = new Set(
+  ('#494E3A #2E3226 #F3EFE4 #FFFDF7 #111111 #E0502A #D1D1A7 #3F7350 #24503A #000000 #D9CFB6 #C0392B #838F63 #4E1623' +
+    ' #55594A #C9CBA6 #5C8D68 #0F2A1A #FFFFFF').toLowerCase().split(' '),
+)
+
+// name -> raw value for the declarations in the rule whose selector is exactly `selector`.
+function blockValues(cssText, selector) {
+  const out = new Map()
+  const css = cssText.replace(/\/\*[\s\S]*?\*\//g, '')
+  for (const [, sel, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (sel.trim() !== selector) continue
+    for (const [, name, value] of body.matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);/g)) out.set(name, value.trim())
+  }
+  return out
+}
+
+// Third-party logo colours are not brand tokens; under v4 they inherit their :root values; plan deviation D-1.
+const THIRD_PARTY_MARKS = ['c-google-yellow', 'c-google-red', 'c-google-green', 'c-google-blue']
+
+test('v4 sets every :root colour token', () => {
+  const css = readFileSync(join(ROOT, TOKENS_CSS_PATH), 'utf8')
+  const v4 = definedTokens(css, V4)
+  assert.ok(v4.size > 0, 'v4 block is missing')
+  const root = definedTokens(css, ':root')
+  for (const n of THIRD_PARTY_MARKS) {
+    assert.ok(root.has(n), `${n} is not defined in :root`)
+    assert.ok(!v4.has(n), `${n} must not be set in v4`)
+  }
+  assert.deepEqual([...root].filter((n) => !v4.has(n) && !THIRD_PARTY_MARKS.includes(n)), [])
+})
+
+test('v4 colour values come from the v4 palette', () => {
+  const css = readFileSync(join(ROOT, TOKENS_CSS_PATH), 'utf8')
+  const v4 = blockValues(css, V4)
+  assert.ok(v4.size > 0, 'v4 block is missing')
+  const off = [...v4].filter(([n, v]) => /^(c-|mk)/.test(n) && !V4_PALETTE.has(v.toLowerCase()))
+  assert.deepEqual(off, [])
+  assert.equal(v4.get('font-display'), "'Prodiga', serif")
+  assert.equal(v4.get('font-label'), "'Epilogue', sans-serif")
+  assert.equal(v4.get('font-body'), "'Epilogue', sans-serif")
+  for (const [n, v] of [['mk1', '#5C8D68'], ['mk2', '#3F7350'], ['mk3', '#24503A'], ['mk4', '#0F2A1A']]) {
+    assert.equal(v4.get(n), v)
+    assert.equal(blockValues(css, ':root').get(n), v)
+  }
+})
+
+test('no dark mode', () => {
+  assert.doesNotMatch(readFileSync(join(ROOT, TOKENS_CSS_PATH), 'utf8'), /prefers-color-scheme/)
+})

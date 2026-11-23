@@ -13,6 +13,86 @@
  *
  * Use var(--…) everywhere. Only a sink that cannot resolve var() reads a value through token() in
  * src/lib/tokens.js, at render or event time.
+ *
+ * v4 map (:root[data-brand="v4"], DESIGN.md light values; token | current | v4 role | v4 value):
+ * --c-forest-bg | #0d2818 | background | #F3EFE4
+ * --c-forest-card | #163d22 | surface | #FFFDF7
+ * --c-forest-border | #1f5230 | muted | #D1D1A7
+ * --c-forest-accent | #1D9E75 | brand | #3F7350
+ * --c-forest-accent-light | #5DCAA5 | link | #24503A
+ * --c-forest-text | #f0ede8 | text | #111111
+ * --c-forest-text-sub | #c8e6d0 | ink-2 | #55594A
+ * --c-forest-text-muted | #7aad8a | ink-2 | #55594A
+ * --c-forest-placeholder | #4a7a58 | ink-2 | #55594A
+ * --c-forest-code-bg | #0a1f12 | muted | #D1D1A7
+ * --c-forest-input-bg | #0f2918 | surface | #FFFDF7
+ * --c-forest-insight-bg | #0f3020 | muted | #D1D1A7
+ * --c-forest-photo-placeholder | #1a4a28 | muted | #D1D1A7
+ * --c-forest-button-busy | #1a3a28 | muted | #D1D1A7
+ * --c-forest-text-disabled | #4a7a58 | poster_sage | #838F63
+ * --c-forest-conf-low | #d9a441 | poster_wine | #4E1623
+ * --c-forest-error | #fb7a6a | error | #C0392B
+ * --c-forest-error-bg | #3e1f16 | surface | #FFFDF7
+ * --c-forest-danger | #c0392b | error | #C0392B
+ * --c-forest-text-footnote | #7a9b88 | ink-2 | #55594A
+ * --c-forest-avatar-bg | #162e20 | muted | #D1D1A7
+ * --c-forest-notice-bg | #1f3326 | muted | #D1D1A7
+ * --c-forest-notice-border | #3a6247 | poster_sage | #838F63
+ * --c-forest-queued-bg | #1f3326 | muted | #D1D1A7
+ * --c-forest-alert-text | #ffb4a2 | error | #C0392B
+ * --c-forest-alert-bg | #3d1f1a | surface | #FFFDF7
+ * --c-forest-alert-border | #6b2f24 | error | #C0392B
+ * --c-forest-button-done | #0f3020 | muted | #D1D1A7
+ * --c-forest-selected-bg | #1a4a28 | muted | #D1D1A7
+ * --c-forest-form-error | #f87171 | error | #C0392B
+ * --c-amber-base | #d9952b | poster_wine | #4E1623
+ * --c-amber-light | #f0c14b | poster_wine | #4E1623
+ * --c-amber-dark | #b87a1e | poster_black | #000000
+ * --c-amber-ink | #3a2c0e | background | #F3EFE4
+ * --c-map-node-active-fill | #1D9E75 | brand | #3F7350
+ * --c-map-node-active-stroke | #0F6E56 | link | #24503A
+ * --c-map-node-offline | #7aad8a | poster_sage | #838F63
+ * --c-map-journal-fill | #1D9E75 | brand | #3F7350
+ * --c-map-journal-stroke | #5DCAA5 | link | #24503A
+ * --c-map-species-fill | #c0392b | error | #C0392B
+ * --c-map-popup-text | #0f2718 | text | #111111
+ * --c-status-live | #22c55e | live | #3F7350
+ * --c-badge-count-bg | #1a3a28 | muted | #D1D1A7
+ * --c-badge-count-border | #22c55e | brand | #3F7350
+ * --c-badge-count-text | #86efac | link | #24503A
+ * --c-badge-dawn-bg | #1a3a4a | muted | #D1D1A7
+ * --c-badge-dawn-border | #0ea5e9 | primary | #494E3A
+ * --c-badge-dawn-text | #7dd3fc | primary | #494E3A
+ * --c-badge-guild-bg | #1a3a28 | muted | #D1D1A7
+ * --c-warn-bg | #2a1a0a | surface | #FFFDF7
+ * --c-warn-border | #f97316 | poster_wine | #4E1623
+ * --c-warn-text | #fb923c | poster_wine | #4E1623
+ * --c-warn-heading | #f97316 | poster_wine | #4E1623
+ * --c-editorial-bg | #f0ebe0 | background | #F3EFE4
+ * --c-editorial-ink | #1a1a1a | text | #111111
+ * --c-editorial-rule | #b8b0a0 | muted | #D1D1A7
+ * --c-editorial-rule-light | #ccc7b8 | caliche | #D9CFB6
+ * --c-editorial-text | #4a4440 | text | #111111
+ * --c-editorial-text-sub | #5a5248 | ink-2 | #55594A
+ * --c-editorial-text-muted | #9a9080 | ink-2 | #55594A
+ * --c-editorial-strip-bg | #e8e2d5 | muted | #D1D1A7
+ * --c-editorial-stat-label | #7a7060 | ink-2 | #55594A
+ * --c-paper-bg | #f0ebe0 | background | #F3EFE4
+ * --c-paper-ink | #1a1a1a | text | #111111
+ * --c-paper-forest | #0d2818 | secondary | #2E3226
+ * --c-paper-forest-light | #163d22 | primary | #494E3A
+ * --c-paper-accent | #c0392b | error | #C0392B
+ * --c-paper-text | #3a352f | text | #111111
+ * --c-paper-text-sub | #7a7060 | ink-2 | #55594A
+ * --c-paper-text-muted | #6b6157 | ink-2 | #55594A
+ * --c-paper-rule | #cdc6b6 | caliche | #D9CFB6
+ * --c-google-button-text | #1a1a1a | text | #111111
+ * --c-google-yellow | #FFC107 | none (third-party mark) | NOT SET
+ * --c-google-red | #FF3D00 | none (third-party mark) | NOT SET
+ * --c-google-green | #4CAF50 | none (third-party mark) | NOT SET
+ * --c-google-blue | #1976D2 | none (third-party mark) | NOT SET
+ * --mk1..--mk4 | none | mandala inks (design/brand/mandala.py) | #5C8D68 #3F7350 #24503A #0F2A1A, set in both blocks
+ * Fonts: Prodiga (display), Epilogue (label, body). v4 is light only: no dark scheme.
  */
 :root {
   --font-display: 'Big Shoulders Display', sans-serif;
@@ -111,4 +191,96 @@
   --c-google-red: #FF3D00;
   --c-google-green: #4CAF50;
   --c-google-blue: #1976D2;
+
+  /* Mandala inks, rings 1-4 (design/brand/mandala.py). Same in both blocks: the mandala renders only under v4. */
+  --mk1: #5C8D68;
+  --mk2: #3F7350;
+  --mk3: #24503A;
+  --mk4: #0F2A1A;
+}
+
+/* v4 brand: applies only when <html data-brand="v4"> (a later PR). Light only. */
+:root[data-brand="v4"] {
+  --font-display: 'Prodiga', serif;
+  --font-label: 'Epilogue', sans-serif;
+  --font-body: 'Epilogue', sans-serif;
+
+  --c-forest-bg: #F3EFE4;
+  --c-forest-card: #FFFDF7;
+  --c-forest-border: #D1D1A7;
+  --c-forest-accent: #3F7350;
+  --c-forest-accent-light: #24503A;
+  --c-forest-text: #111111;
+  --c-forest-text-sub: #55594A;
+  --c-forest-text-muted: #55594A;
+  --c-forest-placeholder: #55594A;
+  --c-forest-code-bg: #D1D1A7;
+  --c-forest-input-bg: #FFFDF7;
+  --c-forest-insight-bg: #D1D1A7;
+  --c-forest-photo-placeholder: #D1D1A7;
+  --c-forest-button-busy: #D1D1A7;
+  --c-forest-text-disabled: #838F63;
+  --c-forest-conf-low: #4E1623;
+  --c-forest-error: #C0392B;
+  --c-forest-error-bg: #FFFDF7;
+  --c-forest-danger: #C0392B;
+  --c-forest-text-footnote: #55594A;
+  --c-forest-avatar-bg: #D1D1A7;
+  --c-forest-notice-bg: #D1D1A7;
+  --c-forest-notice-border: #838F63;
+  --c-forest-queued-bg: #D1D1A7;
+  --c-forest-alert-text: #C0392B;
+  --c-forest-alert-bg: #FFFDF7;
+  --c-forest-alert-border: #C0392B;
+  --c-forest-button-done: #D1D1A7;
+  --c-forest-selected-bg: #D1D1A7;
+  --c-forest-form-error: #C0392B;
+  --c-amber-base: #4E1623;
+  --c-amber-light: #4E1623;
+  --c-amber-dark: #000000;
+  --c-amber-ink: #F3EFE4;
+  --c-map-node-active-fill: #3F7350;
+  --c-map-node-active-stroke: #24503A;
+  --c-map-node-offline: #838F63;
+  --c-map-journal-fill: #3F7350;
+  --c-map-journal-stroke: #24503A;
+  --c-map-species-fill: #C0392B;
+  --c-map-popup-text: #111111;
+  --c-status-live: #3F7350;
+  --c-badge-count-bg: #D1D1A7;
+  --c-badge-count-border: #3F7350;
+  --c-badge-count-text: #24503A;
+  --c-badge-dawn-bg: #D1D1A7;
+  --c-badge-dawn-border: #494E3A;
+  --c-badge-dawn-text: #494E3A;
+  --c-badge-guild-bg: #D1D1A7;
+  --c-warn-bg: #FFFDF7;
+  --c-warn-border: #4E1623;
+  --c-warn-text: #4E1623;
+  --c-warn-heading: #4E1623;
+  --c-editorial-bg: #F3EFE4;
+  --c-editorial-ink: #111111;
+  --c-editorial-rule: #D1D1A7;
+  --c-editorial-rule-light: #D9CFB6;
+  --c-editorial-text: #111111;
+  --c-editorial-text-sub: #55594A;
+  --c-editorial-text-muted: #55594A;
+  --c-editorial-strip-bg: #D1D1A7;
+  --c-editorial-stat-label: #55594A;
+  --c-paper-bg: #F3EFE4;
+  --c-paper-ink: #111111;
+  --c-paper-forest: #2E3226;
+  --c-paper-forest-light: #494E3A;
+  --c-paper-accent: #C0392B;
+  --c-paper-text: #111111;
+  --c-paper-text-sub: #55594A;
+  --c-paper-text-muted: #55594A;
+  --c-paper-rule: #D9CFB6;
+  --c-google-button-text: #111111;
+
+  /* Mandala inks, rings 1-4 (design/brand/mandala.py). Same in both blocks: the mandala renders only under v4. */
+  --mk1: #5C8D68;
+  --mk2: #3F7350;
+  --mk3: #24503A;
+  --mk4: #0F2A1A;
 }
