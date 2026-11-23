@@ -1,6 +1,7 @@
-// No-hex guard (portal v4 spec §1 criterion 5, §6; plan Task 6). Every colour under src/ comes from
-// src/styles/tokens.css, so a six-digit (or longer) hex literal in any other .js, .jsx or .css file
-// under src/ fails `npm test`. Image assets (.svg, .png, …) and tests (.mjs) are not scanned.
+// No-hex guard (portal v4 spec §1 criterion 5, §6; plan Task 6). Every six- and eight-digit hex colour
+// under src/ comes from src/styles/tokens.css, so such a literal in any other .js, .jsx or .css file
+// under src/ fails `npm test`. Three-digit hexes (#fff) and rgba() values are not checked: spec §6 names
+// `#[0-9a-fA-F]{6}`. Image assets (.svg, .png, …) and tests (.mjs) are not scanned.
 // Run: node scripts/ci/no-hex-literals.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'

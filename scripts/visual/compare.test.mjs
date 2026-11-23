@@ -5,10 +5,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import {
-  classifyRequest, coverageProblems, expectedShots, FIXTURE_SUPABASE_URL, metaProblems, requestKey, ROUTES, STATES,
-  subsetProblems, WIDTHS,
+  capture, classifyRequest, coverageProblems, expectedShots, FIXTURE_SUPABASE_URL, metaProblems, requestKey, ROUTES,
+  selectItems, STATES, subsetProblems, WIDTHS,
 } from './compare.mjs'
+import * as apiFixtures from './fixtures/api.mjs'
 import * as fontFixtures from './fixtures/fonts.mjs'
 
 const ORIGIN = 'http://127.0.0.1:4173'
@@ -153,4 +156,34 @@ test('Google Fonts are answered from fixtures, and an unknown font URL is not', 
   }
   assert.equal(fontFixtures.handle({ url: 'https://fonts.gstatic.com/s/jost/v20/missing.woff2' }), null)
   assert.equal(fontFixtures.handle({ url: 'https://fonts.googleapis.com/css2?family=Roboto' }), null)
+})
+
+test('selectItems names each unknown --only id, and keeps the known ones', () => {
+  assert.deepEqual(selectItems(['about']).map((it) => it.id), ['about'])
+  assert.throws(() => selectItems(['about', 'abotu']), /unknown id: abotu$/)
+})
+
+test('a mistyped --only leaves an existing capture set untouched', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'compare-only-'))
+  try {
+    fs.writeFileSync(path.join(dir, 'about-375.png'), 'png')
+    fs.writeFileSync(path.join(dir, 'meta.json'), '{}')
+    await assert.rejects(capture({ dist: dir, out: dir, brand: 'current', only: ['abotu'] }), /unknown id: abotu/)
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['about-375.png', 'meta.json'])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('third-party fixtures answer only the paths the app calls', () => {
+  apiFixtures.unknown.clear()
+  const get = (url) => apiFixtures.handle({ method: 'GET', url })
+  assert.equal(get('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=12&lat=40&lon=-105').status, 200)
+  assert.deepEqual([...apiFixtures.unknown], [])
+  assert.equal(get('https://nominatim.openstreetmap.org/search?q=x').status, 404)
+  assert.equal(get('https://api.inaturalist.org/v1/observations').status, 404)
+  assert.deepEqual([...apiFixtures.unknown], [
+    'GET nominatim.openstreetmap.org/search', 'GET api.inaturalist.org/v1/observations',
+  ])
+  apiFixtures.unknown.clear()
 })

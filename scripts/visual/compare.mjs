@@ -521,21 +521,29 @@ async function shootOnce(browser, { origin, brand, item, width, file }) {
   }
 }
 
-async function capture({ dist, out, brand, only }) {
+// The routes and states a capture shoots: all of them, or those --only names. Throws on an id that is
+// neither, so a typo is refused before capture deletes anything.
+export function selectItems(only) {
+  const items = [
+    ...ROUTES.map((r) => ({ id: r.id, path: r.path, signedIn: false, act: null })),
+    ...STATES,
+  ].filter((it) => !only || only.includes(it.id))
+  const unknownIds = (only ?? []).filter((id) => !items.some((it) => it.id === id))
+  if (unknownIds.length) throw new Error(`--only names an unknown id: ${unknownIds.join(',')}`)
+  return items
+}
+
+export async function capture({ dist, out, brand, only }) {
   if (!dist || !out) throw new Error('capture needs --dist <dir> and --out <dir>')
   if (brand !== 'current' && brand !== 'v4') throw new Error('capture needs --brand current|v4')
+  // Before the output directory is touched: a mistyped --only must not delete an existing set.
+  const items = selectItems(only)
   const { chromium } = await import('playwright')
   const outDir = path.resolve(out)
   const unstableDir = path.join(outDir, 'unstable')
   fs.mkdirSync(outDir, { recursive: true })
   for (const f of fs.readdirSync(outDir)) if (f.endsWith('.png') || f === META_FILE) fs.rmSync(path.join(outDir, f))
   fs.rmSync(unstableDir, { recursive: true, force: true })
-
-  const items = [
-    ...ROUTES.map((r) => ({ id: r.id, path: r.path, signedIn: false, act: null })),
-    ...STATES,
-  ].filter((it) => !only || only.includes(it.id))
-  if (only && items.length !== only.length) throw new Error(`--only names an unknown id: ${only.join(',')}`)
 
   const { server, origin } = await serveDist(dist)
   const browser = await chromium.launch({ args: CHROMIUM_ARGS })
@@ -630,7 +638,10 @@ async function serve({ dist, brand = 'current', signedIn }) {
   console.log(`serving ${dist} at ${origin}; close the window to stop`)
   await new Promise((resolve) => browser.on('disconnected', resolve))
   server.close()
-  return log.blocked.length === 0 && log.v4Fonts.length === 0
+  // As in capture: a request the fixtures did not answer fails the session.
+  const unknownFixtures = [...supabaseFixtures.unknown, ...apiFixtures.unknown]
+  if (unknownFixtures.length) console.error(`unanswered fixture requests:\n  ${unknownFixtures.join('\n  ')}`)
+  return log.blocked.length === 0 && log.v4Fonts.length === 0 && unknownFixtures.length === 0
 }
 
 // ---------------------------------------------------------------------------------------------- diff

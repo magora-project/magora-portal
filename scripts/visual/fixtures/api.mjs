@@ -1,7 +1,7 @@
 // Fixture answers for the app's own /api/* functions and the few third-party APIs the pages call
-// (Wikipedia, GBIF, iNaturalist, Nominatim). handle({ method, url, headers, body }) ->
-// { status, headers, body }. Nothing here reaches a network. An endpoint nobody answers is recorded in
-// `unknown`, and fails the capture.
+// (Wikipedia, GBIF, Nominatim). handle({ method, url, headers, body }) -> { status, headers, body }.
+// Nothing here reaches a network. Each host answers only the paths the app calls; any other request
+// (an api.inaturalist.org one included: no page calls it) is recorded in `unknown`, and fails the capture.
 //
 // Species photos, iNaturalist photos and Xeno-canto recordings are deliberately absent: each would be one
 // more host to serve, so the cards show their placeholder art and "No recording".
@@ -44,15 +44,14 @@ export function handle({ method, url }) {
     }
   } else if (u.hostname === 'api.gbif.org') {
     if (p === '/v1/species/match') return json(200, { usageKey: 2490719, speciesKey: 2490719 })
-  } else if (u.hostname === 'api.inaturalist.org') {
-    return json(200, { total_results: 0, results: [] })
   } else if (u.hostname === 'give.themethodproject.org') {
     return {
       status: 200, headers: { ...CORS, 'content-type': 'text/javascript; charset=utf-8' },
       body: '/* fixture: the donation widget is not loaded */',
     }
   } else if (u.hostname === 'nominatim.openstreetmap.org') {
-    return json(200, { name: 'Fixtureville', address: { city: 'Fixtureville', state: 'Colorado' } })
+    // src/lib/listen.js reverse-geocodes; any other path is unanswered.
+    if (p === '/reverse') return json(200, { name: 'Fixtureville', address: { city: 'Fixtureville', state: 'Colorado' } })
   } else {
     if (p === '/api/insight') {
       return json(200, { insight: 'A fixture insight: the soundscape here is busy at dawn, and the robin is leading it.' })
