@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "type": "prepush",
+  "slot": "completeness",
+  "input": {
+    "kind": "pr",
+    "identity": "ca68a2281d347e3dd7b80dfafec00ee637cea2bc",
+    "mergeBase": "576897580f9e8c045e76bb50f24d60deda42ba88",
+    "head": "0df0bdeab416ff88d50c7a167c538088aca3f961"
+  },
+  "reviewer": {
+    "vendor": "google",
+    "model": "gemini-3.1-pro-preview"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "P3",
+      "summary": "`before = s.text` is overwritten by whitespace following a comment (e.g. the newline after `--`), so a function body like `AS -- comment\\n$$` is treated as a string literal, contradicting the intent that comments do not reset the `AS` check.",
+      "file": "scripts/db/baseline-secrets.test.mjs",
+      "line": 21
+    }
+  ],
+  "supersedes": "completeness--73d3c0372506--1",
+  "createdAt": "2026-11-23T07:07:25.161Z"
+}
