@@ -208,7 +208,15 @@ const Q = {
     select c.oid, c.relname, c.relkind, pg_get_userbyid(c.relowner) as owner,
            coalesce(c.relacl, acldefault('r', c.relowner))::text[] as acl,
            c.relrowsecurity, c.relforcerowsecurity, c.reloptions,
-           case when c.relkind in ('v', 'm') then pg_get_viewdef(c.oid) end as def
+           case when c.relkind in ('v', 'm') then pg_get_viewdef(c.oid) end as def,
+           c.relreplident::text as replident,
+           (select n.nspname || '.' || ri.relname from pg_index x join pg_class ri on ri.oid = x.indexrelid
+             where x.indrelid = c.oid and x.indisreplident) as replident_index,
+           case when c.relkind = 'p' then pg_get_partkeydef(c.oid) end as partition_key,
+           (select pn.nspname || '.' || pc.relname
+              from pg_inherits i join pg_class pc on pc.oid = i.inhparent join pg_namespace pn on pn.oid = pc.relnamespace
+             where i.inhrelid = c.oid and c.relispartition) as partition_of,
+           case when c.relispartition then pg_get_expr(c.relpartbound, c.oid) end as partition_bound
       from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')
        and ${notExtensionMember('pg_class', 'c.oid')}`,
@@ -268,7 +276,23 @@ const Q = {
      where schemaname = 'public' or (schemaname = 'storage' and tablename = 'objects')`,
   functions: `
     select p.proname, pg_get_function_identity_arguments(p.oid) as args, p.prokind::text as kind,
-           case when p.prokind <> 'a' then pg_get_functiondef(p.oid) end as def,
+           -- pg_get_functiondef refuses aggregates; theirs comes from pg_aggregate (jsonb text, keys sorted).
+           case when p.prokind <> 'a' then pg_get_functiondef(p.oid)
+                else (select jsonb_build_object(
+                        'kind', a.aggkind::text, 'direct_args', a.aggnumdirectargs,
+                        'sfunc', a.aggtransfn::regprocedure::text, 'stype', format_type(a.aggtranstype, null),
+                        'sspace', a.aggtransspace, 'initcond', a.agginitval,
+                        'finalfunc', a.aggfinalfn::regprocedure::text, 'finalfunc_extra', a.aggfinalextra,
+                        'finalfunc_modify', a.aggfinalmodify::text,
+                        'combinefunc', a.aggcombinefn::regprocedure::text,
+                        'serialfunc', a.aggserialfn::regprocedure::text, 'deserialfunc', a.aggdeserialfn::regprocedure::text,
+                        'msfunc', a.aggmtransfn::regprocedure::text, 'minvfunc', a.aggminvtransfn::regprocedure::text,
+                        'mfinalfunc', a.aggmfinalfn::regprocedure::text, 'mfinalfunc_extra', a.aggmfinalextra,
+                        'mfinalfunc_modify', a.aggmfinalmodify::text,
+                        'mstype', format_type(nullif(a.aggmtranstype, 0), null), 'msspace', a.aggmtransspace,
+                        'minitcond', a.aggminitval, 'sortop', a.aggsortop::regoperator::text)::text
+                        from pg_aggregate a where a.aggfnoid = p.oid)
+           end as def,
            pg_get_userbyid(p.proowner) as owner,
            coalesce(p.proacl, acldefault('f', p.proowner))::text[] as acl,
            p.prosecdef, p.proconfig
@@ -330,10 +354,15 @@ export async function snapshotSchema(client) {
         rls: r.relrowsecurity, force_rls: r.relforcerowsecurity,
       })
     } else {
+      // replica_identity is d (default), n (nothing), f (full) or i (the index named next to it); it
+      // decides what UPDATE and DELETE publish to Realtime. The partition fields are null on a table
+      // that is neither partitioned nor a partition.
       put(`table:public.${r.relname}`, {
         kind: r.relkind, owner: r.owner, acl: normalizeAcl(r.acl),
         rls: r.relrowsecurity, force_rls: r.relforcerowsecurity,
         options: normalizeTableOptions(r.reloptions),
+        replica_identity: r.replident, replica_identity_index: r.replident_index,
+        partition_key: r.partition_key, partition_of: r.partition_of, partition_bound: r.partition_bound,
       })
     }
   }
@@ -392,7 +421,8 @@ export async function snapshotSchema(client) {
     put(`extension-version:${r.extname}`, r.extversion)
   }
   // storage.buckets is data, not catalog: it needs SELECT (Task 27's grants). Unreadable is
-  // recorded, not fatal, and is allowlisted only with David's agreement.
+  // recorded, not fatal, and is allowlisted only with David's agreement. Keep this read last: inside
+  // snapshotInTransaction a refused read aborts the transaction, so no later read could run.
   try {
     for (const r of await rows(Q.buckets)) {
       put(`bucket:${r.id}`, {
@@ -405,6 +435,23 @@ export async function snapshotSchema(client) {
     put('buckets:unreadable', e.code)
   }
   return Object.fromEntries(Object.entries(snap).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+}
+
+// Every catalog read in one REPEATABLE READ READ ONLY transaction, so a DDL commit that lands
+// between two reads cannot pair an old owner with a new default. For a client that is not already in
+// a transaction.
+export const SNAPSHOT_BEGIN = 'begin isolation level repeatable read read only'
+export async function snapshotInTransaction(client) {
+  await client.query(SNAPSHOT_BEGIN)
+  let snap
+  try {
+    snap = await snapshotSchema(client)
+  } catch (e) {
+    try { await client.query('rollback') } catch { /* connection may be gone */ }
+    throw e
+  }
+  await client.query('commit')
+  return snap
 }
 
 // ---------- CLI ----------
@@ -448,7 +495,7 @@ async function main(argv) {
     const out = arg(rest, '--out')
     const client = await connect(envName, { readOnly: true })
     try {
-      const snap = await snapshotSchema(client)
+      const snap = await snapshotInTransaction(client)
       writeFileSync(out, `${JSON.stringify(snap, null, 1)}\n`)
       console.log(`schema-snapshot: ${Object.keys(snap).length} keys written to ${out}`)
     } finally {

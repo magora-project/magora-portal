@@ -5,7 +5,7 @@
 import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { constants, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -35,8 +35,32 @@ export function makeWorkspace({ projectId = 'magora-local' } = {}) {
   return work
 }
 
+// Stops the stack and removes its workspace, once: the caller's stop(), a failed start, an
+// interrupt (Ctrl-C or SIGTERM) and process exit all lead here. Without the interrupt path, Node's
+// default SIGINT exit skips every finally block and leaves the containers holding the ports.
+export function stackCleanup(work, { stop = () => run(['stop', '--workdir', work, '--no-backup']), proc = process } = {}) {
+  let done = false
+  const handlers = {}
+  const cleanup = () => {
+    if (done) return
+    done = true
+    for (const [event, h] of Object.entries(handlers)) proc.removeListener(event, h)
+    try { stop() } finally { rmSync(work, { recursive: true, force: true }) }
+  }
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    handlers[sig] = () => {
+      try { cleanup() } catch { /* already reported by the CLI */ }
+      proc.exit(128 + constants.signals[sig])
+    }
+  }
+  handlers.exit = () => { try { cleanup() } catch { /* exiting anyway */ } }
+  for (const [event, h] of Object.entries(handlers)) proc.on(event, h)
+  return cleanup
+}
+
 export function startStack({ projectId } = {}) {
   const work = makeWorkspace({ projectId })
+  const cleanup = stackCleanup(work)
   try {
     // `supabase start` ends by printing the stack's keys on stdout. They are the CLI's fixed local
     // demo keys, but nothing here prints keys, so stdout is captured and dropped.
@@ -45,17 +69,9 @@ export function startStack({ projectId } = {}) {
     const dbUrl = status.DB_URL
     const port = Number(new URL(dbUrl).port)
     if (!port) throw new Error('could not read the local DB port from supabase status')
-    return {
-      work,
-      dbUrl,
-      port,
-      stop() {
-        try { run(['stop', '--workdir', work, '--no-backup']) } finally { rmSync(work, { recursive: true, force: true }) }
-      },
-    }
+    return { work, dbUrl, port, stop: cleanup }
   } catch (e) {
-    try { run(['stop', '--workdir', work, '--no-backup']) } catch { /* not started */ }
-    rmSync(work, { recursive: true, force: true })
+    try { cleanup() } catch { /* not started */ }
     throw e
   }
 }

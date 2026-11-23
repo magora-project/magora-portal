@@ -23,6 +23,9 @@ const SETUP = `
   create view public.itest_v as select id from public.itest_t;
   create function public.itest_f() returns int language sql as 'select 1';
   create function public.itest_trg() returns trigger language plpgsql as 'begin return new; end';
+  create table public.itest_pt (k int) partition by range (k);
+  create table public.itest_pt1 partition of public.itest_pt for values from (0) to (10);
+  create aggregate public.itest_agg(int) (sfunc = int4pl, stype = int, initcond = '0');
 `
 const TEARDOWN = `
   drop trigger if exists itest_on_user on auth.users;
@@ -33,6 +36,8 @@ const TEARDOWN = `
   end $$;
   drop view if exists public.itest_v;
   drop table if exists public.itest_t;
+  drop table if exists public.itest_pt;
+  drop aggregate if exists public.itest_agg(int);
   drop function if exists public.itest_f();
   drop function if exists public.itest_trg();
   do $$ begin
@@ -71,6 +76,17 @@ const CASES = [
   // A view's security_invoker changes whose permissions and RLS apply, with the query unchanged.
   ['flip a view to security_invoker', 'alter view public.itest_v set (security_invoker = true)', 'alter view public.itest_v reset (security_invoker)', 'view:public.itest_v'],
   ['set a view security_barrier', 'alter view public.itest_v set (security_barrier = true)', 'alter view public.itest_v reset (security_barrier)', 'view:public.itest_v'],
+  // Replica identity decides what UPDATE and DELETE publish; neither change touches an index definition.
+  ['REPLICA IDENTITY FULL', 'alter table public.itest_t replica identity full', 'alter table public.itest_t replica identity default', 'table:public.itest_t'],
+  ['REPLICA IDENTITY USING INDEX', 'alter table public.itest_t replica identity using index itest_t_pkey', 'alter table public.itest_t replica identity default', 'table:public.itest_t'],
+  // Same columns, different bounds: inserts route differently.
+  ['move a partition to other bounds',
+    'alter table public.itest_pt detach partition public.itest_pt1; alter table public.itest_pt attach partition public.itest_pt1 for values from (10) to (20)',
+    'alter table public.itest_pt detach partition public.itest_pt1; alter table public.itest_pt attach partition public.itest_pt1 for values from (0) to (10)',
+    'table:public.itest_pt1'],
+  // Only INITCOND changes: the aggregate returns different results.
+  ['change an aggregate INITCOND', `create or replace aggregate public.itest_agg(int) (sfunc = int4pl, stype = int, initcond = '10')`,
+    `create or replace aggregate public.itest_agg(int) (sfunc = int4pl, stype = int, initcond = '0')`, 'function:public.itest_agg(integer)'],
 ]
 
 try {
@@ -81,6 +97,15 @@ try {
   if (!hasRealtime) await q('create publication supabase_realtime')
   const base = await snapshotSchema(client)
   ok('baseline sees the fixture view', 'view:public.itest_v' in base)
+  {
+    const pt = JSON.parse(base['table:public.itest_pt'] ?? '{}'), pt1 = JSON.parse(base['table:public.itest_pt1'] ?? '{}')
+    ok('partitioned table: key captured', pt.partition_key === 'RANGE (k)', JSON.stringify(pt))
+    ok('partition: parent and bounds captured', pt1.partition_of === 'public.itest_pt' && pt1.partition_bound === 'FOR VALUES FROM (0) TO (10)', JSON.stringify(pt1))
+    const t = JSON.parse(base['table:public.itest_t'] ?? '{}')
+    ok('plain table: replica identity default, no partition fields', t.replica_identity === 'd' && t.replica_identity_index === null && t.partition_key === null && t.partition_of === null, JSON.stringify(t))
+    const agg = JSON.parse(base['function:public.itest_agg(integer)'] ?? '{}')
+    ok('aggregate: definition captured from pg_aggregate', JSON.parse(agg.def ?? '{}').initcond === '0', JSON.stringify(agg))
+  }
   ok('a second snapshot is identical', diffSnapshots(base, await snapshotSchema(client)).length === 0)
 
   for (const [name, sabotage, undo, key] of CASES) {

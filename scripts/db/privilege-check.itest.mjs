@@ -34,6 +34,7 @@ const TEARDOWN = `
   do $$ begin
     if exists (select 1 from pg_roles where rolname = 'magora_refresh') then
       revoke create on schema public from magora_refresh;
+      execute format('revoke create on database %I from magora_refresh', current_database());
       revoke authenticated from magora_refresh;
       alter role magora_refresh password null;
       alter role magora_refresh bypassrls;
@@ -98,6 +99,23 @@ try {
     await a(undo)
     const after = (await check(opts)).filter((v) => !baseline.includes(v))
     ok(`${name}: none after undo`, after.length === 0, JSON.stringify(after))
+  }
+
+  // An owned object outside the six catalogs read by name: a publication the login created while it
+  // briefly held CREATE on the database. Revoking CREATE afterwards leaves the ownership in place.
+  {
+    const asRefreshRw = async (sql) => {
+      const c = await asRefresh()
+      try { await c.query('begin; set transaction read write'); await c.query(sql); await c.query('commit') } finally { await c.end() }
+    }
+    await a(`do $$ begin execute format('grant create on database %I to magora_refresh', current_database()); end $$`)
+    await asRefreshRw('create publication itest_pub')
+    await a(`do $$ begin execute format('revoke create on database %I from magora_refresh', current_database()); end $$`)
+    const added = (await check(opts)).filter((v) => !baseline.includes(v))
+    ok('owned publication: exactly one new violation naming it', added.length === 1 && added[0] === 'owns object publication itest_pub', JSON.stringify(added))
+    await asRefreshRw('drop publication itest_pub')
+    const after = (await check(opts)).filter((v) => !baseline.includes(v))
+    ok('owned publication: none after undo', after.length === 0, JSON.stringify(after))
   }
 
   // Positive part: a policy that hides every row from every role that does not bypass RLS.

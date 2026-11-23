@@ -31,13 +31,31 @@ export function lineColumn(sql, position) {
   return { line: lines.length, column: lines[lines.length - 1].length + 1 }
 }
 
+// After a file that manages its own transaction: is a transaction block still open? SAVEPOINT
+// succeeds only inside one, and fails with 25P01 outside. A file with BEGIN and no COMMIT would
+// otherwise report success, and its work would be rolled back when the connection closes.
+export const OPEN_PROBE = 'savepoint apply_open_probe'
+async function transactionLeftOpen(client) {
+  try {
+    await client.query(OPEN_PROBE)
+  } catch (e) {
+    if (e?.code === '25P01') return false
+    throw e
+  }
+  return true
+}
+
 export async function applyFiles(client, paths, { onEach, read = (p) => readFileSync(p, 'utf8') } = {}) {
   for (const path of paths) {
     const sql = read(path)
     const own = managesOwnTransaction(sql)
     try {
-      if (own) await client.query(sql)
-      else {
+      if (own) {
+        await client.query(sql)
+        if (await transactionLeftOpen(client)) {
+          throw Object.assign(new Error('the file leaves a transaction open (BEGIN without COMMIT)'), { code: 'open-transaction' })
+        }
+      } else {
         await client.query('BEGIN')
         await client.query(sql)
         await client.query('COMMIT')

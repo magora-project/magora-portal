@@ -2,7 +2,10 @@
 // Run: node scripts/db/local-stack.test.mjs
 import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { makeWorkspace } from './local-stack.mjs'
+import { EventEmitter } from 'node:events'
+import { existsSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { makeWorkspace, stackCleanup } from './local-stack.mjs'
 
 let pass = 0, fail = 0
 const ok = (n, c, extra = '') => { if (c) { pass++ } else { fail++; console.log('  FAIL', n, extra) } }
@@ -20,6 +23,33 @@ try {
 } finally {
   rmSync(a, { recursive: true, force: true })
   rmSync(b, { recursive: true, force: true })
+}
+
+// stackCleanup: an interrupt stops the stack once and exits 130; later paths do nothing.
+{
+  const proc = new EventEmitter()
+  const exits = []
+  proc.exit = (code) => exits.push(code)
+  let stops = 0
+  const work = mkdtempSync(join(tmpdir(), 'magora-stack-test-'))
+  const cleanup = stackCleanup(work, { stop: () => { stops++ }, proc })
+  ok('handlers registered for SIGINT, SIGTERM and exit', proc.listenerCount('SIGINT') === 1 && proc.listenerCount('SIGTERM') === 1 && proc.listenerCount('exit') === 1)
+  proc.emit('SIGINT')
+  ok('SIGINT stops the stack, removes the workspace and exits 130', stops === 1 && !existsSync(work) && exits.join() === '130')
+  ok('handlers removed after cleanup', proc.listenerCount('SIGINT') === 0 && proc.listenerCount('SIGTERM') === 0 && proc.listenerCount('exit') === 0)
+  cleanup()
+  proc.emit('exit')
+  ok('cleanup runs once', stops === 1)
+}
+{
+  const proc = new EventEmitter()
+  proc.exit = () => {}
+  let stops = 0
+  const work = mkdtempSync(join(tmpdir(), 'magora-stack-test-'))
+  const cleanup = stackCleanup(work, { stop: () => { stops++ }, proc })
+  cleanup()
+  proc.emit('SIGTERM')
+  ok('a normal stop() unregisters the handlers; a later signal does not stop again', stops === 1 && proc.listenerCount('SIGTERM') === 0)
 }
 
 console.log(`local-stack: ${pass} passed, ${fail} failed`)

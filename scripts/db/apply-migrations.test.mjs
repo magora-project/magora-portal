@@ -3,7 +3,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { listMigrationFiles, applyFiles, managesOwnTransaction, lineColumn, parseArgs } from './apply-migrations.mjs'
+import { listMigrationFiles, applyFiles, managesOwnTransaction, lineColumn, parseArgs, OPEN_PROBE } from './apply-migrations.mjs'
 import { connect, localProblem, targetLabel, withRootCert } from './pg.mjs'
 
 let pass = 0, fail = 0
@@ -34,9 +34,18 @@ ok('own transaction: not inside a function body word', !managesOwnTransaction('c
 ok('lineColumn', JSON.stringify(lineColumn('ab\ncd\nef', 5)) === JSON.stringify({ line: 2, column: 2 }))
 
 // applyFiles with a fake client
-const fakeClient = (failOn) => {
+// openAfterOwn: whether a transaction block is open after an own-transaction file ran, which the
+// SAVEPOINT probe reports (outside a block, PostgreSQL refuses SAVEPOINT with 25P01).
+const fakeClient = (failOn, { openAfterOwn = false } = {}) => {
   const log = []
-  return { log, query: async (q) => { log.push(q); if (failOn && q === failOn) { const e = new Error('boom'); e.code = '42601'; e.position = '4'; throw e } } }
+  return {
+    log,
+    query: async (q) => {
+      log.push(q)
+      if (failOn && q === failOn) { const e = new Error('boom'); e.code = '42601'; e.position = '4'; throw e }
+      if (q === OPEN_PROBE && !openAfterOwn) { const e = new Error('SAVEPOINT can only be used in transaction blocks'); e.code = '25P01'; throw e }
+    },
+  }
 }
 {
   const c = fakeClient()
@@ -55,7 +64,16 @@ const fakeClient = (failOn) => {
 {
   const c = fakeClient()
   await applyFiles(c, ['own.sql'], { read: () => 'begin;\nselect 1;\ncommit;\n' })
-  ok('a file with its own transaction is not wrapped', JSON.stringify(c.log) === JSON.stringify(['begin;\nselect 1;\ncommit;\n']))
+  ok('a file with its own transaction is not wrapped; the open-transaction probe follows it',
+    JSON.stringify(c.log) === JSON.stringify(['begin;\nselect 1;\ncommit;\n', OPEN_PROBE]))
+}
+{
+  const c = fakeClient(null, { openAfterOwn: true })
+  const seen = []
+  const msg = await rejects(applyFiles(c, ['open.sql', 'next.sql'], { read: (p) => (p === 'open.sql' ? 'begin;\ncreate table public.commit_probe(id int);\n' : 'ok'), onEach: (p) => seen.push(p) }))
+  ok('a file that leaves a transaction open fails, naming the file', msg?.startsWith('open.sql: open-transaction: the file leaves a transaction open'))
+  ok('the open transaction is rolled back, not reported, and the next file does not run',
+    c.log.at(-1) === 'ROLLBACK' && seen.length === 0 && !c.log.includes('ok'))
 }
 
 // parseArgs

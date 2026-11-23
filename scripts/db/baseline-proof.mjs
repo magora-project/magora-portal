@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { listMigrationFiles, applyFiles } from './apply-migrations.mjs'
 import { connect } from './pg.mjs'
 import { startStack } from './local-stack.mjs'
-import { snapshotSchema, compareFiles } from './schema-snapshot.mjs'
+import { snapshotInTransaction, compareFiles } from './schema-snapshot.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 export const MIGRATIONS = join(REPO, 'supabase', 'migrations')
@@ -68,7 +68,7 @@ async function main(argv) {
     const reader = await connect('MAGORA_PROOF_DB_URL', target)
     const local = join(scratch, 'replayed.json')
     try {
-      writeFileSync(local, `${JSON.stringify(await snapshotSchema(reader), null, 1)}\n`)
+      writeFileSync(local, `${JSON.stringify(await snapshotInTransaction(reader), null, 1)}\n`)
     } finally { await reader.end() }
     // A = production, B = the replay.
     const { code, text } = compareFiles(opts.prodSnapshot, local, opts.allowlist)

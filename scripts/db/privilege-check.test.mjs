@@ -49,6 +49,7 @@ for (const p of ['INSERT', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) {
 { const f = clean(); f.databaseCreate = true; one('CREATE on the database', f, 'CREATE on the database') }
 { const f = clean(); f.owned.push({ kind: 'relation', name: 'public.x' }); one('owned object', f, 'owns relation public.x') }
 { const f = clean(); f.owned.push({ kind: 'large object', name: '16400' }); one('owned large object', f, 'owns large object 16400') }
+{ const f = clean(); f.owned.push({ kind: 'object', name: 'publication itest_pub' }); one('owned object from pg_shdepend', f, 'owns object publication itest_pub') }
 { const f = clean(); f.memberOf.push('authenticated'); one('role membership', f, 'member of authenticated') }
 for (const attr of ['rolsuper', 'rolinherit', 'rolcreaterole', 'rolcreatedb', 'rolreplication']) {
   const f = clean(); f.role[attr] = true

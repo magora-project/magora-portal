@@ -167,6 +167,15 @@ export async function collectPrivileges(client) {
     union all select 'type', n.nspname || '.' || t.typname from pg_type t join pg_namespace n on n.oid = t.typnamespace where t.typowner = ${me}
     union all select 'database', datname from pg_database where datdba = ${me}
     union all select 'large object', oid::text from pg_largeobject_metadata where lomowner = ${me}
+    -- Every other owned object (a publication, collation, text search configuration, tablespace, ...)
+    -- from the ownership dependencies, in this database or shared. The classes listed above are
+    -- excluded here so each object is reported once.
+    union all select 'object', pg_describe_object(d.classid, d.objid, d.objsubid)
+      from pg_shdepend d
+     where d.refclassid = 'pg_authid'::regclass and d.refobjid = ${me} and d.deptype = 'o'
+       and d.dbid in (0, (select oid from pg_database where datname = current_database()))
+       and d.classid not in ('pg_class'::regclass, 'pg_proc'::regclass, 'pg_namespace'::regclass,
+                             'pg_type'::regclass, 'pg_database'::regclass, 'pg_largeobject'::regclass)
     order by 1, 2`)
   const memberOf = (await rows(`
     select r.rolname from pg_auth_members m join pg_roles r on r.oid = m.roleid where m.member = ${me} order by 1`)).map((r) => r.rolname)

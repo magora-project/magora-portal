@@ -2,7 +2,7 @@
 // Run: node scripts/db/schema-snapshot.test.mjs
 import {
   canonical, parseAclItem, normalizeAcl, normalizeViewOptions, normalizeFunctionDef, normalizeSnapshot, diffSnapshots, schemaOfKey,
-  parseAllowlist, applyAllowlist, formatDiff,
+  parseAllowlist, applyAllowlist, formatDiff, snapshotInTransaction, SNAPSHOT_BEGIN,
 } from './schema-snapshot.mjs'
 
 let pass = 0, fail = 0
@@ -122,6 +122,24 @@ ok('a non-key line is an error', parseAllowlist('just words  # x\n').errors.leng
   ok('normalizeSnapshot: idempotent', eq(normalizeSnapshot(normalizeSnapshot(old)), normalizeSnapshot(old)))
   ok('normalizeSnapshot: a real body change survives', !eq(normalizeSnapshot(old), normalizeSnapshot({ ...fresh, 'function:public.f()': fn('X\nAS $function$select 2;$function$\n') })))
 }
+
+// snapshotInTransaction: one REPEATABLE READ READ ONLY transaction around every read.
+{
+  const log = []
+  const c = { query: async (q) => { log.push(q.trim().split(/\s+/).slice(0, 2).join(' ')); return { rows: [] } } }
+  await snapshotInTransaction(c)
+  ok('snapshotInTransaction: begins repeatable read read only first', log[0] === 'begin isolation' && log.length > 3)
+  ok('snapshotInTransaction: commits last', log.at(-1) === 'commit')
+}
+{
+  const log = []
+  let n = 0
+  const c = { query: async (q) => { log.push(q.trim().split(/\s+/)[0]); if (++n === 3) { const e = new Error('boom'); e.code = 'XX000'; throw e } return { rows: [] } } }
+  let msg = null
+  try { await snapshotInTransaction(c) } catch (e) { msg = e.message }
+  ok('snapshotInTransaction: a failed read rolls back and rethrows', msg === 'boom' && log.at(-1) === 'rollback' && !log.includes('commit'))
+}
+ok('SNAPSHOT_BEGIN text', SNAPSHOT_BEGIN === 'begin isolation level repeatable read read only')
 
 console.log(`schema-snapshot: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)
