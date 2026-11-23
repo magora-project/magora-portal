@@ -48,6 +48,8 @@ ok('layout: a statement after COMMIT is refused (it would run after the commit)'
 ok('layout: a statement before BEGIN is refused', layout('select 1;\nbegin;\nselect 2;\ncommit;\n') !== 'ok')
 ok('layout: two transactions are refused', layout('begin;\nselect 1;\ncommit;\nbegin;\nselect 2;\ncommit;') !== 'ok')
 ok('layout: BEGIN without COMMIT is refused', layout('begin;\ncreate table t(id int);') !== 'ok')
+ok('layout: COMMIT AND CHAIN is refused (it opens a new transaction)', layout('begin;\ncreate table t(id int);\ncommit and chain;') !== 'ok')
+ok('layout: COMMIT WORK and COMMIT AND NO CHAIN are ok', layout('begin;\nselect 1;\ncommit work;') === 'ok' && layout('begin;\nselect 1;\ncommit and no chain;') === 'ok')
 ok('layout: a ROLLBACK is refused', layout('begin;\nselect 1;\nrollback;') !== 'ok')
 ok('layout: a file with no control is wrapped', transactionLayout('create table t(id int);').own === false)
 ok('lineColumn', JSON.stringify(lineColumn('ab\ncd\nef', 5)) === JSON.stringify({ line: 2, column: 2 }))

@@ -26,7 +26,9 @@ export function listMigrationFiles(dir) {
 // not ROLLBACK TO a savepoint) or ABORT. The END that closes a SQL-standard BEGIN ATOMIC body is not.
 const CONTROL = /^(begin|start\s+transaction|commit|end|rollback(?!\s+to\b)|abort)\b/i
 const OPENS = /^(begin|start\s+transaction)\b/i
-const CLOSES = /^(commit|end)\b/i
+// Exactly COMMIT or END (optionally WORK/TRANSACTION, AND NO CHAIN): COMMIT AND CHAIN would open a new
+// transaction at once, and COMMIT PREPARED commits something else.
+const CLOSES = /^(commit|end)( (work|transaction))?( and no chain)?$/i
 export function transactionControl(sql) {
   const statements = codeOnly(sql).split(';').map((s) => s.trim().replace(/\s+/g, ' ')).filter(Boolean)
   let atomic = 0
