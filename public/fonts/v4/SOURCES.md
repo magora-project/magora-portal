@@ -5,7 +5,8 @@ worker does not precache them (`**/fonts/v4/**` in `workbox.globIgnores`).
 
 ## prodiga-regular.ttf
 
-- Source: Creative Fabrica, download `Prodiga-20732871.zip`, file `PRODIGARegular.ttf`, copied unmodified
+- Source: Creative Fabrica, Prodiga by roompoetliar, https://www.creativefabrica.com/product/prodiga/
+  (subscription download `Prodiga-20732871.zip`), file `PRODIGARegular.ttf`, copied unmodified
   (byte-identical to the copy in the portal design folder, `design/fonts/prodiga-regular.ttf`).
 - Licence: Creative Fabrica Subscription License, https://www.creativefabrica.com/subscription-license/#full.
   The file embeds no licence string. David confirmed on 2026-11-23 that the licence allows publishing it
