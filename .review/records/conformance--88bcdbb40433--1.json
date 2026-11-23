@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "type": "conformance",
+  "slot": "conformance",
+  "input": {
+    "kind": "pr",
+    "identity": "88bcdbb40433086630084443bc7b2a102d2d4ffe",
+    "mergeBase": "70911dcd5ab25e57c20877c016781693d8768173",
+    "head": "62d1d4cdc0d03e66c75be0eedea2d010d5d0370c"
+  },
+  "reviewer": {
+    "vendor": "openai",
+    "model": "codex-cli"
+  },
+  "authorVendor": "anthropic",
+  "outcome": "completed",
+  "verdict": "pass",
+  "findings": [
+    {
+      "id": "conformance--8a0cd634e246--1#D16",
+      "severity": "P3",
+      "summary": "D16: Task 8 requires v4 to override every :root colour property, but the diff intentionally leaves the four Google logo colours inherited and exempts them from the completeness test; preserving third-party branding is a harmless plan deviation.",
+      "file": "src/styles/tokens.css",
+      "line": 201
+    },
+    {
+      "id": "conformance--8a0cd634e246--1#D17",
+      "severity": "P3",
+      "summary": "D17: Task 9 requires a source URL for each font, but Prodiga’s entry gives only the provider and archive filename, leaving its download source less directly traceable.",
+      "file": "public/fonts/v4/SOURCES.md",
+      "line": 8,
+      "disposition": {
+        "kind": "fixed",
+        "by": "conformance--88bcdbb40433--1"
+      }
+    }
+  ],
+  "supersedes": "conformance--8a0cd634e246--1",
+  "conformance": {
+    "tasks": [
+      "T7",
+      "T8",
+      "T9",
+      "T10"
+    ],
+    "deviations": [
+      "conformance--8a0cd634e246--1#D16"
+    ],
+    "commands": [
+      {
+        "cmd": "node src/lib/tokens.test.mjs",
+        "exit": 0
+      },
+      {
+        "cmd": "npm run build",
+        "exit": 0
+      },
+      {
+        "cmd": "node src/components/v4/mandala.test.mjs",
+        "exit": 0
+      }
+    ],
+    "plan": {
+      "path": "docs/superpowers/plans/2026-11-21-portal-v4-foundation.md",
+      "blob": "6c9605941d7f3fd7372de912e8fbd47365f611b5"
+    }
+  },
+  "createdAt": "2026-11-23T16:26:27.958Z"
+}
