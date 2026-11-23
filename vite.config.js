@@ -40,7 +40,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
         navigateFallback: '/index.html',
         // Don't precache the giant decorative SVGs (500KB+) — let them cache at runtime instead
-        globIgnores: ['**/icons/{about,add_node,dashboard,donate,live_feed}.svg', '**/icons/icon-512.png.webp'],
+        globIgnores: ['**/icons/{about,add_node,dashboard,donate,live_feed}.svg', '**/icons/icon-512.png.webp', '**/fonts/v4/**'],
         runtimeCaching: [
           {
             // Google Fonts stylesheets + font files
