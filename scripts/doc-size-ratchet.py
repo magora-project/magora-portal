@@ -116,22 +116,67 @@ class Git:
         return self.run("cat-file", "blob", obj)
 
 
+def _seg_regex(seg):
+    parts = [re.escape(p) for p in seg.split("*")]
+    rx = parts[0]
+    for k in range(1, len(parts)):
+        if k < len(parts) - 1:   # every `*` but the last commits to the leftmost next literal (bpo-40480)
+            rx += f"(?=(?P<g{k}>[^/]*?{parts[k]}))(?P=g{k})"
+        else:                    # the last `*` backtracks, so `*.md` still matches `a.md.md`
+            rx += "[^/]*" + parts[k]
+    return re.compile(rx)
+
+
+class _Glob:
+    """A compiled glob (#858): one regex per segment, and a set of pattern-segment indices stepped
+    once per path segment. The state SET is what bounds the cost: `return set(out)` dedupes, and
+    without it stacked `**` segments are exponential, as one whole-path regex was."""
+
+    def __init__(self, segs):
+        self.segs = segs                      # compiled segment regex, or None for `**`
+
+    def _closure(self, states):               # a `**` may match zero directories: also enter the next index
+        out = []
+        for i in states:
+            out.append(i)
+            while i < len(self.segs) and self.segs[i] is None:
+                i += 1
+                out.append(i)
+        return set(out)
+
+    def fullmatch(self, path):
+        end, states = len(self.segs), self._closure([0])
+        for x in path.split("/"):
+            nxt = []
+            for i in states:
+                if i == end:
+                    continue
+                s = self.segs[i]
+                if s is None:
+                    if x:                     # `**` consumes non-empty segments only
+                        nxt.append(i)
+                elif s.fullmatch(x):
+                    nxt.append(i + 1)
+            states = self._closure(nxt)
+            if not states:
+                return False
+        return end in states
+
+
 def compile_glob(pat, where):
     parts = pat.split("/")
-    out = []
+    segs = []
     for i, seg in enumerate(parts):
         last = i == len(parts) - 1
         if seg == "**":
             if last:
                 raise Fault(f"{where}: '**' must be followed by '/<segment>'")
-            out.append("(?:[^/]+/)*")
+            segs.append(None)
             continue
         if "**" in seg:
             raise Fault(f"{where}: '**' must be a whole path segment")
-        out.append("".join("[^/]*" if c == "*" else re.escape(c) for c in seg))
-        if not last:
-            out.append("/")
-    return re.compile("".join(out))
+        segs.append(_seg_regex(seg))
+    return _Glob(segs)
 
 
 class Entry:
