@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "pr": 127,
+  "slots": [
+    {
+      "bot": "coderabbit",
+      "status": "covered",
+      "by": "review:6097295388"
+    },
+    {
+      "bot": "codex",
+      "status": "covered",
+      "by": "codex-comment:7238050838@9f41575bc235"
+    },
+    {
+      "bot": "gemini",
+      "status": "substituted",
+      "by": "substitute-gemini--9e33470d2209--1"
+    }
+  ],
+  "findings": [],
+  "reclassified": [],
+  "writtenAt": "2026-11-28T11:16:55.842Z"
+}
